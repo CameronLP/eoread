@@ -14,7 +14,7 @@ from .common import Interpolator, DataArray_from_array
 from core.tools import raiseflag, merge
 from .utils.naming import naming, flags
 from .eo import init_geometry as init_geo
-from core import config
+from core import env
 
 
 sgli_bands = [
@@ -34,7 +34,7 @@ sgli_bands = [
 def get_sample() -> Path:
     # Assumes that sample file exists locally in dir_samples
     # Downloaded from /standard/GCOM-C/GCOM-C.SGLI/L1B/2/2019/12/05
-    sample = config.get('dir_samples')/'SGLI'/'GC1SG1_201912050159F05712_1BSG_VNRDQ_2000.h5'
+    sample = env.getdir('DIR_SAMPLES')/'SGLI'/'GC1SG1_201912050159F05712_1BSG_VNRDQ_2000.h5'
     assert sample.exists()
     return sample
 

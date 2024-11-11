@@ -8,7 +8,7 @@ ERA5 Ancillary data provider
 
 import argparse
 
-from core import config
+from core import env
 from core.tools import wrap
 from core.fileutils import filegen, mdir
 from pathlib import Path
@@ -71,7 +71,7 @@ class ERA5:
                  verbose=False,
                  ):
         if directory is None:
-            self.directory = mdir(config.get('dir_ancillary')/'ERA5')
+            self.directory = mdir(env.getdir('DIR_ANCILLARY')/'ERA5')
         else:
             self.directory = Path(directory)
 

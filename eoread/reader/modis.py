@@ -1,6 +1,6 @@
 from eoread.reader.hdf4 import load_hdf4
 from core.tools import merge
-from core import config
+from core import env
 from eoread.utils.naming import naming as n
 from eoread.download.download_nextcloud import download_nextcloud
 from pathlib import Path
@@ -270,4 +270,4 @@ def parse_attrs(stack, out_dic={}):
 
 def get_sample():
     product_name = 'MYD021KM_example.hdf'
-    return download_nextcloud(product_name, config.get('dir_samples'), 'SampleData')
+    return download_nextcloud(product_name, env.getdir('DIR_SAMPLES'), 'SampleData')

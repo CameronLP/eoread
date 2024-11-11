@@ -38,7 +38,7 @@ import rioxarray as rio
 from lxml import objectify
 
 from eoread.download_legacy import download_S2_google, download_url
-from core import config
+from core import env
 from core.fileutils import mdir
 
 from core.tools import merge, raiseflag
@@ -218,7 +218,7 @@ def msi_read_toa(ds, granule_dir, quantif, radio_add_offset, split, chunks):
 def msi_read_spectral(ds):
     # read srf
     # TODO: deprecate in favour of get_SRF
-    dir_aux_msi = mdir(config.get('dir_static')/'msi')
+    dir_aux_msi = mdir(env.getdir('DIR_STATIC')/'msi')
     platform = ds.attrs[n.platform]
     get_SRF(platform)
     srf_file = dir_aux_msi/f'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_{platform}.csv'
@@ -365,7 +365,7 @@ def Level2_MSI(dirname):
 
 def get_sample() -> Path:
     product_name = 'S2A_MSIL1C_20190419T105621_N0207_R094_T31UDS_20190419T130656'
-    return download_S2_google(product_name, config.get('dir_samples'))
+    return download_S2_google(product_name, env.getdir('DIR_SAMPLES'))
     
 
 
@@ -382,7 +382,7 @@ def get_SRF(sensor: str, directory: Optional[Path]=None):
                 'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_S2B.csv'),
     }[sensor]
     
-    srf_file = download_url(url, config.get('dir_static')/'msi')
+    srf_file = download_url(url, env.getdir('DIR_STATIC')/'msi')
 
     srf_data = pd.read_csv(srf_file)
 

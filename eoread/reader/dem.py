@@ -1,4 +1,4 @@
-from core import config
+from core import env
 from core.fileutils import mdir
 from eoread.utils.naming import naming
 from eoread.common import bin_centers
@@ -28,7 +28,7 @@ class ArrayLike_SRTM:
         self.verbose    = verbose
         self.directory  = Path(directory)
 
-        static = mdir(config.get('dir_static'))
+        static = mdir(env.getdir('DIR_STATIC'))
         system(f'wget https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/download?files=valid_{self.srtm}_tiles.txt -c -O {static}/valid_{self.srtm}_tiles.txt')
         self.tiles_list = np.loadtxt(f'{static}/valid_{self.srtm}_tiles.txt', dtype=str)
 

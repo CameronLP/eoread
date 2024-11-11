@@ -33,7 +33,7 @@ import xarray as xr
 import rioxarray as rio
 from eoread.download_legacy import download_url
 from core.fileutils import mdir
-from core import config
+from core import env
 
 from ..common import DataArray_from_array, Interpolator, Repeat
 from core.tools import raiseflag, merge
@@ -436,7 +436,7 @@ def get_SRF(
     If ds_in is provided, the output bands are references by ds_in.bands
     """
     if dir_data is None:
-        dir_data = mdir(config.get('dir_static')/'venus')
+        dir_data = mdir(env.getdir('DIR_STATIC')/'venus')
 
     url = 'https://labo.obs-mip.fr/wp-content-labo/uploads/sites/19/2018/09/rep6S.txt'
     srf_file = download_url(url, dir_data)
@@ -473,7 +473,7 @@ def get_sample(kind='level1') -> Path:
 
     (should be existing)
     """
-    dir_venus = config.get('dir_samples')/'VENUS'
+    dir_venus = env.getdir('DIR_SAMPLES')/'VENUS'
     if kind == 'level1':
         product = dir_venus/'VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/'
     elif kind == 'level2':

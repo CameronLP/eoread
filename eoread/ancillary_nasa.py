@@ -17,7 +17,7 @@ from .nasa import nasa_download
 from .utils.naming import naming
 from dateutil.parser import parse
 
-from core import config
+from core import env
 
 
 # resources are a list of functions taking the date, and returning the list
@@ -97,7 +97,7 @@ class Ancillary_NASA:
             verbose mode
         """
         if directory is None:
-            self.directory = config.get('dir_ancillary')/'NASA'
+            self.directory = env.getdir('DIR_ANCILLARY')/'NASA'
         else:
             self.directory = Path(directory)
 
