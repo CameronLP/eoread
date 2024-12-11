@@ -34,7 +34,7 @@ from .. import common
 from ..utils.naming import naming
 from core.tools import merge
 from ..raster import ArrayLike_GDAL
-from sandd.usgs import DownloadUSGS
+from sand.usgs import DownloadUSGS
 
 
 PYPROJ_VERSION = int(pyproj.__version__.split('.')[0])
