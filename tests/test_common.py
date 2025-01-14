@@ -11,8 +11,8 @@ import dask.array as da
 from eoread.common import AtIndex, Repeat
 from eoread.common import Interpolator, ceil_dt, floor_dt
 from eoread.common import DataArray_from_array, timeit
-from eoread.reader import msi
-from eoread.reader.gsw import GSW
+from eoread import msi
+from eoread.gsw import GSW
 from core.fileutils import PersistentList
 from core.interpolate import selinterp
 from core.tools import split, merge, wrap, raiseflag, convert, locate, xrcrop

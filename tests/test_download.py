@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from eoread.download_legacy import download_S2_google
-from eoread import download
+from eoread import download_legacy
 from eoread.nasa import nasa_download
 from ftplib import FTP
 
@@ -55,10 +55,10 @@ def test_ftp_download():
     ftp = FTP('test.rebex.net',
               user='demo',
               passwd='password')
-    ls = download.ftp_list(ftp, '/')
+    ls = download_legacy.ftp_list(ftp, '/')
     assert ls
     with TemporaryDirectory() as tmpdir:
-        download.ftp_download(ftp, Path(tmpdir)/'readme.txt', '/pub/example/')
+        download_legacy.ftp_download(ftp, Path(tmpdir)/'readme.txt', '/pub/example/')
         
 
 @pytest.mark.parametrize('size_bytes', [
@@ -84,16 +84,16 @@ def test_ftp_upload(size_bytes):
 
             for if_exists in ['overwrite', 'skip']:
                 # second upload should do nothing
-                download.ftp_upload(ftp, tmpfile, dir_server, if_exists=if_exists)
+                download_legacy.ftp_upload(ftp, tmpfile, dir_server, if_exists=if_exists)
 
             with pytest.raises(FileExistsError):
-                download.ftp_upload(ftp, tmpfile, dir_server, if_exists='error')
+                download_legacy.ftp_upload(ftp, tmpfile, dir_server, if_exists='error')
             
             # Check consistency
             tmpfile2 = Path(tmpdir)/'check'/rands
             if tmpfile2.exists():
                 tmpfile2.unlink()
-            download.ftp_download(ftp, tmpfile2, dir_server)
+            download_legacy.ftp_download(ftp, tmpfile2, dir_server)
 
             assert filecmp.cmp(tmpfile, tmpfile2)
 

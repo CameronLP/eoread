@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-from eoread.reader.venus import Level1_VENUS, Level2_VENUS, get_SRF, get_sample
-from eoread.utils.graphics import plot_srf
+from eoread.venus import Level1_VENUS, Level2_VENUS, get_SRF, get_sample
 from . import generic
 from eoread import eo
 from . import conftest
@@ -104,8 +103,6 @@ def test_plot(request):
 
 def test_srf(request):
     srf = get_SRF()
-    plot_srf(srf)
-    conftest.savefig(request, bbox_inches="tight")
 
 def test_level2(chunks):
     Level2_VENUS(product_l2, chunks=chunks)

@@ -3,9 +3,9 @@
 
 import pytest
 from matplotlib import pyplot as plt
-from eoread.reader.olci import get_sample
+from eoread.olci import get_sample
 from eoread.autodetect import Level1, Level2
-from eoread.reader.olci import get_valid_l2_pixels
+from eoread.olci import get_valid_l2_pixels
 from eoread import eo
 from core.tools import chunk, contains
 from . import generic

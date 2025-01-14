@@ -18,8 +18,8 @@ import pandas as pd
 import xarray as xr
 
 from core.tools import merge, raiseflag
-from ..common import AtIndex, DataArray_from_array, len_slice, convert_for_nc
-from ..utils.naming import naming, flags
+from .common import AtIndex, DataArray_from_array, len_slice, convert_for_nc
+from .utils.naming import naming, flags
 
 BANDS_MERIS = [412, 443, 490, 510, 560,
                620, 665, 681, 709, 754,

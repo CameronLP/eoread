@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 
 '''
-Landsat-9 OLI reader
+Landsat-8 OLI reader
 
 Example:
-    l1 = Level1_L9_OLI('LC09_L1TP_014034_20220618_20230411_02_T1/')
+    l1 = Level1_L8_OLI('LC80140282017275LGN00/')
 
 Data access:
     * https://earthexplorer.usgs.gov/
-    * https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1
+    * https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_TOA
 '''
 
 import os
@@ -30,18 +30,16 @@ except ModuleNotFoundError:
     osr = None
     gdal = None
     gdal_major_version = None
-from .. import common
-from ..utils.naming import naming
+from . import common
+from .utils.naming import naming
 from core.tools import merge
-from ..raster import ArrayLike_GDAL
-from sand.usgs import DownloadUSGS
-
+from .raster import ArrayLike_GDAL
 
 PYPROJ_VERSION = int(pyproj.__version__.split('.')[0])
 
 
 bands_oli  = np.array([440, 480, 560, 655, 865, 1375, 1610, 2200, 11000, 12000])
-bands_vis = bands_oli[bands_oli < 3000]
+bands_vis  = bands_oli[bands_oli < 3000]
 bands_tir  = bands_oli[bands_oli > 3000]
 
 band_index = { # Bands                                - wavelength (um) - resolution (m)
@@ -68,15 +66,15 @@ center_wavelengths = {
     865: 864.67,
     1610: 1608.86,
     2200: 2200.73,
-    # 580: 581,
+    # 580: 579,
     1375: 1373.43,
     11000:10895,
     12000:12050,
 }
 
 
-def Level1_L9_OLI(dirname,
-                  l9_angles=None,
+def Level1_L8_OLI(dirname,
+                  l8_angles=None,
                   radiometry='reflectance',
                   split=False,
                   chunks=500,
@@ -84,22 +82,22 @@ def Level1_L9_OLI(dirname,
                   angle_data=True,
                   ):
     '''
-    Landsat-9 OLI reader.
+    Landsat-8 OLI reader.
 
     Arguments:
-        dirname: name of the directory containing the Landsat9/OLI product
-                 (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
-        l9_angles: executable name of l9_angles program (ex: 'l9_angles/l9_angles'), used to generate the angles
+        dirname: name of the directory containing the Landsat8/OLI product
+                 (Example: 'LC80140282017275LGN00/')
+        l8_angles: executable name of l8_angles program (ex: 'l8_angles/l8_angles'), used to generate the angles
                 files automatically when missing, with the following command:
-            l9_angles LC08_..._ANG.txt BOTH 1 -b 1
-            l9_angles is available at:
+            l8_angles LC08_..._ANG.txt BOTH 1 -b 1
+            l8_angles is available at:
             https://www.usgs.gov/land-resources/nli/landsat/solar-illumination-and-sensor-viewing-angle-coefficient-files
 
             It can be compiled with the following commands:
-                wget https://landsat.usgs.gov/sites/default/files/documents/L9_ANGLES_2_7_0.tgz
-                tar xzf L9_ANGLES_2_7_0.tgz
-                rm -fv L9_ANGLES_2_7_0.tgz
-                cd l9_angles
+                wget https://landsat.usgs.gov/sites/default/files/documents/L8_ANGLES_2_7_0.tgz
+                tar xzf L8_ANGLES_2_7_0.tgz
+                rm -fv L8_ANGLES_2_7_0.tgz
+                cd l8_angles
                 make
                 cd ..
         radiometry: str
@@ -115,9 +113,9 @@ def Level1_L9_OLI(dirname,
     data_mtl = read_metadata(dirname)
 
     # get datetime
-    d = data_mtl['IMAGE_ATTRIBUTES']['DATE_ACQUIRED']
+    d = data_mtl['PRODUCT_METADATA']['DATE_ACQUIRED']
     t = datetime.datetime.strptime(
-        data_mtl['IMAGE_ATTRIBUTES']['SCENE_CENTER_TIME'][:8],
+        data_mtl['PRODUCT_METADATA']['SCENE_CENTER_TIME'][:8],
         '%H:%M:%S')
     ds.attrs[naming.datetime] = datetime.datetime.combine(
         d,
@@ -126,7 +124,9 @@ def Level1_L9_OLI(dirname,
 
     read_coordinates(ds, dirname, chunks, use_gdal)
     if angle_data:
-        read_geometry(ds, dirname, l9_angles)
+        read_geometry(ds, dirname, l8_angles)
+    else:
+        radiometry = 'radiance'
     ds = read_radiometry(
         ds, dirname, split, data_mtl, radiometry, chunks, use_gdal)
 
@@ -147,27 +147,20 @@ def Level1_L9_OLI(dirname,
                                      dtype=naming.flags_dtype)
 
     # other attributes
-    ds.attrs[naming.crs]             = str(data_mtl['PROJECTION_ATTRIBUTES']['ELLIPSOID']) \
-                                     + ' ' + str(data_mtl['PROJECTION_ATTRIBUTES']['UTM_ZONE'])
-    ds.attrs[naming.platform]        = data_mtl['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
-    ds.attrs[naming.sensor]          = data_mtl['IMAGE_ATTRIBUTES']['SENSOR_ID'][:3]
-    ds.attrs[naming.product_name]    = data_mtl['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
+    ds.attrs[naming.platform] = 'Landsat8'
+    ds.attrs[naming.sensor] = 'OLI'
+    ds.attrs[naming.product_name] = os.path.basename(os.path.abspath(dirname))
     ds.attrs[naming.input_directory] = os.path.dirname(os.path.abspath(dirname))
+
 
     return ds.unify_chunks()
 
 
 def read_metadata(dirname):
     files_mtl = glob(os.path.join(dirname, 'LC*_MTL.txt'))
-    if len(files_mtl) == 0:
-        files_mtl = glob(os.path.join(dirname, 'LC*_MTL.xml'))
-        assert len(files_mtl) == 1
-        file_mtl = files_mtl[0]
-        data_mtl = read_meta_xml(file_mtl)['LANDSAT_METADATA_FILE']
-    else:
-        assert len(files_mtl) == 1
-        file_mtl = files_mtl[0]
-        data_mtl = read_meta(file_mtl)['LANDSAT_METADATA_FILE']
+    assert len(files_mtl) == 1
+    file_mtl = files_mtl[0]
+    data_mtl = read_meta(file_mtl)['L1_METADATA_FILE']
 
     return data_mtl
 
@@ -190,13 +183,13 @@ def read_coordinates(ds, dirname, chunks, use_gdal):
     ds.attrs[naming.totalwidth] = ds.x.size
 
 
-def gen_l9_angles(dirname, l9_angles=None):
-    print(f'Geometry file is missing in {dirname}, generating it with {l9_angles}...')
-    angles_txt_file = glob(os.path.join(dirname, 'LC09_*_ANG.txt'))
+def gen_l8_angles(dirname, l8_angles=None):
+    print(f'Geometry file is missing in {dirname}, generating it with {l8_angles}...')
+    angles_txt_file = glob(os.path.join(dirname, 'LC08_*_ANG.txt'))
     assert len(angles_txt_file) == 1
-    assert l9_angles is not None
-    assert os.path.exists(l9_angles)
-    path_exe = os.path.abspath(l9_angles)
+    assert l8_angles is not None
+    assert os.path.exists(l8_angles)
+    path_exe = os.path.abspath(l8_angles)
     path_angles = os.path.abspath(angles_txt_file[0])
     with tempfile.TemporaryDirectory() as tmpdir:
         cmd = f'cd {tmpdir} ; {path_exe} {path_angles} BOTH 1 -b 1'
@@ -205,55 +198,45 @@ def gen_l9_angles(dirname, l9_angles=None):
         os.system(f'cp -v {angle_files} {dirname}')
 
 
-def read_geometry(ds, dirname, l9_angles):
-    filenames_saa = glob(os.path.join(dirname, 'LC*_SAA.TIF'))
-    filenames_sza = glob(os.path.join(dirname, 'LC*_SZA.TIF'))
+def read_geometry(ds, dirname, l8_angles):
+    filenames_sensor = glob(os.path.join(dirname, 'LC*_sensor_B01.img'))
 
-    # if ((not filenames_saa) or (not filenames_sza)) and (l9_angles is not None):
-    #     gen_l9_angles(dirname, l9_angles)
-    #     filenames_sensor = glob(os.path.join(dirname, 'LC*_sensor_B01.img'))
+    if (not filenames_sensor) and (l8_angles is not None):
+        gen_l8_angles(dirname, l8_angles)
+        filenames_sensor = glob(os.path.join(dirname, 'LC*_sensor_B01.img'))
 
     # read sensor angles
-    assert len(filenames_saa) == 1, \
-        f'Error, sensor angles file missing in {dirname} ({str(filenames_saa)})'
-    assert len(filenames_sza) == 1, \
-        f'Error, sensor angles file missing in {dirname} ({str(filenames_sza)})'
-
-    data_saa = da.from_array(
-        rasterio.open(filenames_saa[0]).read(),
-        meta=np.array([], 'int16')
-        )
-    
-    data_sza = da.from_array(
-        rasterio.open(filenames_sza[0]).read(),
-        meta=np.array([], 'int16')
+    assert len(filenames_sensor) == 1, \
+        f'Error, sensor angles file missing in {dirname} ({str(filenames_sensor)})'
+    filename_sensor = filenames_sensor[0]
+    data_sensor = da.from_array(
+        np.memmap(filename_sensor,
+                  dtype='int16',
+                  mode='r',
+                  order='C',
+                  shape=(2, ds.totalheight, ds.totalwidth)),
+        meta=np.array([], 'int16'),
         )
 
-    ds[naming.sza] = (naming.dim2, (data_sza[0, :, :]/100.).astype('float32'))
-    ds[naming.saa] = (naming.dim2, (data_saa[0, :, :]/100.).astype('float32'))
+    ds[naming.vza] = (naming.dim2, (data_sensor[1, :, :]/100.).astype('float32'))
+    ds[naming.vaa] = (naming.dim2, (data_sensor[0, :, :]/100.).astype('float32'))
 
 
     # read solar angles
-    filenames_vaa = glob(os.path.join(dirname, 'LC*_VAA.TIF'))
-    filenames_vza = glob(os.path.join(dirname, 'LC*_VZA.TIF'))
-
-    assert len(filenames_vaa) == 1, \
-        f'Error, sensor angles file missing in {dirname} ({str(filenames_vaa)})'
-    assert len(filenames_vza) == 1, \
-        f'Error, sensor angles file missing in {dirname} ({str(filenames_vza)})'
-
-    data_vaa = da.from_array(
-        rasterio.open(filenames_vaa[0]).read(),
-        meta=np.array([], 'int16')
+    filenames_solar = glob(os.path.join(dirname, 'LC*_solar_B01.img'))
+    assert len(filenames_solar) == 1, \
+        'Error, solar angles file missing ({})'.format(str(filenames_solar))
+    filename_solar = filenames_solar[0]
+    data_solar = da.from_array(
+        np.memmap(filename_solar,
+                  dtype='int16',
+                  mode='r',
+                  order='C',
+                  shape=(2, ds.totalheight, ds.totalwidth)),
+        meta=np.array([], 'int16'),
         )
-    
-    data_vza = da.from_array(
-        rasterio.open(filenames_vza[0]).read(),
-        meta=np.array([], 'int16')
-        )
-
-    ds[naming.vza] = (naming.dim2, (data_vza[0, :, :]/100.).astype('float32'))
-    ds[naming.vaa] = (naming.dim2, (data_vaa[0, :, :]/100.).astype('float32'))
+    ds[naming.sza] = (naming.dim2, (data_solar[1, :, :]/100.).astype('float32'))
+    ds[naming.saa] = (naming.dim2, (data_solar[0, :, :]/100.).astype('float32'))
 
 
 def read_radiometry(ds, dirname, split, data_mtl, radiometry, chunks, use_gdal):
@@ -474,28 +457,28 @@ class TOA_READ:
         if data_mtl is None:
             data_mtl = read_metadata(dirname)
 
-        if radiometry == 'radiance':
-            param_mult = 'RADIANCE_MULT_BAND_{}'
-            param_add = 'RADIANCE_ADD_BAND_{}'
-        elif radiometry == 'reflectance':
+        if radiometry == 'reflectance':
             param_mult = 'REFLECTANCE_MULT_BAND_{}'
             param_add = 'REFLECTANCE_ADD_BAND_{}'
+        elif radiometry == 'radiance':
+            param_mult = 'RADIANCE_MULT_BAND_{}'
+            param_add = 'RADIANCE_ADD_BAND_{}'
         else:
             raise Exception('TOA_READ: `kind` should be `radiance` or `reflectance`')
 
         self.filename = os.path.join(
             dirname,
-            data_mtl['PRODUCT_CONTENTS']['FILE_NAME_BAND_{}'.format(band_index[b])])
+            data_mtl['PRODUCT_METADATA']['FILE_NAME_BAND_{}'.format(band_index[b])])
 
         if use_gdal:
             self.data = ArrayLike_GDAL(self.filename)
         else:
             self.data = rio.open_rasterio(self.filename).isel(band=0)
 
-        self.M = data_mtl['LEVEL1_RADIOMETRIC_RESCALING'][param_mult.format(band_index[b])]
-        self.A = data_mtl['LEVEL1_RADIOMETRIC_RESCALING'][param_add.format(band_index[b])]
+        self.M = data_mtl['RADIOMETRIC_RESCALING'][param_mult.format(band_index[b])]
+        self.A = data_mtl['RADIOMETRIC_RESCALING'][param_add.format(band_index[b])]
         self.data  = self.M * self.data + self.A
-        
+
         self.dtype = np.dtype(dtype)
         self.shape = self.data.shape
         self.ndim = 2
@@ -529,20 +512,20 @@ class BT_READ:
 
         self.filename = os.path.join(
             dirname,
-            data_mtl['PRODUCT_CONTENTS']['FILE_NAME_BAND_{}'.format(band_index[b])])
+            data_mtl['PRODUCT_METADATA']['FILE_NAME_BAND_{}'.format(band_index[b])])
 
         if use_gdal:
             self.data = ArrayLike_GDAL(self.filename)
         else:
             self.data = rio.open_rasterio(self.filename).isel(band=0)
-        
-        self.M = data_mtl['LEVEL1_RADIOMETRIC_RESCALING'][param_mult.format(band_index[b])]
-        self.A = data_mtl['LEVEL1_RADIOMETRIC_RESCALING'][param_add.format(band_index[b])]
+
+        self.M = data_mtl['RADIOMETRIC_RESCALING'][param_mult.format(band_index[b])]
+        self.A = data_mtl['RADIOMETRIC_RESCALING'][param_add.format(band_index[b])]
         self.data  = self.M * self.data + self.A
-        
+
         if radiometry == 'reflectance':
-            self.K1 = data_mtl['LEVEL1_THERMAL_CONSTANTS']['K1_CONSTANT_BAND_{}'.format(band_index[b])]
-            self.K2 = data_mtl['LEVEL1_THERMAL_CONSTANTS']['K2_CONSTANT_BAND_{}'.format(band_index[b])]
+            self.K1 = data_mtl['TIRS_THERMAL_CONSTANTS']['K1_CONSTANT_BAND_{}'.format(band_index[b])]
+            self.K2 = data_mtl['TIRS_THERMAL_CONSTANTS']['K2_CONSTANT_BAND_{}'.format(band_index[b])]
             self.data = self.K2/np.log(self.K1/self.data + 1)
 
         self.dtype = np.dtype(dtype)
@@ -552,6 +535,7 @@ class BT_READ:
     def __getitem__(self, keys):
         data = self.data[keys]
         return data.astype(self.dtype)
+
 
 def node(raw, data):
     if 'END_GROUP' in raw[0]:
@@ -626,15 +610,5 @@ def read_meta(filename):
 
     return data
 
-def read_meta_xml(filename):
-    data = 0
-
-    return data
-
 def get_sample():
-
-    dl = DownloadUSGS('LANDSAT-9', 1)
-    dl.query(start_date='2021-01-01', end_date='2022-02-01', product='landsat_tm_c2_l1',
-             bbox=(-4.15, -3.58, 46.16, 46.51))
-    prod = dl.list_prod_id[0]
-    return dl.get(prod)
+    return NotImplemented

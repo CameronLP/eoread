@@ -26,10 +26,10 @@ from threading import Lock
 
 from core import env
 from core.fileutils import mdir
-from ..common import bin_centers
-from ..raster import ArrayLike_GDAL
+from .common import bin_centers
+from .raster import ArrayLike_GDAL
 from core.save import to_netcdf
-from ..utils.naming import naming
+from .utils.naming import naming
 
 lock = Lock()
 

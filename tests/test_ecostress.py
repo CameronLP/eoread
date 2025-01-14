@@ -1,6 +1,6 @@
 import pytest
 
-from eoread.reader.ecostress import Level1_ECOSTRESS, get_sample
+from eoread.ecostress import Level1_ECOSTRESS, get_sample
 from . import generic
 
 

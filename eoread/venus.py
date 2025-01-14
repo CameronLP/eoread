@@ -35,9 +35,9 @@ from eoread.download_legacy import download_url
 from core.fileutils import mdir
 from core import env
 
-from ..common import DataArray_from_array, Interpolator, Repeat
+from .common import DataArray_from_array, Interpolator, Repeat
 from core.tools import raiseflag, merge
-from ..utils.naming import flags, naming as n
+from .utils.naming import flags, naming as n
 
 venus_band_names = {
         420 : 'B1', 443 : 'B2',

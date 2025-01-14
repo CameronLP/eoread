@@ -1,7 +1,7 @@
 
-from eoread.reader.dem import SRTM, GTOPO30
+from eoread.dem import SRTM, GTOPO30
 from core.tools import xrcrop
-from eoread.reader.landsat9_oli import Level1_L9_OLI
+from eoread.landsat9_oli import Level1_L9_OLI
 
 
 l1_path = '/archive2/proj/QTIS_TRISHNA/L8L9/USA/LC09_L1TP_014034_20220618_20230411_02_T1/'

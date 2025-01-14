@@ -1,6 +1,6 @@
 import pytest
 
-from eoread.reader.modis import Level1_MODIS, get_sample
+from eoread.modis import Level1_MODIS, get_sample
 from . import generic
 
 
