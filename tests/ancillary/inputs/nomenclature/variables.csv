@@ -1,8 +1,0 @@
-
-VARIABLE,                                           MERRA2,         CAMS,       ERA5
-
-local_temperature_at_10m,                           T10M,           ,           
-local_u_wind_at_10m,                                U10M,           u10,        
-local_v_wind_at_10m,                                V10M,           v10,        
-local_surface_wind_speed,                           SPEED,          ,           
-local_total_column_ozone,                           TO3,            gtco3,      tco3
