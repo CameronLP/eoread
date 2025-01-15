@@ -12,9 +12,9 @@ from datetime import datetime
 from pathlib import Path
 import xarray as xr
 import numpy as np
-from .utils.datetime_utils import round_date
-from .nasa import nasa_download
-from .utils.naming import naming
+from core.dates import round_date
+from eoread.nasa import nasa_download
+from eoread.utils.naming import naming
 from dateutil.parser import parse
 
 from core import env
