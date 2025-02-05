@@ -9,7 +9,6 @@ from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 from warnings import warn
-from sentinelsat import SentinelAPI
 from typing import Dict
 from eoread.download_S2 import get_sentinel2_image
 from core.uncompress import uncompress as uncomp
@@ -47,6 +46,7 @@ def download_sentinel(product, dirname):
     """
     Download a sentinel product to `dirname`
     """
+    from sentinelsat import SentinelAPI
     if 'scihub_id' in product:
         cred = get_auth('scihub')
         pid = product['scihub_id']
@@ -68,6 +68,7 @@ def download_sentinelapi(target: Path,
 
     Source: scihub, coda
     """
+    from sentinelsat import SentinelAPI
     api = SentinelAPI(**get_auth_dhus(source))
     res = list(api.query(filename=target.name+'*'))
     assert len(res) == 1
