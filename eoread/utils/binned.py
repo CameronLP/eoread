@@ -57,6 +57,30 @@ class Binner:
         return self.sums/self.counts
 
 
+def read_binned_flat(filename, varname, groupname="level-3_binned_data"):
+    """
+    Read binned product as a flat array, to be indexed by latlon2bin_sinu
+    """
+    ds = xr.open_dataset(
+        filename,
+        group=groupname,
+    )
+    neq = 2 * len(ds.BinIndex)
+    # size of the full sin grid
+    nfull = np.sum(ncols(neq))
+
+    bin_num = ds.BinList.data['bin_num']
+    data = ds[varname].data["sum"] / ds.BinList.data["weights"]
+    
+    data_full = np.zeros(nfull, dtype='float32')
+    data_full[bin_num] = data
+
+    out = xr.DataArray(data_full, dims=("bins"))
+    out.attrs.update({"neq": neq})
+
+    return out
+
+
 def read_binned(filename, varname, groupname='level-3_binned_data'):
     """
     Opens a binned product in sinusoidal projection as a 2-dim array
