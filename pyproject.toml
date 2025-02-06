@@ -11,7 +11,6 @@ python = ">=3.10"
 rasterio = "*"
 dask = "*"
 numpy = "<2"
-matplotlib = "*"
 shapely = "*"
 scipy = "*"
 netcdf4 = "*"
@@ -23,13 +22,12 @@ pyepr = "*"
 rioxarray = "*"
 core = {git = "https://github.com/hygeos/core.git"}
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "*"
 pytest-html = "*"
 pytest-xdist = "*"
-
-[tool.poetry.group.dev.dependencies]
-h5netcdf = "*"
+matplotlib = "*"
+# h5netcdf = "*"
 pyhdf = "*"
 h5py = "*"
 
