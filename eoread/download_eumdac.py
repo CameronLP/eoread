@@ -92,10 +92,6 @@ def query(collection, **kwargs):
         dtstart = datetime.datetime(2022, 11, 10, 8, 0)
         dtend = datetime.datetime(2022, 11, 10, 8, 15)
     '''
-    warnings.warn(
-        "This function is deprecated, please use class `DownloadEumetsat`",
-        DeprecationWarning,
-    )
     auth = download.get_auth('data.eumetsat.int')
     credentials = (auth['user'], auth['password'])   # key, secret
     token = eumdac.AccessToken(credentials)
@@ -109,10 +105,6 @@ def query(collection, **kwargs):
 
 
 def download_product(target, product):
-    warnings.warn(
-        "This function is deprecated, please use class `DownloadEumetsat`",
-        DeprecationWarning,
-    )
     with TemporaryDirectory() as tmpdir, product.open() as fsrc:
         target_compressed = Path(tmpdir)/fsrc.name
         with open(target_compressed, mode='wb') as fdst:
@@ -132,10 +124,6 @@ def download_eumdac(target: Path,
         - 'EO:EUM:DAT:0409' or 'EO:EUM:DAT:0577' for OLCI L1B FR
         - 'EO:EUM:DAT:0410' or 'EO:EUM:DAT:0578' for OLCI L1B RR
     """
-    warnings.warn(
-        "This function is deprecated, please use class `DownloadEumetsat`",
-        DeprecationWarning,
-    )
     if collections is None:
         if '-SEVI-' in target.name:
             collections = ['EO:EUM:DAT:MSG:HRSEVIRI']
@@ -149,6 +137,12 @@ def download_eumdac(target: Path,
                 'EO:EUM:DAT:0592', # https://data.eumetsat.int/data/map/EO:EUM:DAT:0592
                 'EO:EUM:DAT:0556', # https://data.eumetsat.int/data/map/EO:EUM:DAT:0556
                 ]
+        elif target.name.startswith("W_XX-EUMETSAT-Darmstadt,IMG+SAT,MTI1+FCI-1C-RRAD-HRFI-FD"):
+            # FCI Full resolution
+            collections = ["EO:EUM:DAT:0665"]
+        elif target.name.startswith("W_XX-EUMETSAT-Darmstadt,IMG+SAT,MTI1+FCI-1C-RRAD-FDHSI-FD"):
+            # FCI Normal resolution
+            collections = ["EO:EUM:DAT:0662"]
         else:
             raise ValueError()
     
