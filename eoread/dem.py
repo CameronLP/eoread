@@ -3,6 +3,7 @@ from core.fileutils import mdir
 from eoread.utils.naming import naming
 from eoread.common import bin_centers
 from core.uncompress import uncompress
+from core.env import getdir
 from eoread.download_legacy import download_url
 
 from os.path import exists, join, basename, getsize
@@ -146,7 +147,7 @@ def SRTM(directory=None, agg=1, missing=None, type_srtm=1, chunk=10000, verbose=
 
     srtm = 'SRTM' + str(type_srtm)
     if directory is None:
-        directory = mdir(config.get('dir_ancillary')/srtm)
+        directory = mdir(getdir("DIR_STATIC") / srtm)
 
     # concat the delayed dask objects for all tiles
     srtm = ArrayLike_SRTM(directory=directory, agg=agg, missing=missing, 
@@ -197,7 +198,7 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
     """
     
     if directory is None:
-        directory = mdir(config.get('dir_ancillary')/'GTOPO30')
+        directory = mdir(getdir("DIR_STATIC") / "GTOPO30")
 
     # concat the delayed dask objects for all tiles
     filepath = '/archive2/data/DEM/GLOBE/GTOPO30_DZ_MLUT.nc'

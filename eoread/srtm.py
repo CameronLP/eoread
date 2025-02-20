@@ -12,6 +12,8 @@ from os.path import exists, join
 from os import rename
 
 
+# Legacy module: please consider the new dem.SRTM class
+
 def read_hgt(filename):
     """
     Reads a compressed SRTM file (binary) to a numpy array
