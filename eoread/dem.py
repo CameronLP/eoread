@@ -1,4 +1,3 @@
-from core import env
 from core.fileutils import mdir
 from eoread.utils.naming import naming
 from eoread.common import bin_centers
@@ -16,6 +15,8 @@ import xarray as xr
 import numpy as np
 
 
+nextcloud_url = 'https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/'
+
 class ArrayLike_SRTM:
     """
     Array like object to manage SRTM tiles from usgs server 
@@ -29,8 +30,8 @@ class ArrayLike_SRTM:
         self.verbose    = verbose
         self.directory  = Path(directory)
 
-        static = mdir(env.getdir('DIR_STATIC'))
-        system(f'wget https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/download?files=valid_{self.srtm}_tiles.txt -c -O {static}/valid_{self.srtm}_tiles.txt')
+        static = mdir(self.directory)
+        system(f'wget {nextcloud_url}download?files=valid_{self.srtm}_tiles.txt -c -O {static}/valid_{self.srtm}_tiles.txt')
         self.tiles_list = np.loadtxt(f'{static}/valid_{self.srtm}_tiles.txt', dtype=str)
 
         self.tile_size  = 3601 if type_srtm == 1 else 1201
@@ -201,7 +202,9 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
         directory = mdir(getdir("DIR_STATIC") / "GTOPO30")
 
     # concat the delayed dask objects for all tiles
-    filepath = '/archive2/data/DEM/GLOBE/GTOPO30_DZ_MLUT.nc'
+    basename = 'GTOPO30_DZ_MLUT.nc'
+    system(f'wget {nextcloud_url}download?files={basename} -c -O {directory/basename}')
+    filepath = directory/basename
     gtopo = xr.open_dataset(filepath).elev.chunk(chunks=(chunk,chunk))
     gtopo = xr.where(gtopo > 0, gtopo, missing)
     revize_dims = dict(zip(['lat','lon'], ['latitude','longitude']))

@@ -4,7 +4,7 @@ from core.tools import xrcrop
 from eoread.landsat9_oli import Level1_L9_OLI
 
 
-l1_path = '/archive2/proj/QTIS_TRISHNA/L8L9/USA/LC09_L1TP_014034_20220618_20230411_02_T1/'
+l1_path = '/mnt/ceph/data/LANDSAT9/USA/LC09_L1TP_014034_20220618_20230411_02_T1/'
 
 def test_srtm():
     l1 = Level1_L9_OLI(l1_path)
