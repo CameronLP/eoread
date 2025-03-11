@@ -3,12 +3,13 @@ from tempfile import TemporaryDirectory
 from typing import Optional
 import eumdac
 from tqdm import tqdm
-from eoread import download_legacy as download
+from core.auth import get_auth
 from core.fileutils import filegen
 import shutil
 from core.uncompress import uncompress as func_uncompress
-import warnings
 
+
+# TODO: switch to SAND
 
 class DownloadEumetsat:
     def __init__(self, collection: str):
@@ -18,7 +19,7 @@ class DownloadEumetsat:
         Collections can be obtained with
             $ eumdac describe
         """
-        auth = download.get_auth('data.eumetsat.int')
+        auth = get_auth('data.eumetsat.int')
         credentials = (auth['user'], auth['password'])   # key, secret
         token = eumdac.AccessToken(credentials)
         self.datastore = eumdac.DataStore(token)
@@ -92,7 +93,7 @@ def query(collection, **kwargs):
         dtstart = datetime.datetime(2022, 11, 10, 8, 0)
         dtend = datetime.datetime(2022, 11, 10, 8, 15)
     '''
-    auth = download.get_auth('data.eumetsat.int')
+    auth = get_auth('data.eumetsat.int')
     credentials = (auth['user'], auth['password'])   # key, secret
     token = eumdac.AccessToken(credentials)
     datastore = eumdac.DataStore(token)
