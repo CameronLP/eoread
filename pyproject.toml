@@ -22,6 +22,7 @@ xarray = "*"
 pyepr = "*"
 rioxarray = "*"
 core = {git = "https://github.com/hygeos/core.git"}
+sand = {git = "https://github.com/hygeos/sand.git"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"

@@ -8,79 +8,10 @@ from core.fileutils import filegen
 import shutil
 from core.uncompress import uncompress as func_uncompress
 
+import warnings
+from sand.eumdac import DownloadEumDAC as DownloadEumetsat
 
-# TODO: switch to SAND
-
-class DownloadEumetsat:
-    def __init__(self, collection: str):
-        """
-        Download products from data.eumetsat.int
-
-        Collections can be obtained with
-            $ eumdac describe
-        """
-        auth = get_auth('data.eumetsat.int')
-        credentials = (auth['user'], auth['password'])   # key, secret
-        token = eumdac.AccessToken(credentials)
-        self.datastore = eumdac.DataStore(token)
-        self.collection = collection
-        self.selected_collection = self.datastore.get_collection(collection)
-
-    def query(self, **kwargs):
-        """
-        Query products from data.eumetsat.int
-
-        kwargs: query arguments. Example:
-            title = 'MSG4-SEVI-MSG15-0100-NA-20221110081242.653000000Z-NA',
-            dtstart = datetime.datetime(2022, 11, 10, 8, 0),
-            dtend = datetime.datetime(2022, 11, 10, 8, 15),
-            geo = Point(lon, lat),
-        
-        This method can be decorated by cache_json for storing the outputs.
-        Example:
-            cache_json('cache_result.json')(dld.query)(title='MSG4...')
-        """
-        # Retrieve datasets that match our filter
-        products = self.selected_collection.search(**kwargs)
-        return [str(p) for p in products]
-
-    def download(self, product_id: str, dir: Path, uncompress: bool=False) -> Path:
-        """
-        Download a product to directory
-
-        product_id: 'S3A_OL_1_ERR____20231214T232432_20231215T000840_20231216T015921_2648_106_358______MAR_O_NT_002.SEN3'
-        """
-        product = self.datastore.get_product(
-            product_id=product_id,
-            collection_id=self.collection,
-        )
-
-        @filegen()
-        def _download(target: Path):
-            with TemporaryDirectory() as tmpdir:
-                target_compressed = Path(tmpdir)/(product_id + '.zip')
-                with product.open() as fsrc, open(target_compressed, mode='wb') as fdst:
-                    pbar = tqdm(total=product.size*1e3, unit_scale=True, unit="B",
-                                initial=0, unit_divisor=1024, leave=False)
-                    pbar.set_description(f"Downloading {product_id}")
-                    while True:
-                        chunk = fsrc.read(1024)
-                        if not chunk:
-                            break
-                        fdst.write(chunk)
-                        pbar.update(len(chunk))
-                print(f'Download of product {product} finished.')
-                if uncompress:
-                    func_uncompress(target_compressed, target.parent)
-                else:
-                    shutil.move(target_compressed, target.parent)
-
-        target = dir/(product_id if uncompress else (product_id + '.zip'))
-
-        _download(target)
-
-        return target
-
+warnings.warn('Please use DownloadEumDAC class from SAND library')
 
 def query(collection, **kwargs):
     '''

@@ -6,6 +6,9 @@ from urllib.request import urlopen, HTTPError
 
 import requests
 
+import warnings
+warnings.warn('eoread.download_S2 module will be deprecated. Please use DownloadCDSE from SAND library instead')
+
 """
 Copied from fels and adapted to work with L2A files
 https://github.com/vascobnunes/fetchLandsatSentinelFromGoogleCloud
