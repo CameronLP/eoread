@@ -1,38 +1,58 @@
-[tool.poetry]
+[project]
 name = "eoread"
-version = "0.3-dev"
-license = "Apache 2.0"
+authors = [{name = "HYGEOS team"}]
 description = "Modular implementation of satellite data input/output relying on xarray."
-authors = ["HYGEOS Team"]
+license = "Apache 2.0"
+version = "0.3-dev"
+requires-python = ">= 3.11"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.10"
-rasterio = "*"
-dask = "*"
-numpy = "<2"
-shapely = "*"
-netcdf4 = "*"
-pyproj = "*"
-pysolar = "*"
-pyhdf = "*"
-lxml = "*"
-h5netcdf = "*"
-xarray = "*"
-pyepr = "*"
-rioxarray = "*"
-core = {git = "https://github.com/hygeos/core.git"}
-sand = {git = "https://github.com/hygeos/sand.git"}
-
-[tool.poetry.group.dev.dependencies]
-pytest = "*"
-pytest-html = "*"
-pytest-xdist = "*"
-matplotlib = "*"
-# h5netcdf = "*"
-pyhdf = "*"
-h5py = "*"
+dependencies = [
+    "core @ git+https://github.com/hygeos/core.git",
+    "sand @ git+https://github.com/hygeos/sand.git",
+    "lxml",
+    "pyproj",
+    "rioxarray",
+    "cdsapi",
+    "pyepr",
+    "eumdac",
+    "pyhdf",
+    "pysolar",
+    "fs"]
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+eoread = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+tests = "pytest tests/"
+
+[tool.pixi.dependencies]
+pytest = "*"
+pytest-html = "*"
+pytest-xdist = "*"
+numpy = "<2"
+lxml = "*"
+xarray = "*"
+pandas = "*"
+dask = "*"
+pyproj = "*"
+rioxarray = "*"
+matplotlib-base = "*"
+cdsapi = "*"
+pyepr = "*"
+toml = "*"
+python-dotenv = "*"
+h5py = "*"
+h5netcdf = "*"
+eumdac = "*"
+pyhdf = "*"
+libgdal-jp2openjpeg = "*"
+pysolar = "*"
+fs = "*"
