@@ -14,7 +14,7 @@ from eoread.common import DataArray_from_array, timeit
 from eoread import msi
 from eoread.gsw import GSW
 from core.fileutils import PersistentList
-from core.interpolate import selinterp
+from core.interpolate import interp, Linear
 from core.tools import split, merge, wrap, raiseflag, convert, locate, xrcrop
 from time import sleep
 from pathlib import Path
@@ -442,11 +442,10 @@ def test_xrcrop_gsw(request, method):
         gsw = gsw.compute()
 
     with timeit("sel"):
-        data = selinterp(
+        data = interp(
             gsw,
-            latitude=ds.latitude,
-            longitude=ds.longitude,
-            method=method,
+            latitude=Linear(ds.latitude),
+            longitude=Linear(ds.longitude),
         )
     with timeit("compute"):
         print(data.dtype)
