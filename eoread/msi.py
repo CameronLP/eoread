@@ -150,6 +150,7 @@ def Level1_MSI(dirname,
         np.isnan(ds.vza)
         )
 
+    ds = ds.drop_vars('spatial_ref')
     return ds
 
 
