@@ -371,14 +371,20 @@ def read_OLCI(dirname,
             ds.vza,
             dtype=naming.flags_dtype)
         qf = getflags(ds.quality_flags)
-        raiseflag(ds[naming.flags],
-                    'LAND',
-                    flags['LAND'],
-                    ds.quality_flags & qf['land'])
-        raiseflag(ds[naming.flags],
-                    'L1_INVALID',
-                    flags['L1_INVALID'],
-                    ds.quality_flags & qf['invalid'])
+
+        # raise LAND mask when land is raised but not fresh_inland_water
+        raiseflag(
+            ds[naming.flags],
+            "LAND",
+            flags["LAND"],
+            ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
+        )
+        raiseflag(
+            ds[naming.flags],
+            "L1_INVALID",
+            flags["L1_INVALID"],
+            ds.quality_flags & qf["invalid"],
+        )
 
     # attributes
     dstart = datetime.strptime(ds.start_time, '%Y-%m-%dT%H:%M:%S.%fZ')
