@@ -1,0 +1,32 @@
+
+[ ] Lecture de donnée: Refactoriser le système de coordonnées de bandes
+    >> système de calcul de bande central 
+    /!\ dans eotool
+    /!\ nécessite la SRF 
+        >> approvisionnement également dans eotool
+        
+[ ] Revoir la philosophie de non lecture des données
+    (ex: donnée exogène etc)
+    
+[ ] Implémenter du logging avec core
+    [ ] Infos de débug sur l'intérieur du process
+        >>> step 1
+        >>> step 2
+        etc
+
+[ ] Documenter / Commenter le code 
+    [ ] Doctstring compatible sphinx
+    
+[ ] Convervation des structures lazy dask jusque en post lecture
+    >> Ne jamais déclencher l'arbre de calcul 
+
+[ ] Tests
+    [ ] Revoir les tests génériques
+    [ ] Lancer les tests sur des exemples concrets
+    [ ] Tester l'Autodescription des champs lus
+    
+[ ] Rendre optionnelle la dépendence sand
+
+[ ] Nettoyer le repo
+    [ ] enlever les approvisionneurs en donnée ancillaire
+    [ ] enlever les approvisionneurs en donnée L1 (remplacé par sand)
