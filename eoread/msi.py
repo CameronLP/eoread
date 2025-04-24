@@ -37,8 +37,8 @@ import xarray as xr
 import rioxarray as rio
 from lxml import objectify
 
-from eoread.download_legacy import download_S2_google, download_url
-from core import env
+from core.download import download_url
+from core import env, log
 from core.fileutils import mdir
 
 from core.tools import merge, raiseflag
@@ -126,6 +126,7 @@ def Level1_MSI(dirname,
     ds.attrs[n.input_directory] = str(dirname.parent)
 
     # lat-lon
+    if isinstance(chunks, int): chunks = [chunks]*2
     msi_read_latlon(ds, geocoding, chunks)
 
     # msi_read_geometry
@@ -177,7 +178,7 @@ def msi_read_toa(ds, granule_dir, quantif, radio_add_offset, split, chunks):
 
         arr = ((rio.open_rasterio(
             filename,
-            chunks=chunks,
+            chunks=[1]+list(chunks),
         ) + radio_add_offset[iband])/quantif).astype('float32')
         arr = arr.squeeze('band')
         arr = arr.drop('x').drop('y')
@@ -364,9 +365,24 @@ def Level2_MSI(dirname):
     raise NotImplementedError
 
 
-def get_sample() -> Path:
-    product_name = 'S2A_MSIL1C_20190419T105621_N0207_R094_T31UDS_20190419T130656'
-    return download_S2_google(product_name, env.getdir('DIR_SAMPLES'))
+def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    try: 
+        from core.cache import cache_dataframe
+        from sand.copernicus_dataspace import DownloadCDSE
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
+    
+    cachefile = env.getdir('DIR_STATIC')/'query_s2.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
+    
+    sensor = 'SENTINEL-2-MSI'
+    params = products[sensor][f'level{level}']
+    dl = DownloadCDSE(sensor, level)
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
     
 
 

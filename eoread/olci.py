@@ -9,7 +9,7 @@ import numpy as np
 from xml.dom.minidom import parseString
 from datetime import datetime
 from pathlib import Path
-from core import env
+from core import env, log
 
 
 from .eo import init_Rtoa
@@ -51,23 +51,24 @@ central_wavelength_olci = {
 }
 
 
-def get_sample(kind: str, dir_samples: Optional[Path] = None) -> Path:
-    from eoread.download_eumdac import download_eumdac
-
-    pname = {
-        # France
-        'level1_fr': 'S3B_OL_1_EFR____20220616T101508_20220616T101808_20220617T153119'
-                     '_0179_067_122_2160_MAR_O_NT_002.SEN3',
-        # Rio de la Plata
-        'level2_fr': 'S3A_OL_2_WFR____20240115T131414_20240115T131714_20240115T145301'
-                     '_0179_108_038_3600_MAR_O_NR_003.SEN3'
-    }[kind]
-
-    if dir_samples is None:
-        dir_samples = env.getdir("DIR_SAMPLES")
-    target = dir_samples/pname
-    download_eumdac(target)
-    return target
+def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    try: 
+        from core.cache import cache_dataframe
+        from sand.copernicus_dataspace import DownloadCDSE
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
+        
+    cachefile = env.getdir('DIR_STATIC')/'query_olci.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
+    
+    sensor = 'SENTINEL-3-OLCI-FR'
+    params = products[sensor][f'level{level}']
+    dl = DownloadCDSE(sensor, level)
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 
 
 def Level1_OLCI(dirname,

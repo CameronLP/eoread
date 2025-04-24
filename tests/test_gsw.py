@@ -5,11 +5,12 @@ import pytest
 from matplotlib import pyplot as plt
 from eoread.gsw import GSW, read_tile
 from tempfile import TemporaryDirectory
-from eoread.sample_products import get_sample_products
 from eoread.olci import Level1_OLCI, get_sample
 from . import conftest
 
-p = get_sample_products()
+
+@pytest.fixture(scope='module')
+def level1_path(): return get_sample()
 
 @pytest.mark.parametrize('agg', [4, 8])
 def test_single_tile(request, agg):
@@ -44,12 +45,11 @@ def test_gsw_zoom(request):
     conftest.savefig(request)
 
 
-def test_index(request):
+def test_index(request, level1_path):
     """
     Check whether we can do fancy indexing
     """
-    product = get_sample('level1_fr')
-    l1 = Level1_OLCI(product)
+    l1 = Level1_OLCI(level1_path)
     l1 = l1.isel(
         y=slice(None, None, 10),
         x=slice(None, None, 10))

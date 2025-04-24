@@ -5,12 +5,12 @@
 import tempfile
 import numpy as np
 import pytest
-from eoread.olci import Level1_OLCI
-from eoread.sample_products import get_sample_products
+from eoread.olci import Level1_OLCI, get_sample
 from eoread.process import blockwise_method
 from dask.diagnostics import ProgressBar
 
-p = get_sample_products()
+@pytest.fixture(scope='module')
+def level1_path(): return get_sample()
 
 class Calib:
     def __init__(self, bands):
@@ -36,12 +36,11 @@ class Calib:
     def calc(self, Rtoa):
         return Rtoa * self.coeff, Rtoa[0,:,:] > 0
 
-@pytest.mark.parametrize('product', [p['prod_S3_L1_20190430']])
-def test_processing(product):
+def test_processing(level1_path):
     '''
     Try processing a Sentinel file
     '''
-    ds = Level1_OLCI(product['path'], init_reflectance=True)
+    ds = Level1_OLCI(level1_path, init_reflectance=True)
 
     ds = ds.chunk({'bands': -1})
 
@@ -63,10 +62,9 @@ class FakeModule:
         pass
 
 
-@pytest.mark.parametrize('product', [p['prod_S3_L1_20190430']])
-def test_processing2(product):
+def test_processing2(level1_path):
     '''
     Try processing a Sentinel file
     '''
-    ds = Level1_OLCI(product['path'], init_reflectance=True)
+    ds = Level1_OLCI(level1_path, init_reflectance=True)
     print(ds)

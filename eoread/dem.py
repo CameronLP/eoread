@@ -3,7 +3,7 @@ from eoread.utils.naming import naming
 from eoread.common import bin_centers
 from core.uncompress import uncompress
 from core.env import getdir
-from eoread.download_legacy import download_url
+from core.download import download_url
 
 from os.path import exists, join, basename, getsize
 from os import remove, system

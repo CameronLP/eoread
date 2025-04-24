@@ -31,7 +31,7 @@ import pandas as pd
 import pyproj
 import xarray as xr
 import rioxarray as rio
-from eoread.download_legacy import download_url
+from core.download import download_url
 from core.fileutils import mdir
 from core import env
 

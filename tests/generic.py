@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from core.tools import datetime
+from core.save import to_netcdf
 from eoread.utils.naming import naming as n
 
 
@@ -137,4 +138,4 @@ def test_subset(ds):
     with tempfile.TemporaryDirectory() as tmpdir,\
             dask.config.set(scheduler='single-threaded'):
         target = os.path.join(tmpdir, 'test.nc')
-        sub.to_netcdf(target)
+        to_netcdf(sub, target)

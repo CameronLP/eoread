@@ -13,8 +13,8 @@ from .generic import param, indices, scheduler  # noqa (fixtures)
 from core.conftest import savefig
 
 
-olci_level1 = pytest.fixture(lambda: get_sample('level1_fr'))
-olci_level2 = pytest.fixture(lambda: get_sample('level2_fr'))
+olci_level1 = pytest.fixture(lambda: get_sample(1), scope='module')
+olci_level2 = pytest.fixture(lambda: get_sample(2), scope='module')
 
 
 def test_olci_level1(olci_level1):

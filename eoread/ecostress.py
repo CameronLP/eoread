@@ -1,5 +1,5 @@
 from core.tools import merge
-from core import env
+from core import env, log
 from eoread.utils.naming import naming as n
 from pathlib import Path
 from os.path import exists
@@ -218,5 +218,21 @@ def parse_attrs(stack, out_dic={}):
         return parse_attrs(stack[1:], out_dic)
     
 
-def get_sample():
-    return NotImplemented
+def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    try: 
+        from core.cache import cache_dataframe
+        from sand.nasa import DownloadNASA
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
+        
+    cachefile = env.getdir('DIR_STATIC')/'query_ecostress.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
+    
+    sensor = 'ECOSTRESS'
+    params = products[sensor][f'level{level}']
+    dl = DownloadNASA(sensor, level)
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))

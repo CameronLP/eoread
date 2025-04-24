@@ -3,7 +3,6 @@
 
 import numpy as np
 import pytest
-from eoread.sample_products import get_sample_products
 
 from eoread import eo
 from eoread.landsat9_oli import LATLON_GDAL, LATLON_NOGDAL, TOA_READ, Level1_L9_OLI, get_sample
@@ -17,9 +16,8 @@ except ModuleNotFoundError:
     gdal = None
 
 
-@pytest.fixture
-def sample_landsat9_oli():
-    return get_sample()
+@pytest.fixture(scope='module')
+def sample_landsat9_oli(): return get_sample()
 
 @pytest.mark.parametrize('lat_or_lon', ['lat', 'lon'])
 def test_latlon(sample_landsat9_oli, lat_or_lon):

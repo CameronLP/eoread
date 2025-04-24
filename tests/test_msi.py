@@ -5,7 +5,6 @@
 from pathlib import Path
 import pytest
 import xarray as xr
-from eoread.download_legacy import download_S2_google, download_sentinelapi
 from eoread.msi import Level1_MSI, get_sample, get_SRF
 from . import generic
 from eoread import eo
@@ -16,9 +15,8 @@ from .generic import param, indices  # noqa
 resolutions = ['10', '20', '60']
 
 
-@pytest.fixture
-def level1_msi() -> Path:
-    return get_sample()
+@pytest.fixture(scope="module")
+def level1_msi() -> Path: return get_sample(1)
 
 @pytest.fixture(params=resolutions)
 def resolution(request):

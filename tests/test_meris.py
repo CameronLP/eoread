@@ -4,19 +4,15 @@
 
 import pytest
 from matplotlib import pyplot as plt
-from eoread.sample_products import product_getter
 from eoread import eo
-from eoread.meris import Level1_MERIS
+from eoread.meris import Level1_MERIS, get_sample
 
 from . import generic
 from .generic import indices, param
 from .conftest import savefig
 
 
-product = pytest.fixture(params=[
-    # 'prod_meris_L1_20060822',
-    'prod_meris_L1_20080701',
-])(product_getter)
+product = pytest.fixture(scope='module')(get_sample)
 
 
 @pytest.mark.parametrize('split', [True, False])

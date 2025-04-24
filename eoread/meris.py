@@ -306,3 +306,5 @@ class READ_BITMASK:
 
         return raster.data
 
+def get_sample() -> Path:
+    return NotImplemented
