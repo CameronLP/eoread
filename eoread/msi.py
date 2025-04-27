@@ -316,9 +316,7 @@ class LATLON:
         self.kind = kind
 
         code = geocoding.find('HORIZONTAL_CS_CODE').text
-
-        # self.proj = pyproj.Proj('EPSG:{}'.format(code))
-        self.proj = pyproj.Proj('+init={}'.format(code))
+        self.proj = pyproj.Proj(code)
 
         # lookup position in the UTM grid
         for e in geocoding.findall('Geoposition'):

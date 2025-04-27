@@ -192,7 +192,8 @@ def read_OLCI(dirname,
         if '_unc' in filename:
             continue
         fname = os.path.join(dirname, filename)
-        prod_list.append(xr.open_dataset(fname, chunks=chunks, engine=engine)[os.path.basename(fname)[:-3]])
+        data = xr.open_dataset(fname, engine=engine).chunk(chunks=chunks)
+        prod_list.append(data[os.path.basename(fname)[:-3]])
         bands.append(olci_band_names[idx])
 
     index_bands = xr.IndexVariable('bands', bands)
@@ -204,7 +205,7 @@ def read_OLCI(dirname,
 
     # Geo coordinates
     geo_coords_file = os.path.join(dirname, 'geo_coordinates.nc')
-    geo = xr.open_dataset(geo_coords_file, chunks=chunks, engine=engine)
+    geo = xr.open_dataset(geo_coords_file, engine=engine).chunk(chunks=chunks)
     for k in geo.variables:
         ds[k] = geo[k].astype('float32')
     ds.attrs.update(geo.attrs)
@@ -222,10 +223,10 @@ def read_OLCI(dirname,
 
     # tie geometry interpolation
     tie_geom_file = os.path.join(dirname, 'tie_geometries.nc')
-    tie_ds = xr.open_dataset(tie_geom_file, chunks=-1, engine=engine)
+    tie_ds = xr.open_dataset(tie_geom_file, engine=engine).chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
-                tie_columns=np.arange(tie_ds.dims['tie_columns'])*ds.ac_subsampling_factor,
-                tie_rows=np.arange(tie_ds.dims['tie_rows'])*ds.al_subsampling_factor,
+                tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ds.ac_subsampling_factor,
+                tie_rows=np.arange(tie_ds.sizes['tie_rows'])*ds.al_subsampling_factor,
                 )
     assert tie_ds.tie_columns[0] == ds.columns[0]
     assert tie_ds.tie_columns[-1] == ds.columns[-1]
@@ -274,10 +275,10 @@ def read_OLCI(dirname,
 
     # tie meteo interpolation
     tie_meteo_file = os.path.join(dirname, 'tie_meteo.nc')
-    tie = xr.open_dataset(tie_meteo_file, chunks=-1, engine=engine)
+    tie = xr.open_dataset(tie_meteo_file, engine=engine).chunk(chunks=-1)
     tie = tie.assign_coords(
-                tie_columns = np.arange(tie.dims['tie_columns'])*ds.ac_subsampling_factor,
-                tie_rows = np.arange(tie.dims['tie_rows'])*ds.al_subsampling_factor,
+                tie_columns = np.arange(tie.sizes['tie_columns'])*ds.ac_subsampling_factor,
+                tie_rows = np.arange(tie.sizes['tie_rows'])*ds.al_subsampling_factor,
                 )
     assert tie.tie_columns[0] == ds.columns[0]
     assert tie.tie_columns[-1] == ds.columns[-1]
@@ -318,19 +319,18 @@ def read_OLCI(dirname,
             ds[var_to+'_tie'] = tie[var_from]
 
     # check subsampling factors
-    assert ((ds.dims['columns']-1)
-            == ds.ac_subsampling_factor*(tie_ds.dims['tie_columns']-1))
-    assert ((ds.dims['rows']-1)
-            == ds.al_subsampling_factor*(tie_ds.dims['tie_rows']-1))
+    assert ((ds.sizes['columns']-1)
+            == ds.ac_subsampling_factor*(tie_ds.sizes['tie_columns']-1))
+    assert ((ds.sizes['rows']-1)
+            == ds.al_subsampling_factor*(tie_ds.sizes['tie_rows']-1))
 
     # instrument data
     instrument_data_file = os.path.join(dirname, 'instrument_data.nc')
     instrument_data = xr.open_dataset(instrument_data_file,
-                                      chunks=chunks,
                                       mask_and_scale=False,
                                       # this variable has duplicate dimensions, drop it
                                       drop_variables='relative_spectral_covariance',
-                                      engine=engine)
+                                      engine=engine).chunk(chunks=chunks)
     if level == 'level2':
         instrument_data = instrument_data.rename({'bands': 'bands_full'})
         bands_full = list(olci_band_names.values())
@@ -342,27 +342,27 @@ def read_OLCI(dirname,
     if level == 'level1':
         # quality flags
         qf_file = os.path.join(dirname, 'qualityFlags.nc')
-        qf = xr.open_dataset(qf_file, chunks=chunks, engine=engine)
+        qf = xr.open_dataset(qf_file, engine=engine).chunk(chunks=chunks)
         ds['quality_flags'] = qf.quality_flags
     else:
         # chl_nn
         fname = os.path.join(dirname, 'chl_nn.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
+        qf = xr.open_dataset(fname, engine=engine).chunk(chunks=chunks)
         ds['chl_nn'] = qf.CHL_NN
 
         # chl_oc4me
         fname = os.path.join(dirname, 'chl_oc4me.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
+        qf = xr.open_dataset(fname, engine=engine).chunk(chunks=chunks)
         ds['chl_oc4me'] = qf.CHL_OC4ME
 
         # quality flags
         fname = os.path.join(dirname, 'wqsf.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
+        qf = xr.open_dataset(fname, engine=engine).chunk(chunks=chunks)
         ds['wqsf'] = qf.WQSF
 
         # aerosol properties
         fname = os.path.join(dirname, 'w_aer.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
+        qf = xr.open_dataset(fname, engine=engine).chunk(chunks=chunks)
         ds['A865'] = qf.A865
         ds['T865'] = qf.T865
 

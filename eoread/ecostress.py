@@ -28,16 +28,14 @@ def Level1_ECOSTRESS(filepath: Path | str,
                      split: bool = False):
     # Revize variables
     filepath = Path(filepath)
-    try:
-        raw = xr.open_dataset(filepath, group='HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields')
-    except ValueError as e: 
-        raise ImportError(f"You must install 'h5netcdf' library to use ECOSTRESS reader, got message : {e}")
-    raw = raw.chunk(chunks=chunks)
+    data = xr.open_datatree(filepath, phony_dims='sort')
+    raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
+    raw = raw.to_dataset().chunk(chunks=chunks)
     
     # Read Metadata
-    granule_mtd = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata')
-    attributes  = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata')
-    info = str(xr.open_dataset(filepath, group='HDFEOS INFORMATION')['StructMetadata.0'].values)
+    granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
+    attributes  = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
+    info = str(data['HDFEOS INFORMATION']['StructMetadata.0'].values)
     
     # Change radiometry of input data 
     if LUT_file:
@@ -81,16 +79,14 @@ def Level2_ECOSTRESS(filepath: Path | str,
                      split: bool = False):
     # Revize variables
     filepath = Path(filepath)
-    try:
-        raw = xr.open_dataset(filepath, group='HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields')
-    except ValueError as e: 
-        raise ImportError(f"You must install 'h5netcdf' library to use ECOSTRESS reader, got message : {e}")
-    l1 = raw.chunk(chunks=chunks)
+    data = xr.open_datatree(filepath, phony_dims='sort')
+    raw = data['HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields']
+    l1 = raw.to_dataset().chunk(chunks=chunks)
     
     # Read Metadata
-    granule_mtd = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata')
-    attributes  = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata')
-    info = str(xr.open_dataset(filepath, group='HDFEOS INFORMATION')['StructMetadata.0'].values)
+    granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
+    attributes  = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
+    info = str(data['HDFEOS INFORMATION']['StructMetadata.0'].values)
     
     # Change dimensions name and update coordinates
     new_dims, coords = [n.rows,n.columns], {}
