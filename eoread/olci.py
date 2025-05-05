@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-
-from typing import Optional
 import xarray as xr
 import os
 import numpy as np

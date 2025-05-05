@@ -1,9 +1,10 @@
 from pathlib import Path
 import xarray as xr
-from eotools.solar_irradiance import solar_irradiance
+# from eotools.solar_irradiance import solar_irradiance
 from core.interpolate import interp, Linear
 from dateutil.parser import parse
 from eoread.utils.naming import naming
+from core.naming import names
 
 
 def Level1_HYPSO(level1_product: Path) -> xr.Dataset:
@@ -32,14 +33,14 @@ def Level1_HYPSO(level1_product: Path) -> xr.Dataset:
     )
     ds = ds.assign_coords(bands=[int(ds_products[x].wave_name) for x in ds_products])
 
-    # read solar irradiance
-    F0 = solar_irradiance("LISIRD", variant="1nm")
-    ds["F0"] = interp(F0, wavelength=Linear(ds.wav))
-    # convert it to a unit compatible with Ltoa
-    assert ds.F0.units == "W m-2 nm-1"
-    ds["F0"] = ds.F0 * 1000
-    ds.F0.attrs.update(units="W m-2 um-1")
-    ds = ds.rename(lines="y", samples="x")
+    # # read solar irradiance
+    # F0 = solar_irradiance("LISIRD", variant="1nm")
+    # ds["F0"] = interp(F0, wavelength=Linear(ds.wav))
+    # # convert it to a unit compatible with Ltoa
+    # assert ds.F0.units == "W m-2 nm-1"
+    # ds["F0"] = ds.F0 * 1000
+    # ds.F0.attrs.update(units="W m-2 um-1")
+    # ds = ds.rename(lines="y", samples="x")
 
     # acquisition datetime
     ds.attrs.update(

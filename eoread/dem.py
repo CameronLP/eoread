@@ -3,7 +3,7 @@ from eoread.utils.naming import naming
 from eoread.common import bin_centers
 from core.uncompress import uncompress
 from core.env import getdir
-from core.download import download_url
+from core.download import *
 
 from os.path import exists, join, basename, getsize
 from os import remove, system
@@ -203,7 +203,7 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
 
     # concat the delayed dask objects for all tiles
     basename = 'GTOPO30_DZ_MLUT.nc'
-    system(f'wget {nextcloud_url}download?files={basename} -c -O {directory/basename}')
+    download_nextcloud(basename, directory, if_exists='skip')
     filepath = directory/basename
     gtopo = xr.open_dataset(filepath).elev.chunk(chunks=(chunk,chunk))
     gtopo = xr.where(gtopo > 0, gtopo, missing)

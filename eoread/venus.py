@@ -33,7 +33,7 @@ import xarray as xr
 import rioxarray as rio
 from core.download import download_url
 from core.fileutils import mdir
-from core import env
+from core import env, log
 
 from .common import DataArray_from_array, Interpolator, Repeat
 from core.tools import raiseflag, merge
@@ -467,20 +467,21 @@ def get_SRF(
 
     return ds
 
-def get_sample(kind='level1') -> Path:
-    """
-    Returns path to a sample VENUS product
-
-    (should be existing)
-    """
-    dir_venus = env.getdir('DIR_SAMPLES')/'VENUS'
-    if kind == 'level1':
-        product = dir_venus/'VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/'
-    elif kind == 'level2':
-        product = dir_venus/'VENUS-XS_20230116-112657-000_L2A_VILAINE_C_V3-1/'
-    else:
-        raise ValueError(kind)
-
-    assert product.exists()
-
-    return product
+def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    try: 
+        from core.cache import cache_dataframe
+        from sand.theia import DownloadTHEIA
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
+        
+    cachefile = env.getdir('DIR_STATIC')/'query_venus.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
+    
+    sensor = 'VENUS'
+    params = products[sensor][f'level{level}']
+    dl = DownloadTHEIA(sensor, level)
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
