@@ -7,8 +7,6 @@ version = "0.3-dev"
 requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [
-    "core @ git+https://github.com/hygeos/core.git",
-    "sand @ git+https://github.com/hygeos/sand.git",
     "lxml",
     "pyproj",
     "rioxarray",
@@ -17,7 +15,9 @@ dependencies = [
     "eumdac",
     "pyhdf",
     "pysolar",
-    "fs"]
+    "fs", 
+    "core @ git+https://github.com/hygeos/core@v2",
+    "sand @ git+https://github.com/hygeos/sand@V2"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -57,3 +57,13 @@ libgdal-jp2openjpeg = "*"
 pysolar = "*"
 fs = "*"
 ipykernel = "*"
+
+[tool.pixi.environments]
+default = { features = ["hyp", "sys"], solve-group = "default" }
+
+[tool.pixi.feature.sys.dependencies]
+[tool.pixi.feature.hyp.dependencies]
+xarray = "*"
+dask = "*"
+scipy = "*"
+numpy = "<2"

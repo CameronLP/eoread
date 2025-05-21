@@ -1,7 +1,6 @@
-from core.fileutils import mdir
+from core.files import mdir, uncompress
 from eoread.utils.naming import naming
 from eoread.common import bin_centers
-from core.uncompress import uncompress
 from core.env import getdir
 from core.download import *
 

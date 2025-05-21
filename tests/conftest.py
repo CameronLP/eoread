@@ -1,1 +1,1 @@
-from core.conftest import *
+from core.tests.conftest import *

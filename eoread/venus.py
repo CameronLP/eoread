@@ -32,7 +32,7 @@ import pyproj
 import xarray as xr
 import rioxarray as rio
 from core.download import download_url
-from core.fileutils import mdir
+from core.files import mdir
 from core import env, log
 
 from .common import DataArray_from_array, Interpolator, Repeat

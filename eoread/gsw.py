@@ -25,10 +25,9 @@ from urllib.request import urlopen
 from threading import Lock
 
 from core import env
-from core.fileutils import mdir
+from core.files import mdir, to_netcdf
 from .common import bin_centers
 from .raster import ArrayLike_GDAL
-from core.save import to_netcdf
 from .utils.naming import naming
 
 lock = Lock()

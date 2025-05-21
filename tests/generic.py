@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from core.tools import datetime
-from core.save import to_netcdf
+from core.files import to_netcdf
 from eoread.utils.naming import naming as n
 
 

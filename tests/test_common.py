@@ -13,8 +13,8 @@ from eoread.common import Interpolator, ceil_dt, floor_dt
 from eoread.common import DataArray_from_array, timeit
 from eoread import msi
 from eoread.gsw import GSW
-from core.fileutils import PersistentList
-from core.interpolate import interp, Linear
+from core.files.fileutils import PersistentList
+from core.math import interp, Linear
 from core.tools import split, merge, wrap, raiseflag, convert, locate, xrcrop
 from time import sleep
 from pathlib import Path

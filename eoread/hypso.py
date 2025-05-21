@@ -1,10 +1,10 @@
 from pathlib import Path
 import xarray as xr
 # from eotools.solar_irradiance import solar_irradiance
-from core.interpolate import interp, Linear
+from core.math import interp, Linear
 from dateutil.parser import parse
 from eoread.utils.naming import naming
-from core.naming import names
+from core.geo import n
 
 
 def Level1_HYPSO(level1_product: Path) -> xr.Dataset:

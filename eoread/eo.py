@@ -10,13 +10,12 @@ import xarray as xr
 from numpy import cos, radians, sqrt
 
 # backward compatibility:
-from core.save import to_netcdf
+from core.files import to_netcdf
 from core.tools import datetime
 from core.tools import (contains, getflag, haversine, locate,
                         merge, raiseflag, split, sub, sub_pt, sub_rect,
                         wrap, getflags)
-
-from .utils.naming import naming
+from core.geo import n
 
 
 def init_Rtoa(ds: xr.Dataset):
@@ -28,8 +27,8 @@ def init_Rtoa(ds: xr.Dataset):
     init_geometry(ds)
 
     # TOA reflectance
-    if naming.Rtoa not in ds:
-        ds[naming.Rtoa] = np.pi*ds[naming.Ltoa]/(ds.mus*ds[naming.F0])
+    if n.rtoa.name not in ds:
+        ds[n.rtoa.name] = np.pi*ds[n.ltoa.name]/(ds.mus*ds[n.F0.name])
 
     return ds
 
