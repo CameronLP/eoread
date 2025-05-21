@@ -4,30 +4,15 @@ from eoread.ecostress import Level1_ECOSTRESS, get_sample
 from . import generic
 
 
-@pytest.fixture(scope="module")
-def level1_ecostress(): return get_sample(1)
+# @pytest.fixture(scope="module")
+# def level1_ecostress(): return get_sample(1)
+
+@pytest.fixture()
+def level1_ecostress(): return "/home/nathan/proj/eoread/data/sample_products/ECOv002_L1CG_RAD_30110_005_20231028T094350_0711_01.h5"
 
 @pytest.fixture()
 def product_ecostress(level1_ecostress):
     return Level1_ECOSTRESS(level1_ecostress)
-
-@pytest.mark.parametrize('radiometry',['radiance','reflectance'])
-def test_radiometry(level1_ecostress, radiometry):
-    l1 = Level1_ECOSTRESS(level1_ecostress, radiometry=radiometry)
-    
-    if radiometry == 'radiance':
-        assert 'BT' not in l1 and 'Ltoa_tir' in l1
-    else:                        
-        assert 'BT' in l1 and 'Ltoa_tir' not in l1
-        
-@pytest.mark.parametrize('split',[True,False])
-def test_split(level1_ecostress, split):
-    l1 = Level1_ECOSTRESS(level1_ecostress, split=split)
-    
-    if split:
-        assert 'BT' not in l1 and 'BT_1' in l1
-    else:                        
-        assert 'BT' in l1 and 'BT_1' not in l1
 
 def test_main(product_ecostress):
     generic.test_main(product_ecostress)

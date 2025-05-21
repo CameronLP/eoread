@@ -31,9 +31,8 @@ def S2_product(level1_msi, resolution, chunks):
     return Level1_MSI(level1_msi, resolution, chunks=chunks)
 
 
-@pytest.mark.parametrize('split', [True, False])
-def test_instantiation(level1_msi, resolution, split, chunks):
-    Level1_MSI(level1_msi, resolution, split=split, chunks=chunks)
+def test_instantiation(level1_msi, resolution, chunks):
+    Level1_MSI(level1_msi, resolution, chunks=chunks)
 
 
 @pytest.mark.parametrize('param', ['sza', 'vza', 'saa', 'vaa', 'latitude', 'longitude'])
@@ -60,22 +59,6 @@ def test_msi_merged(S2_product, param):
             full[1000:1010, 500:510],
             l1.isel(y=slice(1000, None),
                     x=slice(500, None))[param][:10, :10])
-
-
-@pytest.mark.parametrize('band', ['Rtoa_443', 'Rtoa_490', 'Rtoa_865'])
-def test_msi_split(level1_msi, band, resolution):
-    l1 = Level1_MSI(level1_msi, resolution, split=True)
-    print(l1)
-    assert 'Rtoa_443' in l1
-    assert 'Rtoa' not in l1
-
-    assert l1[band][:10, :10].values.shape == (10, 10)
-
-    xr.testing.assert_allclose(
-            l1[band][:600, :600].compute()[500:550, 450:550],
-            l1.sel(y=slice(500, 550), x=slice(450, 550))[band],
-            )
-
 
 
 def test_main(S2_product):

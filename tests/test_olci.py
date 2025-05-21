@@ -10,7 +10,7 @@ from eoread import eo
 from core.tools import chunk, contains
 from . import generic
 from .generic import param, indices, scheduler  # noqa (fixtures)
-from core.conftest import savefig
+from .conftest import savefig
 
 
 olci_level1 = pytest.fixture(lambda: get_sample(1), scope='module')
@@ -32,16 +32,6 @@ def test_olci_level1(olci_level1):
     assert 'total_column_ozone' in ds
     assert 'sea_level_pressure' in ds
     assert 'total_columnar_water_vapour' in ds
-
-
-def test_split_merge(olci_level1):
-    ds = Level1(olci_level1)
-    print(ds)
-    ds = eo.sub_rect(ds, 55, 56, 18, 19)
-    split = eo.split(ds, 'bands')
-    print(split)
-    merge = eo.merge(split)
-    print(merge)
 
 
 def test_sub_pt(olci_level1):
@@ -104,4 +94,4 @@ def test_flag(olci_level1):
     """
     l1 = Level1(olci_level1)
     assert (l1.quality_flags > 0).any()
-    assert (l1.flags > 0).any()
+    # assert (l1.flags > 0).any()

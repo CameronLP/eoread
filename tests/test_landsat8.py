@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from eoread import eo
-from eoread.landsat8_oli import LATLON_GDAL, LATLON_NOGDAL, TOA_READ, Level1_L8_OLI, get_sample
+from eoread.landsat8_oli import *
 
 from . import generic
 
@@ -13,6 +13,11 @@ try:
     import gdal
 except ModuleNotFoundError:
     gdal = None
+
+# product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
+# product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
+product_l1 = '/mnt/ceph/data/LAN'
+product_l2 = '/mnt/ceph/data/LAN/'
 
 
 @pytest.fixture(scope='module')
