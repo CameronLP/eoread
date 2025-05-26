@@ -36,6 +36,7 @@ lock = Lock()
 def url_tile(tile_name):
     return 'https://storage.googleapis.com/global-surface-water/downloads/occurrence/occurrence_{}.tif'.format(tile_name)
 
+convert_nans_to_100 = True
 
 class GSW_tile:
     def __init__(self, tile_name, agg, directory, use_gdal=False):
@@ -149,7 +150,8 @@ def fetch_gsw_tile(tile_name, verbose=True, use_gdal=False):
         else:
             data = rio.open_rasterio(t.name).isel(band=0).compute(scheduler='sync').values
 
-    data[data == 255] = 100   # fill invalid data (assume water)
+    if convert_nans_to_100: # TODO review
+        data[data == 255] = 100   # fill invalid data (assume water)
 
     return data
 
