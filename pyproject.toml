@@ -7,15 +7,11 @@ version = "0.3-dev"
 requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [
-    "lxml",
     "pyproj",
-    "rioxarray",
-    "cdsapi",
-    "pyepr",
-    "eumdac",
     "pyhdf",
     "pysolar",
-    "fs", 
+    "pyepr",
+    "rioxarray",
     "core @ git+https://github.com/hygeos/core@v2",
     "sand @ git+https://github.com/hygeos/sand@V2"]
 
@@ -37,31 +33,25 @@ tests = "pytest tests/"
 pytest = "*"
 pytest-html = "*"
 pytest-xdist = "*"
-numpy = "<2"
-lxml = "*"
+numpy = "*"
 xarray = "*"
 pandas = "*"
-dask = "*"
 pyproj = "*"
-rioxarray = "*"
 matplotlib-base = "*"
-cdsapi = "*"
-pyepr = "*"
 toml = "*"
-python-dotenv = "*"
 h5py = "*"
 h5netcdf = "*"
-eumdac = "*"
 pyhdf = "*"
-libgdal-jp2openjpeg = "*"
-pysolar = "*"
-fs = "*"
 ipykernel = "*"
+pyepr = "*"
+rioxarray = "*"
+libgdal-jp2openjpeg = "*"
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
 
 [tool.pixi.feature.sys.dependencies]
+libgdal-jp2openjpeg = "*"
 [tool.pixi.feature.hyp.dependencies]
 xarray = "*"
 dask = "*"

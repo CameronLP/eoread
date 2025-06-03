@@ -1,11 +1,12 @@
 
 [ ] Lecture de donnée: Refactoriser le système de coordonnées de bandes
-    >> système de calcul de bande central 
+    >> système de calcul de bande central
     /!\ dans eotool
     /!\ nécessite la SRF 
         >> approvisionnement également dans eotool
+    //!\\ les wavelengths centrales sont souvent disponibles dans les produits
         
-[ ] Revoir la philosophie de non lecture des données
+[x] Revoir la philosophie de non lecture des données -> Tout lire
     (ex: donnée exogène etc)
     
 [ ] Implémenter du logging avec core
@@ -25,8 +26,8 @@
     [ ] Lancer les tests sur des exemples concrets
     [ ] Tester l'Autodescription des champs lus
     
-[ ] Rendre optionnelle la dépendence sand
+[o] Rendre optionnelle la dépendence sand
 
-[ ] Nettoyer le repo
-    [ ] enlever les approvisionneurs en donnée ancillaire
-    [ ] enlever les approvisionneurs en donnée L1 (remplacé par sand)
+[x] Nettoyer le repo
+    [x] enlever les approvisionneurs en donnée ancillaire
+    [x] enlever les approvisionneurs en donnée L1 (remplacé par sand)

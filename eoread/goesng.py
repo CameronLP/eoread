@@ -10,7 +10,7 @@ from pathlib import Path
 from .hdf4 import load_hdf4
 from . import eo
 import xarray as xr
-from .utils.naming import naming, flags
+# from .utils.naming import naming, flags
 import pysolar.solar as pysol
 from dask.array import map_blocks
 from dask import array as da

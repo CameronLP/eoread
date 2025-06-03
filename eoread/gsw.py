@@ -14,37 +14,35 @@ Create water mask
 >>> mask = gsw.sel(latitude=lat, longitude=lon, method='nearest') > 50
 """
 
-import argparse
 import xarray as xr
-import rioxarray as rio
-import tempfile
 import numpy as np
+
 from pathlib import Path
 from dask import array as da
-from urllib.request import urlopen
-from threading import Lock
+from tempfile import TemporaryDirectory
 
-from core import env
+from core.geo import n 
+from core import env, log
+from core.tools import drop_unused_dims
+from core.download import download_url
 from core.files import mdir, to_netcdf
 from .common import bin_centers
-from .raster import ArrayLike_GDAL
-from .utils.naming import naming
 
-lock = Lock()
+
 
 def url_tile(tile_name):
-    return 'https://storage.googleapis.com/global-surface-water/downloads/occurrence/occurrence_{}.tif'.format(tile_name)
+    url = 'https://storage.googleapis.com/global-surface-water/downloads/occurrence/occurrence_{}.tif'
+    return url.format(tile_name)
 
 
 class GSW_tile:
-    def __init__(self, tile_name, agg, directory, use_gdal=False):
+    def __init__(self, tile_name, agg, directory):
         dir_ = Path(directory).resolve()
         N = 40000/agg
         self.shape = (N, N)
         self.dtype = 'uint8'
         self.tile_name = tile_name
         self.agg = agg
-        self.use_gdal = use_gdal
 
         if not dir_.exists():
             raise IOError(
@@ -55,43 +53,37 @@ class GSW_tile:
         self.filename = dir_/f'occurrence_{tile_name}_{agg}.nc'
 
     def __getitem__(self, key):
+        
         if not self.filename.exists():
             A = xr.DataArray(
                 aggregate(
-                    fetch_gsw_tile(self.tile_name,
-                                   verbose=True,
-                                   use_gdal=self.use_gdal),
+                    fetch_gsw_tile(self.tile_name),
                     agg=self.agg),
-                dims=('height', 'width'),
                 name='occurrence',
             )
-            ds = A.to_dataset()
 
             # set attributes
-            ds.attrs['aggregation factor'] = str(self.agg)
-            ds.attrs['source_file'] = url_tile(self.tile_name)
+            A.attrs['aggregation factor'] = str(self.agg)
+            A.attrs['source_file'] = url_tile(self.tile_name)
 
             # write nc file
             to_netcdf(
-                ds,
+                A.to_dataset(),
                 filename=self.filename)
-
-        A = xr.open_dataset(self.filename, chunks={}).occurrence
+        else:
+            A = xr.open_dataarray(self.filename, chunks={})
+            
         return A[key].compute(scheduler='sync').values
 
 
-def read_tile(tile_name, agg, directory, use_gdal=False):
+def read_tile(tile_name, agg, directory):
     '''
     Read a single tile as a dask array
 
     Data is accessed on demand
     '''
-    tile = GSW_tile(tile_name, agg,
-                    directory, use_gdal=use_gdal)
-    return da.from_array(
-        tile,
-        meta=np.array([], tile.dtype),
-    )
+    tile = GSW_tile(tile_name, agg, directory)
+    return da.from_array(tile, meta=np.array([], tile.dtype))
 
 
 def list_tiles():
@@ -106,56 +98,36 @@ def list_tiles():
 def aggregate(A, agg=1):
     """
     Aggregate array `A` by a factor `agg` 
-    """
-    assert agg > 0
-    if agg == 1:
-        return A
-
-    assert agg & (agg-1) == 0, 'agg should be a power of 2 ({})'.format(agg)
-
-    data = None
-    for i in range(agg):
-        for j in range(agg):
-            acc = A[i::agg,j::agg]
-            if data is None:
-                data = acc.astype('f')
-            else:
-                data += acc
-
-    return (data/(agg*agg)).astype(A.dtype)
+    """    
+    assert agg > 0, f'aggregation factor should be positive, got {agg}'
+    if agg == 1: return A
+    
+    assert (agg & (agg-1)) == 0, f'agg should be a power of 2 ({agg})'
+    return A.thin(x=agg, y=agg)
 
 
-def fetch_gsw_tile(tile_name, verbose=True, use_gdal=False):
+def fetch_gsw_tile(tile_name):
     """
     Read remote file and returns its content as a numpy array
     """
     url = url_tile(tile_name)
-
-    if verbose:
-        print('Downloading', url)
-    with tempfile.NamedTemporaryFile() as t, lock:
-        # download the tile
-        with urlopen(url) as response:
-            raw_data = response.read()
-
-        # write to temporary
-        with open(t.name, 'wb') as fp:
-            fp.write(raw_data)
+    
+    with TemporaryDirectory() as tmpdir:
+        
+        # Download tiles 
+        p = download_url(url, tmpdir, if_exists='skip')
 
         # read geotiff data
-        if use_gdal:
-            data = ArrayLike_GDAL(t.name)[:, :]
-        else:
-            data = rio.open_rasterio(t.name).isel(band=0).compute(scheduler='sync').values
+        data = xr.open_dataarray(p).squeeze().compute(scheduler='sync')
+        data = data.rename(x=n.columns.name, y=n.rows.name)
+        data = drop_unused_dims(data)
+    
+    # Fill missing values
+    val_nodata = 255
+    return data.where(data != val_nodata, 100)  # fill invalid data (assume water)
 
-    data[data == 255] = 100   # fill invalid data (assume water)
 
-    return data
-
-
-def GSW(directory=None,
-        agg=1,
-        use_gdal=False) -> xr.DataArray:
+def GSW(directory=None, agg=1) -> xr.DataArray:
     """
     Global surface water reader
 
@@ -187,20 +159,17 @@ def GSW(directory=None,
 
     # concat the delayed dask objects for all tiles
     gsw = da.concatenate([
-        da.concatenate([read_tile(f'{lon}_{lat}',
-                                  agg,
-                                  directory,
-                                  use_gdal=use_gdal)
+        da.concatenate([read_tile(f'{lon}_{lat}', agg, directory)
                         for lat in lats[::-1]], axis=0)
         for lon in lons], axis=1)
 
     return xr.DataArray(
         gsw,
         name='occurrence',
-        dims=(naming.lat, naming.lon),
+        dims=(n.lat.name, n.lon.name),
         coords={
-            naming.lat: bin_centers(gsw.shape[0], 80, -60),
-            naming.lon: bin_centers(gsw.shape[1], -180, 180),
+            n.lat.name: bin_centers(gsw.shape[0], 80, -60),
+            n.lon.name: bin_centers(gsw.shape[1], -180, 180),
         }
     )
 
@@ -208,6 +177,7 @@ def GSW(directory=None,
 if __name__ == "__main__":
     # command line mode: download all GSW tiles
     # at a given aggregation factor
+    import argparse
     parser = argparse.ArgumentParser(
         description='Download all GSW tiles at a given aggregation factor `python -m eoread.gsw`',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -224,14 +194,11 @@ if __name__ == "__main__":
         parser.print_help()
         exit()
 
-    print('Downloading GSW tiles...')
-    print('      Directory:', args.directory)
-    print('      Aggregation factor:', args.agg)
+    log.info('Downloading GSW tiles...\n'
+             '\tDirectory:', args.directory, '\n',
+             '\tAggregation factor:', args.agg)
 
     lats, lons = list_tiles()
     for lat in lats:
         for lon in lons:
-            GSW_tile(
-                f'{lon}_{lat}',
-                args.agg,
-                args.directory)[:,:]
+            GSW_tile(f'{lon}_{lat}', args.agg, args.directory)[:,:]

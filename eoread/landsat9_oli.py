@@ -29,7 +29,6 @@ from core.table import read_xml
 from core.geo import n
 
 from .common import DataArray_from_array
-from .raster import ArrayLike_GDAL
 
 
 # Central wavelengths aren't described in metadata. Thus, they are hard-coded

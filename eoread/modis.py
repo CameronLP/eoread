@@ -1,7 +1,7 @@
 from eoread.hdf4 import load_hdf4
 from core.tools import merge
 from core import env
-from eoread.utils.naming import naming as n
+# from eoread.utils.naming import naming as n
 from pathlib import Path
 
 import numpy as np

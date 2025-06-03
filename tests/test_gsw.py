@@ -16,7 +16,6 @@ def level1_path(): return get_sample()
 def test_single_tile(request, agg):
     with TemporaryDirectory() as tmpdir:
         T = read_tile('0E_50N', agg, directory=tmpdir)
-        print(T)
         assert T.shape == T.compute().shape
         plt.imshow(T[::10, ::10])
         conftest.savefig(request)
@@ -26,12 +25,10 @@ def test_single_tile(request, agg):
 def test_gsw_instantiate(agg):
     gsw = GSW(agg=agg)
     assert gsw.dims == ('latitude', 'longitude')
-    print(gsw)
 
 
 def test_gsw_zoom(request):
     gsw = GSW(agg=8)
-    print(gsw)
 
     sub = gsw.where(
         (gsw.latitude > 38.628122)
@@ -40,7 +37,7 @@ def test_gsw_zoom(request):
         & (gsw.longitude < 10.115557),
         drop=True,
     )
-    print(sub)
+    
     sub.plot()
     conftest.savefig(request)
 
@@ -55,7 +52,7 @@ def test_index(request, level1_path):
         x=slice(None, None, 10))
 
     plt.figure()
-    plt.imshow(l1.Ltoa.sel(bands=865))
+    plt.imshow(l1.Ltoa.isel(bands=16))
     conftest.savefig(request)
 
     gsw = GSW(agg=8)
@@ -65,7 +62,7 @@ def test_index(request, level1_path):
         latitude=l1.latitude,
         longitude=l1.longitude,
         method='nearest') < 50
-    print(mask)
+    
     mask = mask.compute(scheduler='sync')
     plt.imshow(mask)
     conftest.savefig(request)

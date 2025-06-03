@@ -3,7 +3,7 @@ import xarray as xr
 # from eotools.solar_irradiance import solar_irradiance
 from core.math import interp, Linear
 from dateutil.parser import parse
-from eoread.utils.naming import naming
+# from eoread.utils.naming import naming
 from core.geo import n
 
 

@@ -18,22 +18,11 @@ import datetime
 import tempfile
 import numpy as np
 import xarray as xr
-import rioxarray as rio
-import rasterio
 import dask.array as da
 import pyproj
-try:
-    from osgeo import gdal, osr
-    import osgeo
-    gdal_major_version = int(osgeo.__version__.split('.')[0])
-except ModuleNotFoundError:
-    osr = None
-    gdal = None
-    gdal_major_version = None
 from . import common
-from .utils.naming import naming
+# from .utils.naming import naming
 from core.tools import merge
-from .raster import ArrayLike_GDAL
 
 PYPROJ_VERSION = int(pyproj.__version__.split('.')[0])
 

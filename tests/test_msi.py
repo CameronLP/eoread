@@ -5,7 +5,7 @@
 from pathlib import Path
 import pytest
 import xarray as xr
-from eoread.msi import Level1_MSI, get_sample, get_SRF
+from eoread.msi import *
 from . import generic
 from eoread import eo
 from . import conftest

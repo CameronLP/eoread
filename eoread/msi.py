@@ -27,18 +27,14 @@ B12  SWIR 2      2190nm     20m
 
 
 from pathlib import Path
-from typing import Optional
 
 import dask.array as da
 import numpy as np
-import pandas as pd
 import pyproj
 import xarray as xr
 
-from core.tools import merge
-from core.download import download_url
+from core.tools import merge, drop_unused_dims
 from core.table import read_xml
-from core.files import mdir
 from core import env, log
 from core.geo import n
 
@@ -59,6 +55,7 @@ def Level1_MSI(dirname,
     ds = xr.Dataset()
     dirname = Path(dirname).resolve()
     assert isinstance(resolution, str)
+    if isinstance(chunks, int): chunks = [chunks]*2
 
     if list(dirname.glob('GRANULE')):
         granules = list((dirname/'GRANULE').glob('*'))
@@ -72,16 +69,18 @@ def Level1_MSI(dirname,
     xmlroot = dirname/'MTD_MSIL1C.xml'
     assert xmlgranule.exists()
     assert xmlroot.exists()
-    xmlgranule = read_xml(xmlgranule)
-    xmlroot = read_xml(xmlroot)
+    log.debug('Reading metadata files')
+    ds.attrs['metadata_granule'] = read_xml(xmlgranule)
+    ds.attrs['metadata'] = read_xml(xmlroot)
 
     # load main xml file
-    product_image = xmlroot['General_Info']['Product_Image_Characteristics']
+    product_image = ds.attrs['metadata']['General_Info']['Product_Image_Characteristics']
     quantif = product_image['QUANTIFICATION_VALUE']['values']
-    processing_baseline = xmlroot['General_Info']['Product_Info']['PROCESSING_BASELINE']
+    processing_baseline = ds.attrs['metadata']['General_Info']['Product_Info']['PROCESSING_BASELINE']
     
     # Extract bands wavelength
     cwvl, wvl_name = [],[]
+    log.debug('Extract central wavelength')
     for spec in product_image['Spectral_Information_List']['Spectral_Information']:
         cwvl.append(spec['Wavelength']['CENTRAL']['values'])
         wvl_name.append(spec['attributes']['physicalBand'])
@@ -95,17 +94,13 @@ def Level1_MSI(dirname,
     else:
         radio_offset_list = [0]*len(cwvl)
 
-    # read date
-    ds.attrs[n.datetime.name] = xmlgranule['General_Info']['SENSING_TIME']['values']
-    geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
-    tileangles = xmlgranule['Geometric_Info']['Tile_Angles']
-
     # get platform
-    tile_id = xmlgranule['General_Info']['TILE_ID']['values']
+    tile_id = ds.attrs['metadata_granule']['General_Info']['TILE_ID']['values']
     platform = tile_id[:3]
     assert platform in ['S2A', 'S2B']
 
     # read image size for current resolution
+    geocoding = ds.attrs['metadata_granule']['Geometric_Info']['Tile_Geocoding']
     for e in geocoding.get('Size'):
         if e['attributes']['resolution'] == str(resolution):
             ds.attrs['totalheight'] = e.get('NROWS')
@@ -113,6 +108,8 @@ def Level1_MSI(dirname,
             break
 
     # attributes
+    log.debug('Add important attributes')
+    ds.attrs[n.datetime.name] = ds.attrs['metadata_granule']['General_Info']['SENSING_TIME']['values']
     ds.attrs[n.platform.name] = platform
     ds.attrs['resolution'] = resolution
     ds.attrs['sensor'] = 'MSI'
@@ -120,18 +117,19 @@ def Level1_MSI(dirname,
     ds.attrs['input_directory'] = str(dirname.parent)
 
     # lat-lon
-    if isinstance(chunks, int): chunks = [chunks]*2
-    msi_read_latlon(ds, geocoding, chunks)
+    log.debug('Extract central wavelength')
+    msi_read_latlon(ds, chunks)
 
     # msi_read_geometry
-    msi_read_geometry(ds, tileangles, chunks)
+    log.debug('Read and compute geometric angles')
+    tileangles = ds.attrs['metadata_granule']['Geometric_Info']['Tile_Angles']
+    ds = msi_read_geometry(ds, tileangles, chunks)
 
     # msi_read_toa and quality masks
+    log.debug('Read top of atmosphere data')
     ds = msi_read_toa(ds, granule_dir, quantif, radio_offset_list, chunks)
+    log.debug('Read quality masks')
     ds = msi_read_qi(ds, granule_dir, chunks)
-
-    # read spectral information
-    msi_read_spectral(ds)
 
     # # flags
     # ds[n.flags] = xr.zeros_like(
@@ -144,12 +142,14 @@ def Level1_MSI(dirname,
     #     np.isnan(ds.vza)
     #     )
 
-    ds = ds.drop_vars('spatial_ref')
+    ds = drop_unused_dims(ds)
     return ds
+    
 
+def msi_read_latlon(ds, chunks):
 
-def msi_read_latlon(ds, geocoding, chunks):
     dims = (n.rows.name,n.columns.name)
+    geocoding = ds.attrs['metadata_granule']['Geometric_Info']['Tile_Geocoding']
     
     ds[n.lat.name] = DataArray_from_array(
         LATLON(geocoding, 'lat', ds), dims,
@@ -169,7 +169,7 @@ def msi_read_qi(ds, granule_dir, chunks):
         arr = arr.rename(x='x_red', y='y_red')
         ds[filename.stem] = arr.rename({'band':n.detector.name})
     
-    ds = ds.rename_vars({'MSK_CLASSI_B00':n.flags.name})
+    ds = ds.rename_vars({'MSK_CLASSI_B00':'MSK_CLASSI'})
     ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
 
     return ds
@@ -221,95 +221,81 @@ def msi_resample(arr, ratio, chunks):
     
     return arr_resampled
 
-def msi_read_spectral(ds):
-    # read srf
-    # TODO: deprecate in favour of get_SRF
-    dir_aux_msi = mdir(env.getdir('DIR_STATIC')/'msi')
-    platform = ds.platform
-    get_SRF(platform)
-    srf_file = dir_aux_msi/f'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_{platform}.csv'
+# def msi_read_spectral(ds):
+#     # read srf
+#     # TODO: deprecate in favour of get_SRF
+#     dir_aux_msi = mdir(env.getdir('DIR_STATIC')/'msi')
+#     platform = ds.platform
+#     get_SRF(platform)
+#     srf_file = dir_aux_msi/f'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_{platform}.csv'
 
-    assert srf_file.exists(), srf_file
+#     assert srf_file.exists(), srf_file
 
-    srf_data = pd.read_csv(srf_file)
-    wav = srf_data.SR_WL
+#     srf_data = pd.read_csv(srf_file)
+#     wav = srf_data.SR_WL
 
-    wav_data = []
+#     wav_data = []
 
-    for bn in ds[n.bnames.name]:
-        col = platform + '_SR_AV_' + str(bn.values)
-        srf = srf_data[col]
-        wav_eq = np.trapz(wav*srf)/np.trapz(srf)
-        wav_data.append(wav_eq)
+#     for bn in ds[n.bnames.name]:
+#         col = platform + '_SR_AV_' + str(bn.values)
+#         srf = srf_data[col]
+#         wav_eq = np.trapz(wav*srf)/np.trapz(srf)
+#         wav_data.append(wav_eq)
 
-    ds[n.wav.name] = xr.DataArray(
-        da.from_array(wav_data),
-        dims=(n.bands.name),
-    ).chunk({n.bands.name: 1})
+#     ds[n.wav.name] = xr.DataArray(
+#         da.from_array(wav_data),
+#         dims=(n.bands.name),
+#     ).chunk({n.bands.name: 1})
 
 
 def msi_read_geometry(ds, tileangles, chunks):
 
+    dims = ('tie_rows', 'tie_columns')
     # read solar angles at tiepoints
-    sza = read_xml_block(tileangles['Sun_Angles_Grid']['Zenith']['Values_List']['VALUES'])
-    saa = read_xml_block(tileangles['Sun_Angles_Grid']['Azimuth']['Values_List']['VALUES'])
+    sza = read_xml_block(tileangles['Sun_Angles_Grid']['Zenith'], dims)
+    saa = read_xml_block(tileangles['Sun_Angles_Grid']['Azimuth'], dims)
 
     shp = (ds.totalheight, ds.totalwidth)
 
     # read view angles (for each band)
-    vza = {}
-    vaa = {}
+    vza, vaa = {}, {}
     for e in tileangles.get('Viewing_Incidence_Angles_Grids'):
 
         # read zenith angles
-        data = read_xml_block(e['Zenith']['Values_List']['VALUES'])
+        data = read_xml_block(e['Zenith'], dims)
         bandid = int(e['attributes']['bandId'])
-        if bandid not in vza:
-            vza[bandid] = data
-        else:
-            ok = ~np.isnan(data)
-            vza[bandid][ok] = data[ok]
+        if bandid not in vza: vza[bandid] = data
+        else: vza[bandid] = vza[bandid].where(~data.isnull(), data)
 
         # read azimuth angles
-        data = read_xml_block(e['Azimuth']['Values_List']['VALUES'])
+        data = read_xml_block(e['Azimuth'], dims)
         bandid = int(e['attributes']['bandId'])
-        if bandid not in vaa:
-            vaa[bandid] = data
-        else:
-            ok = ~np.isnan(data)
-            vaa[bandid][ok] = data[ok]
+        if bandid not in vaa: vaa[bandid] = data
+        else: vaa[bandid] = vaa[bandid].where(~data.isnull(), data)
 
     # use the first band as vza and vaa
     k = sorted(vza.keys())[0]
     assert k in vaa
 
     # initialize the dask arrays
-    for name, tie in [(n.sza, sza),
-                      (n.saa, saa),
-                      (n.vza, vza[k]),
-                      (n.vaa, vaa[k]),
-                      ]:
-        da_tie = xr.DataArray(
-            tie,
-            dims=('tie_rows', 'tie_columns'),
-            coords={'tie_rows': np.linspace(0, shp[0]-1, sza.shape[0]),
-                    'tie_columns': np.linspace(0, shp[1]-1, sza.shape[1])})
-        ds[name.name+'_tie'] = da_tie
+    for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza[k]),(n.vaa, vaa[k])]:
+        ds[name.name+'_tie'] = xr.DataArray(tie, dims=dims)
         ds[name.name] = DataArray_from_array(
             Interpolator(shp, ds[name.name+'_tie']),
             (n.rows.name,n.columns.name),
             chunks,
         )
+    
+    return ds.assign_coords(tie_rows = da.linspace(0, shp[0]-1, sza.shape[0]),
+                         tie_columns = da.linspace(0, shp[1]-1, sza.shape[1]))
 
 
-def read_xml_block(item):
+def read_xml_block(item, dims):
     '''
-    read a block of xml data and returns it as a numpy float32 array
+    read a block of xml data and returns it as a xarray float32 DataArray
     '''
-    d = []
-    for i in item:
-        d.append(i.split())
-    return np.array(d, dtype='float32')
+    return xr.DataArray([i.split() for i in item['Values_List']['VALUES']], 
+                        dims=dims).astype('float32')
 
 
 class LATLON:
@@ -331,33 +317,26 @@ class LATLON:
                 YDIM = e.get('YDIM')
 
         assert (XDIM%2 == 0) and (YDIM%2 == 0)
-        self.x = ULX + XDIM//2 + XDIM*np.arange(ds.totalheight)
-        self.y = ULY + YDIM//2 + YDIM*np.arange(ds.totalwidth)
+        self.x = ULX + XDIM//2 + XDIM*da.arange(ds.totalheight)
+        self.y = ULY + YDIM//2 + YDIM*da.arange(ds.totalwidth)
 
         self.shape = (ds.totalheight, ds.totalwidth)
         self.ndim = 2
         self.dtype = 'float32'
 
     def __getitem__(self, key):
+        
         X, Y = self.x[key[1]], self.y[key[0]]
         if isinstance(key[0], slice) and isinstance(key[1], slice):
             # keys are both slices
-            X, Y = np.meshgrid(X, Y)
+            X, Y = da.meshgrid(X, Y)
         else:
-            X, Y = np.broadcast_arrays(X, Y)
+            X, Y = da.broadcast_arrays(X, Y)
 
         lon, lat = self.proj(X, Y, inverse=True)
 
-        if self.kind == 'lat':
-            if hasattr(lat, 'astype'):
-                return lat.astype(self.dtype)
-            else:
-                return np.array(lat, dtype=self.dtype)
-        else:
-            if hasattr(lon, 'astype'):
-                return lon.astype(self.dtype)
-            else:
-                return np.array(lon, dtype=self.dtype)
+        if self.kind == 'lat': return lat.astype(self.dtype)
+        else: return lon.astype(self.dtype)
 
 
 def Level2_MSI(dirname):
@@ -385,39 +364,3 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
     dl = DownloadCDSE(sensor, level)
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
-    
-
-
-def get_SRF(sensor: str, directory: Optional[Path]=None):
-    """
-    Get SRF for sensor (S2A or S2B)
-
-    directory: where to store the SRFs (default: to <dir_static>/msi)
-    """
-    url = {
-        "S2A": ('https://docs.hygeos.com/s/GCtYb4QsdLNtzES/download/'
-                'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_S2A.csv'),
-        "S2B": ('https://docs.hygeos.com/s/n7nPADJWs6CKkWM/download/'
-                'S2-SRF_COPE-GSEG-EOPG-TN-15-0007_3.0_S2B.csv'),
-    }[sensor]
-    
-    srf_file = download_url(url, env.getdir('DIR_STATIC')/'msi')
-
-    srf_data = pd.read_csv(srf_file)
-
-    ds = xr.Dataset()
-    ds.attrs["desc"] = f'Spectral response functions for MSI ({sensor})'
-    wav = srf_data.SR_WL
-
-    for col in [c for c in srf_data.columns
-                if c.startswith(sensor)]:
-        bindex = col.split('_')[-1]
-        ds[bindex] = xr.DataArray(
-            srf_data[col],
-            dims=["wav"],
-            attrs={"band_info": f"MSI band {bindex}"},
-        )
-    ds = ds.assign_coords(wav=wav)
-    ds[n.wav.name].attrs["units"] = "nm"
-
-    return ds

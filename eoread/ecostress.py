@@ -14,6 +14,7 @@ def Level1_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     
     # Revize variables
     filepath = Path(filepath)
+    log.debug('Reading h5file')
     data = xr.open_datatree(filepath, phony_dims='sort')
     raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
     raw = raw.to_dataset().chunk(chunks=chunks)
@@ -22,14 +23,17 @@ def Level1_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
     attributes = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
     
+    log.debug('parsing metadata text')
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
     p = parser(info.split('\n'))
     p.parse()
     
     # Change radiometry of input data 
+    log.debug('compute brightness temperature')
     l1 = transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
+    log.debug('add important attributes')
     for att in list(attributes):
         l1.attrs[att] = attributes[att].values.item()
     l1.attrs['hdfeos_info'] = p.data
@@ -42,6 +46,7 @@ def Level1_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     l1 = l1.assign({n.wav_ir.name: ((n.bands_ir.name),granule_mtd.BandSpecification.values[1:])})
     
     # Add latlon variables
+    log.debug('add latlon variables')
     l1 = supplement_latlon(l1, chunks)
     return l1
 
@@ -124,7 +129,7 @@ def compute_bt(l1, granule_mtd) -> xr.DataArray:
     cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0='bands') * 1e-3 # convert into µm
     gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1='bands')
     offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1='bands')
-    l1 = l1.assign({n.cwav.name: ((n.bands_ir.name),cwvl)})
+    l1 = l1.assign({n.cwav.name: ((n.bands_ir.name),cwvl.data)})
     
     # Some versions of the modis files do not contain all the bands.
     valid = ~l1['radiance'].isnull()
