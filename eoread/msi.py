@@ -37,6 +37,7 @@ from core.tools import merge, drop_unused_dims
 from core.table import read_xml
 from core import env, log
 from core.geo import n
+from core.math import interp, Linear
 
 from .common import DataArray_from_array, Interpolator, Repeat
 
@@ -128,8 +129,9 @@ def Level1_MSI(dirname,
     # msi_read_toa and quality masks
     log.debug('Read top of atmosphere data')
     ds = msi_read_toa(ds, granule_dir, quantif, radio_offset_list, chunks)
-    log.debug('Read quality masks')
-    ds = msi_read_qi(ds, granule_dir, chunks)
+    
+    log.debug('WARNING: SKIPPING >> Read quality masks')
+    # ds = msi_read_qi(ds, granule_dir, chunks)
 
     # # flags
     # ds[n.flags] = xr.zeros_like(
@@ -161,7 +163,7 @@ def msi_read_latlon(ds, chunks):
         chunks=chunks,
     )
 
-def msi_read_qi(ds, granule_dir, chunks):
+def msi_read_qi(ds, granule_dir, chunks): # TODO review; fix problem
     for filename in (granule_dir/'QI_DATA').glob(f'*.jp2'):
         
         if '_PVI' in filename.stem: continue
@@ -170,7 +172,7 @@ def msi_read_qi(ds, granule_dir, chunks):
         ds[filename.stem] = arr.rename({'band':n.detector.name})
     
     ds = ds.rename_vars({'MSK_CLASSI_B00':'MSK_CLASSI'})
-    ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=n.bands.name + "_ir", pattern=r'(.+)_B(.+)', dtype=str)
 
     return ds
 
@@ -197,16 +199,33 @@ def msi_read_toa(ds, granule_dir, quantif, radio_offset, chunks):
     return ds
 
 def msi_resample(arr, ratio, chunks):
+    """
+        ratio: list[x_ratio, y_ratio]
+        if ratio is > 1 then downsamples
+        if ratio is < 1 then upscales
+    """
+    
+    assert int(ratio[0]) == ratio[0]
+    assert int(ratio[1]) == ratio[1]
     
     arr = arr.squeeze()
     x,y = int(ratio[0]), int(ratio[1])
+    
     if x >= 1.:
         # downsample
-        arr_resampled = 0.
-        for i in range(x):
-            for j in range(y):
-                arr_resampled += arr.isel(x=slice(i,None,x), y=slice(j,None,y))
-        arr_resampled /= x*y
+        
+        arr_resampled = arr.coarsen(x=x, y=y, boundary="trim").mean()
+        
+        # ---- TODO: Remove ------
+        # > Inneficient and strange
+        # -------------------------
+        # arr_resampled = 0.
+        # for i in range(x):
+        #     for j in range(y):
+        #         arr_resampled += arr.isel(x=slice(i,None,x), y=slice(j,None,y))
+        # arr_resampled /= x*y
+        # ------------------------
+        
     else:
         # over-sample
         arr_resampled = DataArray_from_array(
@@ -249,7 +268,18 @@ def msi_resample(arr, ratio, chunks):
 
 
 def msi_read_geometry(ds, tileangles, chunks):
+    """
+    Reads and processes geometric data from MSI tiles.
 
+    Parameters:
+        ds (xarray Dataset): Input dataset containing MSI data
+        tileangles (dict): Dictionary containing XML blocks for solar and view angles
+        chunks (tuple): Chunk sizes for dask arrays
+
+    Returns:
+        xarray Dataset: Output dataset with updated coordinates and geometry variables
+    """
+    
     dims = ('tie_rows', 'tie_columns')
     # read solar angles at tiepoints
     sza = read_xml_block(tileangles['Sun_Angles_Grid']['Zenith'], dims)
@@ -258,36 +288,69 @@ def msi_read_geometry(ds, tileangles, chunks):
     shp = (ds.totalheight, ds.totalwidth)
 
     # read view angles (for each band)
+    tie_shape = None
     vza, vaa = {}, {}
     for e in tileangles.get('Viewing_Incidence_Angles_Grids'):
 
-        # read zenith angles
-        data = read_xml_block(e['Zenith'], dims)
+        # Reading zenith angles
+        data: np.ndarray = read_xml_block(e['Zenith'], dims)
         bandid = int(e['attributes']['bandId'])
+        
+        if tie_shape is None: tie_shape = data.shape # in case the size is not constant
+        data = data.values.flatten()
+        
         if bandid not in vza: vza[bandid] = data
-        else: vza[bandid] = vza[bandid].where(~data.isnull(), data)
+        valid = ~np.isnan(data) # indexes where the data is not null
+        vza[bandid][valid] = data[valid]
 
-        # read azimuth angles
+        # Reading azimuth angles
         data = read_xml_block(e['Azimuth'], dims)
         bandid = int(e['attributes']['bandId'])
+        
+        data: np.ndarray = data.values.flatten()
+        
         if bandid not in vaa: vaa[bandid] = data
-        else: vaa[bandid] = vaa[bandid].where(~data.isnull(), data)
+        valid = ~np.isnan(data) # indexes where the data is not null
+        vaa[bandid][valid] = data[valid]
 
+    # reshape to original 
+    for b in vza:
+        vza[b] = vza[b].reshape(tie_shape)
+    for b in vaa:
+        vaa[b] = vaa[b].reshape(tie_shape)
+    
+
+    # TODO: check for 
     # use the first band as vza and vaa
-    k = sorted(vza.keys())[0]
-    assert k in vaa
+    vza = vza[0]
+    vaa = vaa[0]
+    
+
+    ntie_rows, ntie_columns = sza.shape
+    tie_rows    = np.int32(da.linspace(0, shp[0]-1, ntie_rows))            # tie resolution, with target values
+    tie_columns = np.int32(da.linspace(0, shp[1]-1, ntie_columns))           # tie resolution, with target values
+    ds = ds.assign_coords(tie_rows = tie_rows, tie_columns = tie_columns)
 
     # initialize the dask arrays
-    for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza[k]),(n.vaa, vaa[k])]:
+    for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza),(n.vaa, vaa)]:
         ds[name.name+'_tie'] = xr.DataArray(tie, dims=dims)
-        ds[name.name] = DataArray_from_array(
-            Interpolator(shp, ds[name.name+'_tie']),
-            (n.rows.name,n.columns.name),
-            chunks,
-        )
+        tie = xr.DataArray(tie, dims=dims)
+        tie = tie.assign_coords(tie_rows=tie_rows, tie_columns=tie_columns)
+        tie = interp(tie, tie_rows=Linear(ds.x), tie_columns=Linear(ds.y))
+        
+        ds[name.name] = xr.DataArray(tie, dims=("x", "y")) # This 
+        
+        
+        # ---- TODO: Remove ------
+        # > Causes bugs
+        # -------------------------
+        # ds[name.name] = DataArray_from_array(
+        #     Interpolator(shp, ds[name.name+'_tie']),
+        #     (n.rows.name,n.columns.name),
+        #     chunks=chunks,
+        # )
     
-    return ds.assign_coords(tie_rows = da.linspace(0, shp[0]-1, sza.shape[0]),
-                         tie_columns = da.linspace(0, shp[1]-1, sza.shape[1]))
+    return ds
 
 
 def read_xml_block(item, dims):

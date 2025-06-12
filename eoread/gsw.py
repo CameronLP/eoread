@@ -152,6 +152,7 @@ def GSW(directory=None, agg=1) -> xr.DataArray:
 
     A xarray.DataArray of the water occurrence between 0 and 100
     """
+    
     if directory is None:
         directory = mdir(env.getdir('DIR_ANCILLARY')/'GSW')
 
