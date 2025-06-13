@@ -31,7 +31,7 @@ from .common import bin_centers
 
 
 def url_tile(tile_name):
-    url = 'https://storage.googleapis.com/global-surface-water/downloads/occurrence/occurrence_{}.tif'
+    url = 'https://storage.googleapis.com/global-surface-water/downloads2021/occurrence/occurrence_{}.tif'
     return url.format(tile_name)
 
 
@@ -44,7 +44,7 @@ class GSW_tile:
         N = 40000/agg
         self.shape = (N, N)
         self.dtype = 'uint8'
-        self.tile_name = tile_name
+        self.tile_name = tile_name + "v1_4_2021"
         self.agg = agg
 
         if not dir_.exists():
