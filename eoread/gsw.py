@@ -36,6 +36,9 @@ def url_tile(tile_name):
 
 
 class GSW_tile:
+    
+    convert_missing_data = True
+    
     def __init__(self, tile_name, agg, directory):
         dir_ = Path(directory).resolve()
         N = 40000/agg
@@ -122,10 +125,12 @@ def fetch_gsw_tile(tile_name):
         data = data.rename(x=n.columns.name, y=n.rows.name)
         data = drop_unused_dims(data)
     
-    # Fill missing values
-    val_nodata = 255
-    return data.where(data != val_nodata, 100)  # fill invalid data (assume water)
-
+    if GSW_tile.convert_missing_data:
+        # Fill missing values
+        val_nodata = 255
+        data = data.where(data != val_nodata, 100)  # fill invalid data (assume water)
+    
+    return data
 
 def GSW(directory=None, agg=1) -> xr.DataArray:
     """
