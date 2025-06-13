@@ -4,9 +4,7 @@ from eoread.modis import Level1_MODIS, get_sample
 from . import generic
 
 
-@pytest.fixture()
-def level1_modis():
-    return get_sample()
+level1_modis = pytest.fixture(lambda:'/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
 
 @pytest.fixture()
 def product_modis(level1_modis):
