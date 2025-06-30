@@ -3,21 +3,18 @@
 
 
 import pytest
-from matplotlib import pyplot as plt
-from eoread import eo
-from eoread.meris import Level1_MERIS, get_sample
+from eoread.meris import *
 
 from . import generic
-from .generic import indices, param
 from .conftest import savefig
 
 
-product = pytest.fixture(scope='module')(get_sample)
+product = '/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1.gz'
 
 
 @pytest.mark.parametrize('split', [True, False])
-def test_instantiation(product, split):
-    Level1_MERIS(product['path'], split=split)
+def test_instantiation(split):
+    Level1_MERIS(product, split=split)
 
 
 def test_preview(product, param, request):

@@ -1,37 +1,41 @@
+from dask import array as da
 from pathlib import Path
 import xarray as xr
+
+from eoread.utils import filter_metadata
 # from eotools.solar_irradiance import solar_irradiance
-from core.math import interp, Linear
-from dateutil.parser import parse
-# from eoread.utils.naming import naming
 from core.geo import n
+from core.tools import  drop_unused_dims
+from core import env, log
 
 
-def Level1_HYPSO(level1_product: Path) -> xr.Dataset:
-    """
-    Open NTNU HYPSO Level1
-    """
     ds = xr.Dataset()
+    filepath = Path(filepath)
+    assert filepath.exists(), 'File does not exists'
 
-    chunks = {"lines": 100, "samples": 100}
-    ds_root = xr.open_dataset(level1_product)
-    ds_products = xr.open_dataset(level1_product, group="products", chunks=chunks)
-    ds_nav = xr.open_dataset(level1_product, group="navigation", chunks=chunks)
+    ds_root = xr.open_datatree(filepath)
+    if isinstance(chunks, int): chunks = [chunks]*2
+    ds_products = ds_root["products"].to_dataset()
+    ds_nav = ds_root["navigation"].to_dataset()
 
     # get _indirect geographical coordinates and angles if available
-    ds["latitude"] = getattr(ds_nav, "latitude_indirect", ds_nav["latitude"])
-    ds["longitude"] = getattr(ds_nav, "longitude_indirect", ds_nav["longitude"])
-    ds["vza"] = getattr(ds_nav, "sensor_zenith_indirect", ds_nav["sensor_zenith"])
-    ds["sza"] = getattr(ds_nav, "solar_zenith_indirect", ds_nav["solar_zenith"])
-    ds["vaa"] = getattr(ds_nav, "sensor_azimuth_indirect", ds_nav["sensor_azimuth"])
-    ds["saa"] = getattr(ds_nav, "solar_azimuth_indirect", ds_nav["solar_azimuth"])
+    log.debug('Read and compute geometric angles')
+    ds[n.lat.name] = ds_nav["latitude"].chunk(chunks)
+    ds[n.lon.name] = ds_nav["longitude"].chunk(chunks)
+    ds[n.vza.name] = ds_nav["sensor_zenith"].chunk(chunks)
+    ds[n.sza.name] = ds_nav["solar_zenith"].chunk(chunks)
+    ds[n.vaa.name] = ds_nav["sensor_azimuth"].chunk(chunks)
+    ds[n.saa.name] = ds_nav["solar_azimuth"].chunk(chunks)
 
-    ds["Ltoa"] = xr.concat([ds_products[x] for x in ds_products], dim="bands")
-
-    ds["wav"] = xr.DataArray(
-        [ds_products[x].wavelength for x in ds_products], dims=["bands"]
-    )
-    ds = ds.assign_coords(bands=[int(ds_products[x].wave_name) for x in ds_products])
+    log.debug('Read top of atmosphere data')
+    ds[n.ltoa.name] = ds_products['Lt'].chunk(list(chunks)+[1])
+    ds = ds.rename(lines=n.rows.name, samples=n.columns.name, bands=n.bands.name)
+    ds[n.ltoa.name].attrs['unit'] = 'W/sr/m^2'
+    
+    log.debug('Extract central wavelength')
+    ds = ds.assign_coords({n.bands.name: da.arange(len(ds[n.bands.name]))+1})
+    ds = ds.assign({n.cwav.name: ((n.bands.name), ds_products['Lt'].wavelengths),
+         n.bnames.name: ((n.bands.name), ds[n.bands.name].data.astype(str))})
 
     # # read solar irradiance
     # F0 = solar_irradiance("LISIRD", variant="1nm")
@@ -43,12 +47,23 @@ def Level1_HYPSO(level1_product: Path) -> xr.Dataset:
     # ds = ds.rename(lines="y", samples="x")
 
     # acquisition datetime
-    ds.attrs.update(
-        datetime=parse(ds_root.attrs["timestamp_acquired"], fuzzy=True).isoformat()
-    )
+    log.debug('Add important attributes')
+    ds.attrs[n.sensor.name] = ds_root.attrs['instrument']
+    ds.attrs[n.platform.name] = 'HYPSO'
+    ds.attrs[n.resolution.name] = 40
+    ds.attrs[n.product_name.name] = filepath.name
+    ds.attrs[n.input_directory.name] = str(filepath.parent)
+    ds.attrs[n.datetime.name] = ds_root.attrs['date_aquired']
+    
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    ds.attrs['metadata'] = filter_fn(ds_root.attrs, metadata_template)
 
-    ds[naming.flags] = xr.zeros_like(ds.vza, dtype=naming.flags_dtype)
-    ds.attrs.update(sensor=ds_root.sat_id)
-    ds.attrs.update(product_name=level1_product.name)
+    # ds[naming.flags] = xr.zeros_like(ds.vza, dtype=naming.flags_dtype)
+    
+    return drop_unused_dims(ds).unify_chunks()
 
-    return ds
+
+def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    sample = Path('/mnt/ceph/user/francois/HYPSO/sample1/vancouver_2022-07-30_1825Z-l1b.nc')
+    assert sample.exists()
+    return sample

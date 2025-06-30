@@ -22,9 +22,8 @@ B12  Water vapor 910nm      20nm      5m
 
 # https://www.eoportal.org/satellite-missions/venus#vssc-ven%C2%B5s-superspectral-camera
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
-import numpy as np
+import dask.array as da
 import pandas as pd
 import xarray as xr
 import pyproj
@@ -32,14 +31,19 @@ import pyproj
 from core.geo import n
 from core.table import read_xml
 from core.download import download_url
-from core.files import mdir, uncompress
+from core.files import mdir
+from core.tools import merge, drop_unused_dims
 from core import env, log
 
-from .common import DataArray_from_array, Interpolator, Repeat
-from core.tools import raiseflag, merge
+from eoread.utils import *
+from eoread.common import DataArray_from_array
 
 
-def Level1_VENUS(dirname, chunks:int = 500):
+def Level1_VENUS(dirname, 
+                 chunks: int|tuple = 500,
+                 read_masks: bool = False, 
+                 metadata_template: list = None,
+                 v1_compat: bool = False):
     '''
     Read an Venµs Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA reflectances,
@@ -50,66 +54,67 @@ def Level1_VENUS(dirname, chunks:int = 500):
     '''
     ds = xr.Dataset()
     dirname = Path(dirname)
-    assert dirname.exists()
+    assert dirname.exists(), 'Folder does not exists'
+    if isinstance(chunks, int): chunks = [chunks]*2    
     
     # read metadata
-    ds = venus_read_metadata(ds, dirname)
-    if isinstance(chunks, int): chunks = [chunks]*2
-
-    # lat-lon
-    geocoding = ds.attrs['Geoposition_Informations']
-    venus_read_latlon(ds, geocoding, chunks)
+    log.debug('Reading metadata')
+    ds, metadata_granule = venus_read_metadata(ds, dirname, metadata_template)
 
     # read geaometry
-    venus_read_geometry(ds, dirname, chunks)
+    log.debug('Read and compute geometric angles')
+    ds = venus_read_geometry(ds, dirname, chunks)
 
     # read TOA
-    radio_info = ds.attrs['Radiometric_Informations']
+    log.debug('Read top of atmosphere data')
+    radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
     ds = venus_read_toa(ds, dirname, quantif, chunks)
 
-    with TemporaryDirectory() as tmpdir:
+    # lat-lon
+    log.debug('Compute LatLon raster')
+    geocoding = metadata_granule['Geoposition_Informations']
+    venus_read_latlon(ds, geocoding, chunks)
+    
+    # read cloud altitude
+    log.debug('Open masks')
+    ratio = {n.columns.name: ds.totalwidth, n.rows.name: ds.totalheight} 
+    cld = open_raster(dirname/'DATA', '*CLA_ALL.tif')
+    cld = cld.rename(x=n.columns.name, y=n.rows.name)
+    ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat')
+    
+    if read_masks:
+    
+    # read cloud mask
+    cld = open_raster(dirname/'MASKS','*CLD_XS.zip','.zip').chunk(chunks)
+    ds['CLD_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    
+    # read cloud mask
+    usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
+    ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    
+    # Read quality masks
+    for bn in ds[n.bnames.name]:
         
-        # read cloud altitude
-        cloudfiles = list((dirname/'DATA').glob('*CLA_ALL.tif'))
-        assert len(cloudfiles) == 1
-        cld = xr.open_dataarray(cloudfiles[0]).chunk([1]+chunks).squeeze()
-        ds['cloud_altitude'] = DataArray_from_array(
-            Interpolator(ds.latitude.shape, cld),
-            ('y','x'),
-            chunks,
-        )
+        pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
+        ds[f'PIX_{bn.values}'] = pix.rename(x=n.columns.name, y=n.rows.name)
         
-        # read cloud mask
-        filenames = list((dirname/'MASKS').glob('*CLD_XS.zip'))
-        assert len(filenames) == 1
-        cldpath = uncompress(filenames[0], tmpdir)
-        ds[cldpath.stem] = xr.open_dataarray(cldpath).chunk([1]+chunks).squeeze()
-        
-        # read cloud mask
-        filenames = list((dirname/'MASKS').glob('*USI_XS.zip'))
-        assert len(filenames) == 1
-        usipath = uncompress(filenames[0], tmpdir)
-        ds[usipath.stem] = xr.open_dataarray(usipath).chunk([1]+chunks).squeeze()
-        
-        # Read quality masks
-        for bn in ds[n.bnames.name]:
-            
-            filenames = list((dirname/'MASKS').glob(f'*PIX_{bn.values}.zip'))
-            assert len(filenames) == 1
-            pixpath = uncompress(filenames[0], tmpdir)
-            ds[pixpath.stem] = xr.open_dataarray(pixpath).chunk([1]+chunks).squeeze()
-            
-            filenames = list((dirname/'MASKS').glob(f'*SAT_{bn.values}.zip'))
-            assert len(filenames) == 1
-            satpath = uncompress(filenames[0], tmpdir)
-            ds[satpath.stem] = xr.open_dataarray(satpath).chunk([1]+chunks).squeeze()     
+        sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
+        ds[f'SAT_{bn.values}'] = sat.rename(x=n.columns.name, y=n.rows.name)
+    
+    else: 
+        log.debug('Masks are not red due to uncompression time consuming. '
+                  'Active option read_masks to read them')
         
     ds = merge(ds, n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)        
-    return ds
+    ds = ds.assign_coords({n.bands.name: ds[n.bands.name].data.astype(int),
+                           n.bands_nvis.name: ds[n.bands.name].data.astype(int)})    
+    return drop_unused_dims(ds).unify_chunks()
 
 
-def Level2_VENUS(dirname, chunks=500):
+def Level2_VENUS(dirname, 
+                 chunks: int|tuple = 500,
+                 metadata_template: list = None):
     '''
     Read an Venµs Level2 product as an xarray.Dataset
 
@@ -119,27 +124,52 @@ def Level2_VENUS(dirname, chunks=500):
     '''
     ds = xr.Dataset()
     dirname = Path(dirname)
-    assert dirname.exists()
-    
-    ds = venus_read_metadata(ds, dirname)
+    assert dirname.exists(), 'Folder does not exists'
     if isinstance(chunks, int): chunks = [chunks]*2
     
+    # read metadata
+    log.debug('Reading metadata')
+    ds, metadata_granule = venus_read_metadata(ds, dirname, metadata_template)
+    
     # lat-lon
-    geocoding = ds.attrs['Geoposition_Informations']
+    log.debug('Compute LatLon raster')
+    geocoding = metadata_granule['Geoposition_Informations']
     venus_read_latlon(ds, geocoding, chunks)
 
     # read geaometry
-    venus_read_geometry(ds, dirname, chunks)
+    log.debug('Read and compute geometric angles')
+    ds = venus_read_geometry(ds, dirname, chunks)
 
     # read reflectances
-    radio_info = ds.attrs['Radiometric_Informations']
+    radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
     ds = venus_read_rho(ds, dirname, quantif, chunks)
+    
+    # read cloud mask
+    log.debug('Open masks')
+    cld = open_raster(dirname/'MASKS','*CLM_XS.tif').chunk(chunks)
+    ds['CLM_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    
+    # read other masks
+    usi = open_raster(dirname/'MASKS','*USI_XS.tif').chunk(chunks)
+    ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    
+    cld = open_raster(dirname/'MASKS','*SAT_XS.tif').chunk(chunks)
+    ds['SAT_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    
+    usi = open_raster(dirname/'MASKS','*PIX_XS.tif').chunk([1]+list(chunks))
+    ds['PIX_XS'] = usi.rename(x=n.columns.name, y=n.rows.name, band=n.bands.name)
+    
+    cld = open_raster(dirname/'MASKS','*IAB_XS.tif').chunk(chunks)
+    ds['IAB_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    
+    usi = open_raster(dirname/'MASKS','*EDG_XS.tif').chunk(chunks)
+    ds['EDG_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    
+    return drop_unused_dims(ds).unify_chunks()
 
-    return ds
 
-
-def venus_read_metadata(ds, dirname):
+def venus_read_metadata(ds, dirname, metadata_template):
 
     # load xml file
     xmlfiles = list((dirname/'DATA').glob('*UII_ALL.xml'))
@@ -154,6 +184,7 @@ def venus_read_metadata(ds, dirname):
     # Extract resolution, band names and wavelength
     resolution = None
     bandnames, cwvl = [], []
+    log.debug('Extract central wavelength')
     radio_info = xmlgranule['Radiometric_Informations']['Spectral_Band_Informations_List']
     for band in radio_info['Spectral_Band_Informations']:
         r = band['SPATIAL_RESOLUTION']['values']
@@ -168,7 +199,6 @@ def venus_read_metadata(ds, dirname):
     date = xmlgranule['Product_Characteristics']['ACQUISITION_DATE']
 
     # get platform
-    ds.attrs[n.product_name.name] = xmlroot['Scene_Useful_Image_Informations']['SCENE_ID']
     platform = xmlgranule['Product_Characteristics']['PLATFORM']
     assert platform == 'VENUS'
 
@@ -178,73 +208,47 @@ def venus_read_metadata(ds, dirname):
     ds.attrs['totalwidth'] = shape_info['Group_Geopositioning']['NCOLS']
     
     # attributes
-    ds.attrs['datetime'] = date
-    ds.attrs[n.platform] = platform
-    ds.attrs[n.resolution] = resolution
-    ds.attrs[n.sensor] = 'VENUS'
-    ds.attrs[n.product_name] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
-    ds.attrs.update(xmlgranule)
-    ds.attrs.update(xmlroot)
+    log.debug('Add important attributes')
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    ds.attrs[n.datetime.name] = date
+    ds.attrs[n.platform.name] = platform
+    ds.attrs[n.resolution.name] = resolution
+    ds.attrs[n.sensor.name] = 'VENUS'
+    ds.attrs[n.product_name.name] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
+    ds.attrs[n.input_directory.name] = str(dirname.parent)
+    ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
+    ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
     
-    return ds
+    return ds, xmlgranule
 
 
 def venus_read_latlon(ds, geocoding, chunks):
+    
     ds[n.lat.name] = DataArray_from_array(
         LATLON(geocoding, 'lat', ds),
-        ('y','x'),
+        (n.rows.name, n.columns.name),
         chunks=chunks,
     )
 
     ds[n.lon.name] = DataArray_from_array(
         LATLON(geocoding, 'lon', ds),
-        ('y','x'),
+        (n.rows.name, n.columns.name),
         chunks=chunks,
     )
-
-def venus_resample(arr, ratio, chunks):
-    
-    arr = arr.squeeze()
-    x,y = int(ratio[0]), int(ratio[1])
-    if x >= 1.:
-        # downsample
-        arr_resampled = 0.
-        for i in range(x):
-            for j in range(y):
-                arr_resampled += arr.isel(x=slice(i,None,x), y=slice(j,None,y))
-        arr_resampled /= x*y
-    else:
-        # over-sample
-        arr_resampled = DataArray_from_array(
-            Repeat(arr, (int(1/ratio[1]), int(1/ratio[0]))),
-            (n.rows.name,n.columns.name),
-            chunks=chunks,
-        )
-
-    arr_resampled = arr_resampled.rename({
-        'x': n.columns.name,
-        'y': n.rows.name})
-    
-    return arr_resampled
 
 def venus_read_toa(ds, granule_dir, quantif, chunks):
 
     for name in ds[n.bnames.name]:
         
-        filenames = list(granule_dir.glob(f'*REF_{name.values}.tif'))
-        assert len(filenames) == 1
-        filename = filenames[0]
-        
-        arr = xr.open_dataarray(filename).chunk([1]+chunks)
+        arr = open_raster(granule_dir, f'*REF_{name.values}.tif').chunk(chunks)
         arr = (arr/quantif).astype('float32')
-
-        xrat = len(arr.x)/ds.totalwidth
-        yrat = len(arr.y)/ds.totalheight
         
-        arr_resampled = venus_resample(arr, (xrat,yrat), chunks)
+        ratio = {n.rows.name: ds.totalheight, n.columns.name: ds.totalwidth}        
+        arr_resampled = spatial_resample(arr, ratio, chunks)
         ds[n.rtoa.name+f'_{name.values}'] = arr_resampled
 
-    ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=n.bands_nvis.name, pattern=r'(.+)_B(.+)', dtype=str)
+    ds[n.rtoa.name].attrs.update(unit=None)
     return ds
 
 
@@ -252,25 +256,18 @@ def venus_read_rho(ds, granule_dir, quantif, chunks):
 
     for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
         for name in ds[n.bnames.name]:
-            filenames = list(granule_dir.glob(f'*{rho}_{name.values}.tif'))
-            assert len(filenames) == 1
-            filename = filenames[0]
             
-            arr = xr.open_dataarray(filename).chunk([1]+chunks)
+            arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif').chunk(chunks)
             arr = (arr/quantif).astype('float32')
 
-            xrat = len(arr.x)/ds.totalwidth
-            yrat = len(arr.y)/ds.totalheight
-
-            arr_resampled = venus_resample(arr, (xrat,yrat), chunks)
+            ratio = {'y': ds.totalheight, 'x': ds.totalwidth}  
+            arr_resampled = spatial_resample(arr, ratio, chunks)
             ds[var+f'_{name.values}'] = arr_resampled
 
     ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
     
     # read Aerosol_Optical_Thickness of waper vapor content
-    filenames = list(granule_dir.glob('*ATB_XS.tif'))
-    assert len(filenames) == 1
-    atb = xr.open_dataarray(filenames[0]).chunk([1]+chunks)
+    atb = open_raster(granule_dir, '*ATB_XS.tif').chunk([1]+list(chunks))
     ds['water_vapor'] = atb.sel(band=1)
     ds['aod'] = atb.sel(band=2)
 
@@ -279,14 +276,14 @@ def venus_read_rho(ds, granule_dir, quantif, chunks):
 def venus_read_geometry(ds, dirname, chunks):
 
     # read solar angles
-    solarfiles = list((dirname/'DATA').glob('*SOL_ALL.tif'))
-    assert len(solarfiles) == 1
-    sa = xr.open_dataarray(solarfiles[0]).chunk([1]+chunks)
+    sa = open_raster(dirname/'DATA','*SOL_ALL.tif').chunk([1]+list(chunks))
+    ds['SOL_ALL'] = sa.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
     
     # read view angles
-    viewfiles = list((dirname/'DATA').glob('*VIE_ALL.tif'))
-    assert len(viewfiles) == 1
-    va = xr.open_dataarray(viewfiles[0]).chunk([1]+chunks)
+    va = open_raster(dirname/'DATA','*VIE_ALL.tif').chunk([1]+list(chunks))
+    ds['VIE_ALL'] = va.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
+    
+    return ds.rename(band=n.bands.name+'_angle')
 
 class LATLON:
     '''
@@ -308,8 +305,8 @@ class LATLON:
         YDIM = int(geopos['YDIM'])
 
         assert (XDIM%2 == 0) and (YDIM%2 == 0)
-        self.x = ULX + XDIM//2 + XDIM*np.arange(ds.totalwidth)
-        self.y = ULY + YDIM//2 + YDIM*np.arange(ds.totalheight)
+        self.x = ULX + XDIM//2 + XDIM*da.arange(ds.totalwidth)
+        self.y = ULY + YDIM//2 + YDIM*da.arange(ds.totalheight)
 
         self.shape = (ds.totalheight, ds.totalwidth)
         self.ndim = 2
@@ -319,9 +316,9 @@ class LATLON:
         X, Y = self.x[key[1]], self.y[key[0]]
         if isinstance(key[0], slice) and isinstance(key[1], slice):
             # keys are both slices
-            X, Y = np.meshgrid(X, Y)
+            X, Y = da.meshgrid(X, Y)
         else:
-            X, Y = np.broadcast_arrays(X, Y)
+            X, Y = da.broadcast_arrays(X, Y)
 
         lon, lat = self.proj(X, Y, inverse=True)
 
@@ -329,12 +326,12 @@ class LATLON:
             if hasattr(lat, 'astype'):
                 return lat.astype(self.dtype)
             else:
-                return np.array(lat, dtype=self.dtype)
+                return da.array(lat, dtype=self.dtype)
         else:
             if hasattr(lon, 'astype'):
                 return lon.astype(self.dtype)
             else:
-                return np.array(lon, dtype=self.dtype)
+                return da.array(lon, dtype=self.dtype)
 
 
 def get_SRF(

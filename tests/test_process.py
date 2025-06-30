@@ -5,9 +5,13 @@
 import tempfile
 import numpy as np
 import pytest
+
+from core.geo import n
+from core.files import to_netcdf
+from dask.diagnostics import ProgressBar
+
 from eoread.olci import Level1_OLCI, get_sample
 from eoread.process import blockwise_method
-from dask.diagnostics import ProgressBar
 
 @pytest.fixture(scope='module')
 def level1_path(): return get_sample()
@@ -29,9 +33,9 @@ class Calib:
         }
         self.coeff = np.array([self.calib[b] for b in bands.values]).reshape((-1, 1, 1))
     @blockwise_method(
-        dims_blockwise=('rows', 'columns'),
-        dims_out=[('bands', 'rows', 'columns'),
-                  ('rows', 'columns')],
+        dims_blockwise=(n.rows.name, n.columns.name),
+        dims_out=[(n.bands.name, n.rows.name, n.columns.name),
+                  (n.rows.name, n.columns.name)],
         dtypes=['float64', 'bool'])
     def calc(self, Rtoa):
         return Rtoa * self.coeff, Rtoa[0,:,:] > 0
@@ -40,7 +44,7 @@ def test_processing(level1_path):
     '''
     Try processing a Sentinel file
     '''
-    ds = Level1_OLCI(level1_path, init_reflectance=True)
+    ds = Level1_OLCI(level1_path, v1_compat=True)
 
     ds = ds.chunk({'bands': -1})
 
@@ -51,7 +55,7 @@ def test_processing(level1_path):
         x=slice(0, 1000),
     )
     with tempfile.NamedTemporaryFile(suffix='.nc') as tmpf, ProgressBar():
-        sub.to_netcdf(tmpf.name)
+        to_netcdf(sub, tmpf.name, clean_attrs=True, if_exists='overwrite')
 
 
 class FakeModule:
@@ -66,5 +70,5 @@ def test_processing2(level1_path):
     '''
     Try processing a Sentinel file
     '''
-    ds = Level1_OLCI(level1_path, init_reflectance=True)
+    ds = Level1_OLCI(level1_path)
     print(ds)

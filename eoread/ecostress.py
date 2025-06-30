@@ -1,7 +1,9 @@
-from core import env, log
+from eoread.utils import filter_metadata
 from core.tools import merge
+from core import env, log
 from core.geo import n
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import xarray as xr 
@@ -10,14 +12,20 @@ import dask.array as da
 
 user_guide = 'https://ecostress.jpl.nasa.gov/downloads/userguides/1_ECOSTRESS_L1_UserGuide_20190619.pdf'
 
-def Level1_ECOSTRESS(filepath: Path | str, chunks: int = 500):
+def Level1_ECOSTRESS(filepath: Path | str, 
+                     chunks: int = 500, 
+                     metadata_template: list = None,
+                     v1_compat: bool = False):
     
-    # Revize variables
     filepath = Path(filepath)
+    assert filepath.exists(), 'File does not exists'
+    if isinstance(chunks, int): chunks = [chunks]*2    
+    
+    # Revize variables    
     log.debug('Reading h5file')
     data = xr.open_datatree(filepath, phony_dims='sort')
     raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
-    raw = raw.to_dataset().chunk(chunks=chunks)
+    raw = raw.to_dataset().chunk(chunks=dict(zip(list(raw.dims), chunks)))
     
     # Read Metadata
     granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
@@ -33,22 +41,36 @@ def Level1_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     l1 = transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     log.debug('add important attributes')
-    for att in list(attributes):
-        l1.attrs[att] = attributes[att].values.item()
-    l1.attrs['hdfeos_info'] = p.data
-    l1.attrs['user guide'] = user_guide
+    l1.attrs['metadata'] = {k: v.item() for k,v in attributes.items()}
+    l1.attrs['metadata'] = filter_fn(l1.attrs['metadata'], metadata_template)
+    l1.attrs['hdfeos_info'] = filter_fn(p.data, metadata_template)
+    l1.attrs['user_guide'] = user_guide
+    
+    # Add general information
+    l1.attrs[n.datetime.name] = l1.metadata['ProductionDateTime']
+    l1.attrs[n.platform.name] = l1.metadata['PlatformShortName']
+    l1.attrs[n.sensor.name] = l1.metadata['InstrumentShortName']
+    l1.attrs[n.product_name.name] = filepath.name
+    l1.attrs[n.input_directory.name] = str(filepath.parent)
+    l1.attrs[n.resolution.name] = 70
     
     # Change dimensions name and update coordinates
-    new_dims = (n.rows.name,n.columns.name,n.bands_ir.name)    
-    revize_dims = dict(zip(list(l1.dims), new_dims))
+    new_dims = (n.rows.name,n.columns.name)    
+    revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
     l1 = l1.rename_dims(revize_dims)
-    l1 = l1.assign({n.wav_ir.name: ((n.bands_ir.name),granule_mtd.BandSpecification.values[1:])})
+    l1 = l1.assign({
+        n.cwav.name: ((n.bands.name), granule_mtd.BandSpecification.values[1:]),
+        n.bnames.name: ((n.bands.name), l1[n.bands.name].values.astype(str))
+    })
     
     # Add latlon variables
     log.debug('add latlon variables')
-    l1 = supplement_latlon(l1, chunks)
-    return l1
+    l1 = supplement_latlon(l1, list(chunks))
+    
+    if v1_compat: return _v1_compat(l1)
+    else: return l1
 
 
 def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
@@ -57,7 +79,7 @@ def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     filepath = Path(filepath)
     data = xr.open_datatree(filepath, phony_dims='sort')
     raw = data['HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields']
-    l1 = raw.to_dataset().chunk(chunks=chunks)
+    l2 = raw.to_dataset().chunk(chunks=chunks)
     
     # Read Metadata
     granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
@@ -94,21 +116,24 @@ def transform_radiometry(raw_data, granule_mtd):
     # Combine band radiances into a single variable 
     level1 = merge(raw_data, dim=n.bands.name, pattern=r'(.+)_(\d+)')
     
+    # Rename radiance variable
+    level1 = level1.rename({'radiance': n.ltoa.name})
+    
     # Compute brightness temperature for Emissive bands 
     level1[n.bt.name] = compute_bt(level1, granule_mtd)
     level1[n.bt.name].attrs = {}
-    level1[n.bt.name].attrs['units'] = 'Kelvin'
-        
-    level1 = level1.drop_indexes(list(level1.coords)) \
-                   .reset_coords(drop=True)
+    level1[n.bt.name].attrs['unit'] = 'Kelvin'
+    
     return level1
 
 def supplement_latlon(l1, chunks): 
         
     # Compute LatLon variables
     size = l1['cloud'].shape
-    north, south = l1.NorthBoundingCoordinate, l1.SouthBoundingCoordinate
-    east, west = l1.EastBoundingCoordinate, l1.WestBoundingCoordinate
+    north = l1.metadata['NorthBoundingCoordinate']
+    south = l1.metadata['SouthBoundingCoordinate']
+    east  = l1.metadata['EastBoundingCoordinate']
+    west  = l1.metadata['WestBoundingCoordinate']
     
     dims = [n.rows.name,n.columns.name]
     lat = da.linspace(south,north,size[1]).reshape((1,size[1]))
@@ -126,18 +151,44 @@ def compute_bt(l1, granule_mtd) -> xr.DataArray:
     K2 = 1.4387752 * 1e4
     
     # Temperature correction
-    cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0='bands') * 1e-3 # convert into µm
-    gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1='bands')
-    offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1='bands')
+    cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0=n.bands.name) # convert into µm
+    gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1=n.bands.name)
+    offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1=n.bands.name)
     l1 = l1.assign({n.cwav.name: ((n.bands_ir.name),cwvl.data)})
     
     # Some versions of the modis files do not contain all the bands.
-    valid = ~l1['radiance'].isnull()
-    array = K2 / (cwvl * np.log(K1 / (l1['radiance'].where(valid) * cwvl ** 5) + 1))
-    return gain * array.where(valid) + offset
-    
+    valid = ~l1[n.ltoa.name].isnull()
+    array = K2 / (cwvl * np.log(K1 / (l1[n.ltoa.name].where(valid) * cwvl ** 5) + 1))
+    bt = gain * array.where(valid) + offset
+    return bt.rename({n.bands.name: n.bands_ir.name})
 
-def get_sample(level:int=1, use_cache:bool=True) -> Path:
+def _v1_compat(ds):
+    
+    # Rename IR bands into bands_tir
+    ds = ds.rename({n.bands_ir.name: 'bands_tir'})
+    
+    # Assign central wavelengths as bands coordinates
+    ds = ds.assign_coords({'bands_tir': [8290,8780,9200,10490,12090],
+                           n.bands.name: [8290,8780,9200,10490,12090]})
+    
+    # Add a new variables called flags
+    flags = ds.data_quality[0] != 0
+    ds['flags'] = flags.astype(n.flags.dtype)
+    
+    # Add missing attributes
+    ds.attrs['product_name'] = ds.attrs['product_name'][:-3]
+    ds.attrs['Description'] = ds.metadata['LongName']
+    ds.attrs['shortname']  = str(ds.metadata['ShortName'])
+    ds.attrs['night']      = str(str(ds.metadata['DayNightFlag']) != 'Day')
+    ds.attrs['CRS']        = str(ds.metadata['CRS'])
+    ds.attrs['Boundary']   = str(ds.metadata['SceneBoundaryLatLonWKT'])
+    ds.attrs['version']    = str(ds.metadata['PGEVersion'])  
+    ds.attrs[n.resolution.name] = 70
+
+    return ds
+
+
+def get_sample(level: Literal['1B','1C','2A'], use_cache:bool=True) -> Path:
     try: 
         from core.files import cache_dataframe
         from sand.nasa import DownloadNASA
@@ -146,13 +197,13 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
         log.error('To use get_sample function, you need to install SAND module',
                   e=ImportError)
         
-    cachefile = env.getdir('DIR_STATIC')/'query_ecostress.pickle'
+    cachefile = env.getdir('DIR_STATIC')/f'query_ecostress_{level}.pickle'
     if use_cache: cache_deco = cache_dataframe(cachefile)
     else: cache_deco = lambda x: x
     
     sensor = 'ECOSTRESS'
     params = products[sensor][f'level{level}']
-    dl = DownloadNASA(sensor, level)
+    dl = DownloadNASA(sensor, int(level))
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 

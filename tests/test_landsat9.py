@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import numpy as np
 import pytest
 
-from eoread import eo
-from eoread.landsat9_oli import *
-
+from eoread.landsat_oli import *
 from . import generic
-from .generic import indices, param, scheduler
 
 
 # product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
@@ -16,33 +12,34 @@ from .generic import indices, param, scheduler
 product_l1 = '/mnt/ceph/data/LANDSAT9/USA/LC09_L1TP_014034_20220618_20230411_02_T1/'
 product_l2 = '/mnt/ceph/data/LAN/'
 
-@pytest.fixture(scope='module')
-def sample_landsat9_oli(): return get_sample()
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
+
+@pytest.fixture()
+def product_l9_oli(chunks):
+    return Level1_OLI(product_l1, chunks=chunks)
 
 
-@pytest.mark.parametrize('split', [True, False])
-def test_instantiate(sample_landsat9_oli, split):
-    l1 = Level1_L9_OLI(sample_landsat9_oli, split=split)
+def test_l1c_instantiate():
+    l1 = Level1_OLI(product_l1)
 
-    if split:
-        assert 'Rtoa' not in l1
-        assert 'Rtoa_440' in l1
-    else:
-        assert 'Rtoa' in l1
-        assert 'Rtoa_440' not in l1
+def test_l1c_main(product_l9_oli):
+    generic.test_main(product_l9_oli, angle_data=False)
+    
+def test_l1c_time(chunks): 
+    params = {'dirname': product_l1, 'chunks': chunks}
+    generic.test_execution_time(Level1_OLI, params)
 
+def test_l1c_subset(product_l9_oli):
+    generic.test_subset(product_l9_oli)
 
-def test_main():
-    l1 = Level1_L9_OLI(product_l1)
-    generic.test_main(l1)
-
-def test_subset(sample_landsat9_oli):
-    l1 = Level1_L9_OLI(sample_landsat9_oli)
-    generic.test_subset(l1)
-
-@pytest.mark.parametrize('radio, angle', [
-    ('radiance', False),
-    ('reflectance', True)])
-def test_radiometry(sample_landsat9_oli, radio, angle):
-    l1 = Level1_L9_OLI(sample_landsat9_oli, radiometry=radio)
-    generic.test_main(l1, angle)
+@pytest.mark.skip('No output from version 1')
+def test_l1c_v1_compat():
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_OLI(product_l1, v1_compat=True)
+    old = xr.open_dataset(v1_data/(product_l1.stem+f'_res'))
+    generic.compare_version(l1, old)
+    
+def test_l1c_lazy_load(product_l9_oli):
+    generic.test_lazy_load(product_l9_oli)

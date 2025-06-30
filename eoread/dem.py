@@ -71,11 +71,13 @@ class ArrayLike_SRTM:
                                         {True: 'E', False: 'W'}[ilon>=0],
                                         abs(ilon))
                 url = self.url_base.format(tile_name)
-                filepath = self.directory/(url.stem+'.hgt')
+                list_name = Path(url).stem.split('.')
+                list_name.pop(1)
+                filepath = self.directory/'.'.join(list_name)
                 if url in self.tiles_list:
-                    if not filepath.exists():
-                        filename = download_url(url, self.directory, verbose=self.verbose, wget_opts='-q')
-                        filepath = uncompress(filename,self.directory)
+                    if not filepath.exists():                        
+                        filename = download_url(url, self.directory, wget_opts='-q', )
+                        filepath = uncompress(filename, self.directory)
                         remove(filename)
                     data = read_hgt(str(filepath))
                 else:

@@ -4,9 +4,6 @@
 from pathlib import Path
 from eoread.venus import *
 from . import generic
-from eoread import eo
-from . import conftest
-from matplotlib import pyplot as plt
 
 import pytest
 import xarray as xr
@@ -14,8 +11,8 @@ import xarray as xr
 
 # product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
 # product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
-product_l1 = '/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/'
-product_l2 = '/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L2A_VILAINE_C_V3-1/'
+product_l1 = Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
+product_l2 = Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L2A_VILAINE_C_V3-1/')
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):
@@ -25,84 +22,29 @@ def chunks(request):
 def VENUS_product(chunks):
     return Level1_VENUS(product_l1, chunks=chunks)
 
-def test_instantiation(chunks):
-    Level1_VENUS(product_l1, chunks=chunks)
-
-
-@pytest.mark.parametrize('param', ['sza', 'vza', 'saa', 'vaa', 'latitude', 'longitude'])
-def test_msi_merged(VENUS_product, param):
-    l1 = VENUS_product
-    print(l1)
-    assert 'Rtoa_420' not in l1
-    assert 'Rtoa' in l1
-
-    # check parameter consistency through windowing
-    xr.testing.assert_allclose(
-        l1[param][1000, 500],
-        l1.isel(y=slice(1000, None),
-                x=slice(500, None))[param][0, 0])
-
-    xr.testing.assert_allclose(
-        l1[param][1000:1010, 500:510],
-        l1.isel(y=slice(1000, None),
-                x=slice(500, None))[param][:10, :10])
-
-
-@pytest.mark.parametrize('band', ['Rtoa_420', 'Rtoa_490', 'Rtoa_865'])
-def test_msi_split(band):
-    l1 = Level1_VENUS(product_l1, split=True)
-    print(l1)
-    assert 'Rtoa_420' in l1
-    assert 'Rtoa' not in l1
-
-    assert l1[band][:10, :10].values.shape == (10, 10)
-
-    xr.testing.assert_allclose(
-            l1[band][:600, :600].compute()[500:550, 450:550],
-            l1.sel(y=slice(500, 550), x=slice(450, 550))[band],
-            )
     
+def test_l1c_instantiation(chunks):
+    Level1_VENUS(product_l1, chunks=chunks)
+    
+def test_l1c_main(VENUS_product):
+    generic.test_main(VENUS_product, angle_data=False)
+    
+def test_l1c_time(chunks): 
+    params = {'dirname': product_l1, 'chunks': chunks}
+    generic.test_execution_time(Level1_VENUS, params)
 
-def test_main():
-    l1 = Level1_VENUS(product_l1, chunks=500)
-    generic.test_main(l1)
-
-
-@pytest.mark.parametrize('scheduler', [
-    'single-threaded',
-    'threads',
-])
-def test_read(VENUS_product, scheduler):
-    eo.init_geometry(VENUS_product)
-    generic.test_read(VENUS_product, 'Rtoa', (1000,1000), scheduler)
-
-
-def test_subset(VENUS_product):
+def test_l1c_subset(VENUS_product):
     generic.test_subset(VENUS_product)
-
-from dask import config
-def test_plot(request):
-    ds = Level1_VENUS(product_l1)
-    eo.init_geometry(ds)
-
-    for desc, data in [
-        ("rho_toa865", ds.Rtoa.sel(bands=865)),
-        ('latitude', ds.latitude),
-        ('longitude', ds.longitude),
-        ('flags', ds.flags),
-        ('sza', ds.sza),
-        ('vza', ds.vza),
-        ('raa', ds.raa),
-    ]:
-        plt.figure()
-        plt.title(desc)
-        with config.set(scheduler='sync'):
-            data.thin(x=10, y=10).plot()
-            conftest.savefig(request)
-
-
-def test_srf(request):
-    srf = get_SRF()
+    
+@pytest.mark.skip('No output from version 1')
+def test_l1c_v1_compat():
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_VENUS(product_l1, v1_compat=True)
+    old = xr.open_dataset(v1_data/(product_l1.stem+f'_res'))
+    generic.compare_version(l1, old)
+    
+def test_l1c_lazy_load(VENUS_product):
+    generic.test_lazy_load(VENUS_product)
 
 def test_level2(chunks):
     Level2_VENUS(product_l2, chunks=chunks)

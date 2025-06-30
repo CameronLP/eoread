@@ -1,82 +1,46 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import numpy as np
 import pytest
 
-from eoread import eo
-from eoread.landsat8_oli import *
-
+from eoread.landsat_oli import *
 from . import generic
 
-try:
-    import gdal
-except ModuleNotFoundError:
-    gdal = None
 
 # product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
 # product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
-product_l1 = '/mnt/ceph/data/LAN'
+product_l1 = 'data/sample_products/LC08_L1TP_180054_20250104_20250111_02_T1'
 product_l2 = '/mnt/ceph/data/LAN/'
 
 
-@pytest.fixture(scope='module')
-def level1_landsat(): return get_sample()
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
 
-@pytest.mark.parametrize('lat_or_lon', ['lat', 'lon'])
-def test_latlon(level1_landsat, lat_or_lon):
-    latlon_nogdal = LATLON_NOGDAL(level1_landsat, lat_or_lon)
-    assert latlon_nogdal[:20, :10].shape == (20, 10)
-    assert latlon_nogdal[:20:2, :10:2].shape == (10, 5)
-
-    if gdal is not None:
-        latlon_gdal = LATLON_GDAL(level1_landsat, lat_or_lon)
-        assert latlon_gdal[:20, :10].shape == (20, 10)
-        assert latlon_gdal[:20:2, :10:2].shape == (10, 5)
-
-        assert latlon_gdal.shape == latlon_nogdal.shape
-        np.testing.assert_allclose(
-            latlon_gdal[::100, ::100],
-            latlon_nogdal[::100, ::100])
+@pytest.fixture()
+def product_l8_oli(chunks):
+    return Level1_OLI(product_l1, chunks=chunks)
 
 
-@pytest.mark.parametrize('b', [440, 480, 560, 655, 865, 1375, 1610, 2200])
-def test_toa_read(level1_landsat, b):
-    r = TOA_READ(b, level1_landsat)
-    assert r[5000:5050, 4000:4040].shape == (50, 40)
-    assert r[5000:5050:2, 4000:4040:2].shape == (25, 20)
+def test_l1c_instantiate():
+    l1 = Level1_OLI(product_l1)
 
+def test_l1c_main(product_l8_oli):
+    generic.test_main(product_l8_oli, angle_data=False)
+    
+def test_l1c_time(chunks): 
+    params = {'dirname': product_l1, 'chunks': chunks}
+    generic.test_execution_time(Level1_OLI, params)
 
-@pytest.mark.parametrize('split', [True, False])
-def test_instantiate(level1_landsat, split):
-    l1 = Level1_L8_OLI(level1_landsat, split=split)
+def test_l1c_subset(product_l8_oli):
+    generic.test_subset(product_l8_oli)
 
-    if split:
-        assert 'Rtoa' not in l1
-        assert 'Rtoa_440' in l1
-    else:
-        assert 'Rtoa' in l1
-        assert 'Rtoa_440' not in l1
-
-
-@pytest.mark.parametrize('angle', [True])
-def test_main(level1_landsat, angle):
-    l1 = Level1_L8_OLI(level1_landsat, angle_data=angle)
-    generic.test_main(l1, angle)
-
-@pytest.mark.parametrize('use_gdal', [False] if (gdal is None) else [True, False])
-def test_read(param, indices, scheduler, use_gdal):
-    l1 = Level1_L8_OLI(level1_landsat, use_gdal=use_gdal)
-    eo.init_geometry(l1)
-    generic.test_read(l1, param, indices, scheduler)
-
-def test_subset(level1_landsat):
-    l1 = Level1_L8_OLI(level1_landsat)
-    generic.test_subset(l1)
-
-@pytest.mark.parametrize('radio, angle', [
-    ('radiance', False),
-    ('reflectance', True)])
-def test_radiometry(level1_landsat, radio, angle):
-    l1 = Level1_L8_OLI(level1_landsat, radiometry=radio)
-    generic.test_main(l1, angle)
+@pytest.mark.skip('No output from version 1')
+def test_l1c_v1_compat():
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_OLI(product_l1, v1_compat=True)
+    old = xr.open_dataset(v1_data/(product_l1.stem+f'_res'))
+    generic.compare_version(l1, old)
+    
+def test_l1c_lazy_load(product_l8_oli):
+    generic.test_lazy_load(product_l8_oli)

@@ -8,13 +8,20 @@ from eoread.goesng import Level1_GOESNG, config
 from eoread.hdf4 import load_hdf4
 from eoread import eo
 from . import conftest
-# from . import local_config
 from . import generic
-from .generic import param, indices, scheduler
+
+product_l1 = '/archive'
+product_l2 = '/mnt/ceph/data/LAN/'
 
 
-# GOESNG-0750.1km.hdf
-# config['auxfile'] = local_config.goes_auxfile
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
+
+@pytest.fixture()
+def product_goesng(chunks):
+    return Level1_GOESNG(product_l1, chunks=chunks)
+
 
 def test_load_hdf4():
     ds = load_hdf4(config['auxfile'])

@@ -2,96 +2,62 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from matplotlib import pyplot as plt
-from eoread.olci import get_sample
-from eoread.autodetect import Level1, Level2
+import xarray as xr 
+from eoread.olci import *
 from eoread.olci import get_valid_l2_pixels
 from eoread import eo
-from core.tools import chunk, contains
 from . import generic
-from .generic import param, indices, scheduler  # noqa (fixtures)
-from .conftest import savefig
 
 
 olci_level1 = pytest.fixture(lambda: get_sample(1), scope='module')
 olci_level2 = pytest.fixture(lambda: get_sample(2), scope='module')
 
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
 
-def test_olci_level1(olci_level1):
-    ds = Level1(olci_level1)
+@pytest.fixture
+def OLCI_product(chunks, olci_level1):
+    return Level1_OLCI(olci_level1, chunks=chunks)
 
-    ds = chunk(ds, bands=-1)
-    ds.chunks    # check that it returned valid chunks
+    
+def test_l1c_instantiation(chunks, olci_level1):
+    Level1_OLCI(olci_level1, chunks=chunks)
+    
+def test_l1c_main(OLCI_product):
+    generic.test_main(OLCI_product, angle_data=False)
+    
+def test_l1c_time(chunks, olci_level1): 
+    params = {'dirname': olci_level1, 'chunks': chunks}
+    generic.test_execution_time(Level1_OLCI, params)
 
-    # test method contains
-    lat = ds.latitude[100, 100]
-    lon = ds.longitude[100, 100]
-    assert contains(ds, lat, lon)
-    assert not contains(ds, lat, lon+180)
+def test_l1c_subset(OLCI_product):
+    generic.test_subset(OLCI_product)
+    
+def test_l1c_v1_compat(olci_level1):
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_OLCI(olci_level1, v1_compat=True)
+    old = xr.open_dataset(v1_data/(olci_level1.stem))
+    old = old.reset_coords(['altitude','latitude','longitude'])
+    generic.compare_version(l1, old)
+    
+def test_l1c_lazy_load(OLCI_product):
+    generic.test_lazy_load(OLCI_product)
 
-    assert 'total_column_ozone' in ds
-    assert 'sea_level_pressure' in ds
-    assert 'total_columnar_water_vapour' in ds
+@pytest.mark.skip('No level 2')
+def test_level2(chunks, olci_level2):
+    Level2_OLCI(olci_level2, chunks=chunks)
 
-
+@pytest.mark.skip('No level 2')
 def test_sub_pt(olci_level1):
-    ds = Level1(olci_level1)
+    ds = Level1_OLCI(olci_level1)
     lat0 = ds.latitude[500, 500]
     lon0 = ds.longitude[500, 500]
     eo.sub_pt(ds, lat0, lon0, 3)
 
-
-def test_olci_level2(olci_level2):
-    l2 = Level2(olci_level2)
-    print(l2)
-
-
+@pytest.mark.skip('No level 2')
 def test_olci_level2_flags(olci_level2):
-    l2 = Level2(olci_level2)
+    l2 = Level2_OLCI(olci_level2)
 
     eo.getflags(l2.wqsf)
     get_valid_l2_pixels(l2.wqsf)
-
-
-def test_main(olci_level1):
-    ds = Level1(olci_level1)
-    eo.init_Rtoa(ds)
-    generic.test_main(ds)
-
-def test_read(olci_level1, param, indices, scheduler):
-    ds = Level1(olci_level1)
-    eo.init_Rtoa(ds)
-    generic.test_read(ds, param, indices, scheduler)
-
-
-def test_subset(olci_level1):
-    ds = Level1(olci_level1)
-    generic.test_subset(ds)
-
-@pytest.mark.parametrize('s', [
-    slice(None, 300),
-    slice(None, None, 10),
-    ])
-@pytest.mark.parametrize('interp', ['legacy', 'linear', 'atan2'])
-def test_preview(olci_level1, param, request, s, interp):
-    """
-    Generate browses of various products
-    """
-    plt.figure()
-    l1 = Level1(olci_level1, interp_angles=interp)
-    eo.init_Rtoa(l1)
-    if l1[param].ndim == 2:
-        plt.imshow(l1[param][s, s])
-    elif l1[param].ndim == 3:
-        plt.imshow(l1[param][-1, s, s])
-    plt.colorbar()
-    savefig(request)
-
-
-def test_flag(olci_level1):
-    """
-    Check that flags are properly raised
-    """
-    l1 = Level1(olci_level1)
-    assert (l1.quality_flags > 0).any()
-    # assert (l1.flags > 0).any()

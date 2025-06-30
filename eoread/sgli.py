@@ -5,51 +5,37 @@
 from pathlib import Path
 
 import dask.array as da
-import numpy as np
 import pandas as pd
 import xarray as xr
-from datetime import datetime
 
-from .common import Interpolator, DataArray_from_array
-from core.tools import raiseflag, merge
-from .utils.naming import naming, flags
-from .eo import init_geometry as init_geo
-from core import env
+from eoread.eo import init_geometry as init_geo
+from eoread.utils import spatial_resample, filter_metadata
+
+from core.geo import n
+from core.tools import raiseflag
+from core.tools import merge, drop_unused_dims
+from core import env, log
 
 
-sgli_bands = [
-    380, #'VN01'
-    412, #'VN02'
-    443, #'VN03'
-    490, #'VN04'
-    530, #'VN05'
-    565, #'VN06'
-    673, #'VN07'
-    674, #'VN08'
-    763, #'VN09'
-    868, #'VN10'
-    869, #'VN11'
-]
-
-def get_sample() -> Path:
+def get_sample(level: int=1, use_cache:bool=True) -> Path:
     # Assumes that sample file exists locally in dir_samples
     # Downloaded from /standard/GCOM-C/GCOM-C.SGLI/L1B/2/2019/12/05
-    sample = env.getdir('DIR_SAMPLES')/'SGLI'/'GC1SG1_201912050159F05712_1BSG_VNRDQ_2000.h5'
+    sample = Path('/archive2/data/EOREAD_TESTDATA/SGLI/GC1SG1_201912050159F05712_1BSG_VNRDQ_1007.h5')
     assert sample.exists()
     return sample
 
 
-sgli_central_wavelengths = np.array([
+sgli_central_wavelengths = da.array([
     380.00, 412.00, 443.00, 490.00,
     530.00, 565.00, 673.50, 673.50,
     763.00, 868.50, 868.50], dtype='float32')
 
 
-def Level1_SGLI(filename,
-                chunks=500,
-                thres_land_flag=20,
-                split=False,
-                ):
+def Level1_SGLI(filepath: str|Path,
+                chunks: int|tuple = 500,
+                metadata_template: list = None,
+                add_ancillary_data: bool = False, 
+                v1_compat: bool = False):
     """
     Read SGLI Level1 VIS-NIR bands
 
@@ -58,89 +44,80 @@ def Level1_SGLI(filename,
     https://suzaku.eorc.jaxa.jp/GCOM_C/instruments/product.html
     """
     ds = xr.Dataset()
-    filename = Path(filename).resolve()
+    filepath = Path(filepath)
+    assert filepath.exists(), 'File does not exists'
 
     # open image_data
-    imdata = xr.open_dataset(
-        filename,
-        group='Image_data',
-        chunks=chunks)
+    tree = xr.open_datatree(filepath, phony_dims='sort')
+    imdata = tree['Image_data'].to_dataset()
+    
+    # read metadata
+    log.debug('Reading metadata files')
+    metadata = _read_metadata(ds, tree, metadata_template)
+    ds = ds.assign({n.bnames.name: ((n.bands.name), metadata['Stored_channels'].split(',')),
+                    n.cwav.name: ((n.bands.name), sgli_central_wavelengths)})
 
     imdata = imdata.rename_dims(dict(zip(
         imdata.Lt_VN01.dims,
-        naming.dim2
+        (n.rows.name, n.columns.name)
     )))
-    shp = (imdata.dims[naming.rows], imdata.dims[naming.columns])
+    shape = imdata.Lt_VN01.shape
 
-    init_geometry(ds, filename, shp, chunks)
-
+    log.debug('Read and compute geometric angles')
+    _init_geometry(ds, tree, shape, chunks)
     init_geo(ds)
 
-    ds = init_toa(ds, imdata, split)
+    log.debug('Read top of atmosphere data')
+    ds = _init_toa(ds, imdata, chunks)
 
-    ds = ds.assign_coords(bands=sgli_bands)
-
-    #
     # Attributes
-    #
-    ga = xr.open_dataset(filename,
-                         group='Global_attributes',
-                         chunks=chunks)
-    ds.attrs = ga.attrs
-    dt = datetime.strptime(ga.attrs['Scene_center_time'], r'%Y%m%d %H:%M:%S.%f')
-    ds.attrs[naming.datetime] = dt.isoformat()
-    ds.attrs[naming.product_name] = filename.name
-    ds.attrs[naming.platform] = 'GCOM-C'
-    ds.attrs[naming.sensor] = 'SGLI'
-    ds.attrs[naming.input_directory] = str(filename.parent)
+    log.debug('Add important attributes')
+    ds.attrs[n.datetime.name] = metadata['Scene_center_time']
+    ds.attrs[n.product_name.name] = metadata['Product_file_name']
+    ds.attrs[n.platform.name] = 'GCOM-C'
+    ds.attrs[n.sensor.name] = 'SGLI'
+    ds.attrs[n.resolution.name] = 250
+    ds.attrs[n.input_directory.name] = str(filepath.parent)
 
-    #
-    # Flags
-    #
-    ds[naming.flags] = xr.zeros_like(
-        ds.vza,
-        dtype=naming.flags_dtype)
+    # # Flags
+    # ds[naming.flags] = xr.zeros_like(
+    #     ds.vza,
+    #     dtype=naming.flags_dtype)
 
-    raiseflag(
-        ds[naming.flags],
-        'LAND',
-        flags['LAND'],
-        imdata['Land_water_flag'] > thres_land_flag,
-    )
+    # raiseflag(
+    #     ds[naming.flags],
+    #     'LAND',
+    #     flags['LAND'],
+    #     imdata['Land_water_flag'] > thres_land_flag,
+    # )
+    
+    if add_ancillary_data: ds = _read_ancillary(ds, tree)
+    ds = ds.assign_coords({n.bands.name: ds[n.bands_nvis.name].data})
 
-    #
-    # Central wavelengths
-    #
-    ds[naming.wav] = xr.DataArray(
-        da.from_array(sgli_central_wavelengths),
-        dims=(naming.bands),
-    )
-
-    return ds.unify_chunks()
+    return drop_unused_dims(ds).unify_chunks()
 
 
 def init_toa(ds, imdata, split):
 
-    for i, b in enumerate(sgli_bands):
-        Rtoa = imdata[f'Lt_VN{i+1:02}']
+    for i in range(len(ds.bands)):
+        Rtoa = imdata[f'Lt_VN{i+1:02}'].chunk(chunks)
         attrs = Rtoa.attrs
         Rtoa = (Rtoa & attrs['Mask']) * attrs['Slope_reflectance'] + attrs['Offset_reflectance']
-        Rtoa /= ds.mus
+        Rtoa = Rtoa/ds.mus
         Rtoa.attrs = attrs
-        ds[naming.Rtoa+f'_{b}'] = Rtoa
+        ds[n.rtoa.name+f'_{i+1}'] = Rtoa
 
-    if not split:
-        ds = merge(ds, dim=naming.bands)
-
+    ds = merge(ds, dim=n.bands_nvis.name)
+    ds[n.rtoa.name].attrs['unit'] = None
     return ds
 
 
-def init_geometry(ds, filename, shp, chunks):
-    geom = xr.open_dataset(filename, group='Geometry_data')
+    
+    geom = tree['Geometry_data'].to_dataset()
 
     geom = geom.rename_dims(dict(zip(
         geom.Latitude.dims,
-        ('rows_tie', 'columns_tie')
+        (n.rows.name+'_tie', n.columns.name+'_tie')
     )))
 
     ds['lat_tie'] = geom.Latitude
@@ -158,39 +135,20 @@ def init_geometry(ds, filename, shp, chunks):
         ds[x] = ds[x] * ds[x].Slope
 
     # assign tiepoint coordinates
-    ds['columns_tie'] = np.arange(ds.dims['columns_tie'])*delta
-    ds['rows_tie'] = np.arange(ds.dims['rows_tie'])*delta
+    ds[n.columns.name+'_tie'] = da.arange(ds.sizes[n.columns.name+'_tie'])*delta
+    ds[n.rows.name+'_tie'] = da.arange(ds.sizes[n.rows.name+'_tie'])*delta
 
     # Create interpolated datasets
+    shape = dict(zip(ds.lat_tie.dims, shape))
     for (name, A) in [
-            (naming.lat, ds.lat_tie),
-            (naming.lon, ds.lon_tie),
-            (naming.vza, ds.vza_tie),
-            (naming.vaa, ds.vaa_tie),
-            (naming.sza, ds.sza_tie),
-            (naming.saa, ds.saa_tie),
+            (n.lat.name, ds.lat_tie),
+            (n.lon.name, ds.lon_tie),
+            (n.vza.name, ds.vza_tie),
+            (n.vaa.name, ds.vaa_tie),
+            (n.sza.name, ds.sza_tie),
+            (n.saa.name, ds.saa_tie),
         ]:
-        ds[name] = DataArray_from_array(
-            Interpolator(shp, A),
-            naming.dim2,
-            chunks=chunks,
-        )
-
-
-def show_all(filename):
-    """
-    List all content of netcdf file (utility function)
-    """
-    from netCDF4 import Dataset
-
-    for grp in Dataset(filename).groups:
-        print('')
-        print('Current group is', grp)
-        im = xr.open_dataset(
-            filename,
-            group=grp,
-        )
-        print(im)
+        ds[name] = spatial_resample(A, shape, chunks=chunks)
 
 
 def calc_central_wavelength():
@@ -228,7 +186,7 @@ def calc_central_wavelength():
     for i, _ in enumerate(sgli_bands):
         srf = rsr[f'RSR_VN{i+1:02}']
         wav = rsr[f'WL_VN{i+1:02}']
-        wav_eq = np.trapz(wav*srf)/np.trapz(srf)
+        wav_eq = da.trapz(wav*srf)/da.trapz(srf)
         wav_data.append(wav_eq)
 
     return sgli_bands, wav_data

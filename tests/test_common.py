@@ -424,7 +424,7 @@ def test_xrcrop_gsw(request, method):
     This allows .computing the result.
     Otherwise, the further .sel is very slow over large arrays.
     """
-    ds = msi.Level1_MSI(msi.get_sample())
+    ds = msi.Level1_MSI(msi.get_sample(), v1_compat=True)
 
     plt.figure()
     ds.Rtoa.sel(bands=865).plot.imshow(origin='upper')

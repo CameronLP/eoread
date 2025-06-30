@@ -13,7 +13,7 @@ dependencies = [
     "pyepr",
     "rioxarray",
     "core @ git+https://github.com/hygeos/core@v2",
-    "sand @ git+https://github.com/hygeos/sand@V2"]
+    "sand @ git+https://github.com/hygeos/sand"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -46,14 +46,17 @@ ipykernel = "*"
 pyepr = "*"
 rioxarray = "*"
 libgdal-jp2openjpeg = "*"
+memray = "*"
+snakeviz = "*"
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
 
 [tool.pixi.feature.sys.dependencies]
 libgdal-jp2openjpeg = "*"
+
 [tool.pixi.feature.hyp.dependencies]
 xarray = "*"
 dask = "*"
 scipy = "*"
-numpy = "<2"
+numpy = "*"

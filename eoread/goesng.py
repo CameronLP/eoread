@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import numpy as np
+import xarray as xr
+import pysolar.solar as pysol
+from dask import array as da
 
 from datetime import datetime
 from dateutil import parser
-import numpy as np
-from .process import map_blocks
 from pathlib import Path
-from .hdf4 import load_hdf4
-from . import eo
-import xarray as xr
-# from .utils.naming import naming, flags
-import pysolar.solar as pysol
+
+from eoread.process import map_blocks
+from eoread.hdf4 import load_hdf4
+from eoread import eo
 from dask.array import map_blocks
-from dask import array as da
 
 config = {
     'auxfile': 'ANCILLARY/GOESNG-0750.1km.hdf',
@@ -66,13 +66,13 @@ def Level1_GOESNG(file_1km,
         chunks_latlon = chunksize
         chunksize_cm = chunksize//2
 
-    assert 'Emultic1kmNC4' in str(file_1km)
-    file_500m = Path(str(file_1km).replace('Emultic1kmNC4', 'Emultic500mNC4'))
-    assert Path(file_1km).exists()
+    assert 'Emultic1kmNC4' in str(filepath)
+    file_500m = Path(str(filepath).replace('Emultic1kmNC4', 'Emultic500mNC4'))
+    assert Path(filepath).exists()
     assert file_500m.exists()
 
     # Load 1km data
-    ds_1km = xr.open_dataset(file_1km, chunks=chunksize_1km)
+    ds_1km = xr.open_dataset(filepath, chunks=chunksize_1km)
     ds['VIS_004'] = ds_1km['VIS_004']
     ds['VIS_008'] = ds_1km['VIS_008']
     ds['VIS_016'] = ds_1km['VIS_016']
