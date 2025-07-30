@@ -22,12 +22,14 @@ from core import env, log
 from core.tools import merge, drop_unused_dims
 from eoread.common import AtIndex, DataArray_from_array
 from eoread.utils import filter_metadata
+from core.monitor import Chrono
 
 
 user_guide = 'https://archive.org/details/manualzilla-id-5933919/page/n13/mode/2up'
 
 def Level1_MERIS(filepath: str|Path,
                  dir_smile: str|Path = None,
+                 read_auxdata: bool = False, 
                  chunks: int|tuple = 500,
                  metadata_template: list = None,
                  v1_compat: bool = False):
@@ -39,6 +41,7 @@ def Level1_MERIS(filepath: str|Path,
     Arguments:
         filepath: Path of the MERIS file path (ex: 'MER_FRS_1PNPDE20060822_092058_000001972050_00308_23408_0077.N1')
         dir_smile: Relative path to MERIS per-detector characterization (default: '../auxdata/meris/')
+        read_auxdata: Option read auxilary data contained in dir_smile
         chunks: Size of chunks for spatial axis
         metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
         v1_compat: Option to format output xarray.Dataset such as version 1
@@ -79,6 +82,7 @@ def Level1_MERIS(filepath: str|Path,
     log.debug('concatenate ltoa rasters')
     ds = _rename_meris(ds)
     ds = merge(ds, dim=n.bands.name)
+    ds = ds.chunk({n.bands.name:1})
     
     log.debug('read auxilary data')
     if dir_smile is None: dir_smile = Path(__file__).parent/'auxdata'/'meris'
@@ -96,25 +100,19 @@ def Level1_MERIS(filepath: str|Path,
 
     assert len(F0) == len(ds[n.bands.name]) + 1
     assert len(detector_wavelength) == len(ds[n.bands.name]) + 1
-
-    for i in ds[n.bands.name]:
-        ds[f'F0_{int(i)}'] = DataArray_from_array(
-            AtIndex(
-                F0[f'E0_band{int(i)-1}'],
-                ds.detector_index,
-                'index'),
-            (n.rows.name, n.columns.name),
-            chunks=chunks,
-        )
-        ds[f'wav_{int(i)}'] = DataArray_from_array(
-            AtIndex(
-                detector_wavelength[f'lam_band{int(i)-1}'],
-                ds.detector_index,
-                'index'),
-            (n.rows.name, n.columns.name),
-            chunks=chunks,
-        )
-    ds = merge(ds, dim=n.bands.name)
+    
+    if read_auxdata:
+        
+        # Compute solar Flux
+        valid_mask = (ds.detector_index >= 0).load()
+        F0 = F0.sel(index=ds.detector_index.where(valid_mask, 0))
+        F0 = merge(F0, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
+        ds[n.F0.name] = F0['E0'].where(valid_mask, np.nan)
+        
+        # Compute wavelengths
+        wav = detector_wavelength.sel(index=ds.detector_index.where(valid_mask, 0))
+        wav = merge(wav, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
+        ds[n.wav.name] = wav['lam'].where(valid_mask, np.nan)
 
     # Read attributes
     ds.attrs[n.platform.name] = 'ENVISAT'
@@ -178,7 +176,7 @@ class _READ_MERIS:
         self.dtype = {
             'float': np.float32,
             'short': np.int16,
-            'uchar': str,
+            'uchar': np.uint8,
         }[epr.data_type_id_to_str(band.data_type)]
         self.ndim = len(self.shape)
 
