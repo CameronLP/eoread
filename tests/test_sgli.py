@@ -1,38 +1,62 @@
-# #!/usr/bin/env python3
-# # -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+from pathlib import Path
+import pytest
+
+from eoread.sgli import *
+from . import generic
 
 
-# import numpy as np
+sgli_filename = get_sample()
 
-# from eoread.sgli import Level1_SGLI, calc_central_wavelength, get_sample
+@pytest.fixture(scope="module")
+def level1_sgli() -> Path: return get_sample()
 
-# from . import generic
-# from .generic import indices, param  # noqa
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
 
-# sgli_filename = get_sample()
-
-# def test_instantiate():
-#     Level1_SGLI(sgli_filename)
-
-
-# def test_central_wavelength():
-#     l1 = Level1_SGLI(sgli_filename)
-#     _, central_wav = calc_central_wavelength()
-
-#     np.testing.assert_allclose(l1.wav, central_wav)
+@pytest.fixture
+def sgli_product(level1_sgli, chunks):
+    return Level1_SGLI(level1_sgli, chunks=chunks)
 
 
-# def test_main():
-#     ds = Level1_SGLI(sgli_filename)
+################################################################################
+# Tests for Level-1
+################################################################################
 
-#     generic.test_main(ds)
+def test_instantiation(level1_sgli, chunks):
+    Level1_SGLI(level1_sgli, chunks=chunks)
 
+def test_main(sgli_product):
+    generic.test_main(sgli_product, angle_data=True)
+    
+def test_time(level1_sgli, chunks): 
+    params = {'filepath': level1_sgli, 'chunks': chunks}
+    generic.test_execution_time(Level1_SGLI, params)
 
-# def test_read(param, indices):
-#     ds = Level1_SGLI(sgli_filename)
-#     generic.test_read(ds, param, indices, scheduler='sync')
+@pytest.mark.skip('No version 1 output')
+def test_v1_compat(level1_sgli):
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_SGLI(level1_sgli, v1_compat=True)
+    old = xr.open_dataset(v1_data/(level1_sgli.stem))
+    generic.compare_version(l1, old)
+    
+def test_lazy_load(sgli_product):
+    generic.test_lazy_load(sgli_product)
 
+@pytest.mark.skip()
+@pytest.mark.parametrize('scheduler', [
+    'single-threaded',
+    'threads',
+])
+def test_read(sgli_product, param, indices, scheduler):
+    generic.test_read(sgli_product, param, indices, scheduler)
 
-# def test_subset():
-#     ds = Level1_SGLI(sgli_filename)
-#     generic.test_subset(ds)
+def test_subset(level1_sgli, chunks): 
+    l1 = Level1_SGLI(level1_sgli, chunks=chunks, metadata_template=[])
+    generic.test_subset(l1)
+
+def test_plot(request, sgli_product):
+    generic.test_plot(request, sgli_product, 4)

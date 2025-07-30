@@ -6,7 +6,8 @@ from eoread.modis import Level1_MODIS, get_sample
 from . import generic
 
 
-level1_modis = pytest.fixture(lambda:'/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
+@pytest.fixture(scope="module")
+def level1_modis() -> Path: return get_sample(1)
 
 @pytest.fixture(params=[200, (200, 300)])
 def chunks(request):

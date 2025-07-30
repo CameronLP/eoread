@@ -64,11 +64,8 @@ def test_subset(level1_msi, resolution, chunks):
     l1 = Level1_MSI(level1_msi, resolution, chunks=chunks, metadata_template=[])
     generic.test_subset(l1)
 
-def test_plot(request, level1_msi):
-    l1 = Level1_MSI(level1_msi)
-    l1.Rtoa.isel(bands=4).plot.imshow(vmin=0, vmax=0.5)
-    conftest.savefig(request)
-
+def test_plot(request, S2_product):
+    generic.test_plot(request, S2_product, 4)
 
 ################################################################################
 # Tests for Level-2

@@ -7,7 +7,7 @@ from . import generic
 
 
 @pytest.fixture(scope="module")
-def level1C_ecostress(): return get_sample('1C')
+def level1C_ecostress(): return get_sample(1)
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):
