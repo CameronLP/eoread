@@ -18,13 +18,8 @@ from eoread.olci import Level1_OLCI
 l1 = Level1_OLCI('S3A_OL_1_EFR____20190430T094655_[...].SEN3/')
 ```
 
-`l1` is a `xarray.Dataset` containing all variables and attributes. All variables are lazy dask arrays: they are not read nor computed until they are accessed.
+`l1` is a `xarray.Dataset` containing all variables and attributes. Except central wavelengths and band names, all variables are lazy dask arrays: they are not read nor computed until they are accessed.
 
-OLCI level1 contains Ltoa. To add Rtoa:
-```python
-from eoread import eo
-eo.init_Rtoa(l1)
-```
 
 ## Subsetting
 
@@ -49,14 +44,14 @@ sub = sub_pt(ds, pt_lat, pt_lon, rad)   # rad is the radius in km
 
 ## Processing
 
-Use xr.apply_ufunc to apply a universal function (in the numpy sense)
+Use `xr.apply_ufunc` to apply a universal function (in the numpy sense)
 to each block of a Dataset or DataArray.
 
 ## Output products
 
 Writing to NetCDF is supported by the `xarray.Dataset.to_netcdf` method.
 
-A helper function is provided by `eo.to_netcdf`, which provided features like automatic file
+A helper function is provided by `core.to_netcdf`, which provided features like automatic file
 naming, temporary files and compression.
 
 
