@@ -9,6 +9,22 @@ from core.tools import  drop_unused_dims
 from core import env, log
 
 
+def Level1_HYPSO(filepath: str|Path,
+                 chunks: int|tuple = 500,
+                 metadata_template: list = None,
+                 v1_compat: bool = False) -> xr.Dataset:
+    '''
+    Read an NTNU HYPSO Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, 
+    the angles on the full grid, etc.
+
+    Arguments:
+        filepath: Path of the HYPSO file
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
+    
     ds = xr.Dataset()
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
@@ -64,6 +80,13 @@ from core import env, log
 
 
 def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a HYPSO file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     sample = Path('/mnt/ceph/user/francois/HYPSO/sample1/vancouver_2022-07-30_1825Z-l1b.nc')
     assert sample.exists()
     return sample

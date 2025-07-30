@@ -32,9 +32,17 @@ def Level1_MERIS(filepath: str|Path,
                  metadata_template: list = None,
                  v1_compat: bool = False):
     '''
-    Read a MERIS Level1 product as an `xarray.Dataset`.
+    Read an MERIS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances,
+    the angles on the full grid, etc.
 
     Arguments:
+        filepath: Path of the MERIS file path (ex: 'MER_FRS_1PNPDE20060822_092058_000001972050_00308_23408_0077.N1')
+        dir_smile: Relative path to MERIS per-detector characterization (default: '../auxdata/meris/')
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
     
     ds = xr.Dataset()
     filepath = Path(filepath)
@@ -47,7 +55,7 @@ def Level1_MERIS(filepath: str|Path,
     prod = epr.Product(str(filepath))
     ds.attrs['totalwidth'] = prod.get_scene_width()
     ds.attrs['totalheight'] = prod.get_scene_height()
-
+    
     # Read metadata
     log.debug('read metadata')
     metadata = _read_metadata(ds, prod, metadata_template)
@@ -125,6 +133,7 @@ def Level1_MERIS(filepath: str|Path,
     return drop_unused_dims(ds).unify_chunks()
 
 
+def _rename_meris(ds):
     ds = ds.rename({v: v.replace('radiance', n.ltoa.name) 
                     for v in ds.variables if 'radiance' in v})
     return ds.rename({
@@ -135,6 +144,8 @@ def Level1_MERIS(filepath: str|Path,
         'sun_zenith'  : n.sza.name,
         'sun_azimuth' : n.saa.name, 
     })
+
+def _read_metadata(ds, product, template):
     metadata = {}
     for ph in [product.get_mph(), product.get_sph()]:
         metadata.update({
@@ -145,13 +156,16 @@ def Level1_MERIS(filepath: str|Path,
     ds.attrs['metadata'] = filter_fn(metadata, template)   
     
     return metadata
+
+def _read_date(dat):
     dat = dat.decode('utf-8')
     months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
     for i,m in enumerate(months): dat = dat.replace(f'-{m}-', f'-{i+1:02d}-')
     return datetime.strptime(dat, '%d-%m-%Y %H:%M:%S.%f')
 
 
-class READ_MERIS:
+# FIXME : Following classes should be revized
+class _READ_MERIS:
     '''
     An array-like to read data from a given MERIS band
     '''
@@ -208,6 +222,13 @@ class READ_MERIS:
         return r[sel[0], sel[1]]
 
 def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a MERIS file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     sample = Path('/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1')
     assert sample.exists()
     return sample

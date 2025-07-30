@@ -34,16 +34,17 @@ cwvl = [442.96,482.04,561.41,654.59,864.67,1608.86,2200.73,1373.43,10895,12050,]
 
 
 def Level1_OLI(dirname: str|Path,
-                  l9_angles = None,
-                  chunks: int|tuple = 500,
-                  metadata_template: list = None,
-                  v1_compat: bool = False):
+               l9_angles = None,
+               chunks: int|tuple = 500,
+               metadata_template: list = None,
+               v1_compat: bool = False):
     '''
-    Landsat-8 and Landsat-9 OLI reader.
+    Read an Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, reflectances, 
+    brightness temperatures, the angles on the full grid, etc.
 
     Arguments:
-        dirname: name of the directory containing the Landsat9/OLI product
-                 (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
+        dirname: Path of the OLI directory path (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
         l9_angles: executable name of l9_angles program (ex: 'l9_angles/l9_angles'), used to generate the angles
                 files automatically when missing, with the following command:
             l9_angles LC08_..._ANG.txt BOTH 1 -b 1
@@ -57,15 +58,18 @@ def Level1_OLI(dirname: str|Path,
                 cd l9_angles
                 make
                 cd ..
-
-    Returns a xr.Dataset
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
     '''
+    
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Directory does not exists'
 
     # Read metadata
-    metadata = read_metadata(ds, dirname, metadata_template)
+    log.debug('read metadata')
+    metadata = _read_metadata(ds, dirname, metadata_template)
     if isinstance(chunks, int): chunks = [chunks]*2
 
     # get datetime
@@ -74,12 +78,16 @@ def Level1_OLI(dirname: str|Path,
     ds.attrs[n.datetime.name] = d+'T'+t
     
     # Reading different rasters
-    read_geometry(ds, dirname, l9_angles, chunks)
-    ds = read_radiometry(ds, dirname, chunks)
-    read_masks(ds, dirname, chunks)
-    read_coordinates(ds, chunks)
+    log.debug('read geometric angles')
+    _read_geometry(ds, dirname, l9_angles, chunks)
+    log.debug('read TOA rasters')
+    ds = _read_radiometry(ds, dirname, chunks)
+    log.debug('read masks')
+    _read_masks(ds, dirname, chunks)
+    _read_coordinates(ds, chunks)
 
     # other attributes
+    log.debug('add important attributes')
     ds.attrs[n.platform.name] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
     ds.attrs[n.sensor.name] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
     ds.attrs[n.product_name.name] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
@@ -103,7 +111,7 @@ def Level1_OLI(dirname: str|Path,
     else: return ds
 
 
-def read_metadata(ds, dirname, template):
+def _read_metadata(ds, dirname, template):
     filter_fn = (lambda x,y: x) if template is None else filter_metadata
     files_mtl = list(dirname.glob('LC*_MTL.xml'))
     assert len(files_mtl) == 1, 'XML file not found'
@@ -112,7 +120,7 @@ def read_metadata(ds, dirname, template):
     return data_mtl
 
 
-def read_coordinates(ds, chunks):
+def _read_coordinates(ds, chunks):
     '''
     read lat/lon
     '''
@@ -140,7 +148,7 @@ def read_coordinates(ds, chunks):
     ds.attrs['totalwidth'] = ds.x.size
 
 
-def gen_l9_angles(dirname, l9_angles=None):
+def _gen_l9_angles(dirname, l9_angles=None):
     log.debug(f'Geometry file is missing in {dirname}, generating it with {l9_angles}...')
     angles_txt_file = list(dirname.glob('LC*_ANG.txt'))
     assert len(angles_txt_file) == 1, 'angle file is missing'
@@ -153,7 +161,7 @@ def gen_l9_angles(dirname, l9_angles=None):
         system(f'cp -v {tmpdir/'*'} {dirname}')
 
 
-def read_geometry(ds, dirname, l9_angles, chunks):
+def _read_geometry(ds, dirname, l9_angles, chunks):
     
     # read sensor and solar angles
     for name, search in [(n.saa.name, 'LC*_SAA.TIF'),
@@ -164,10 +172,10 @@ def read_geometry(ds, dirname, l9_angles, chunks):
         ds[name] = (data/100).astype('float32')
     
     if (n.saa.name not in ds) and (l9_angles is not None):
-        gen_l9_angles(dirname, l9_angles)
+        _gen_l9_angles(dirname, l9_angles)
 
 
-def read_radiometry(ds, dirname, chunks):
+def _read_radiometry(ds, dirname, chunks):
     
     rescale = ds.metadata['LEVEL1_RADIOMETRIC_RESCALING']
     thermal = ds.metadata['LEVEL1_THERMAL_CONSTANTS']
@@ -236,7 +244,7 @@ def read_radiometry(ds, dirname, chunks):
 
     return ds
 
-def read_masks(ds, dirname, chunks):
+def _read_masks(ds, dirname, chunks):
     for t in dirname.glob('*_QA_*'):
         search = re.search(r'QA_[A-Z]*', t.name)
         name = t.name[search.start():search.end()]
@@ -248,6 +256,15 @@ def _v1_compat(ds):
 
 
 def get_sample(level:int, use_cache:bool=True) -> Path:
+    """
+    Bring a Landsat-8 OLI directory path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    # FIXME
+    return Path('data/sample_products/LC08_L1TP_180054_20250104_20250111_02_T1')
     try: 
         from core.files import cache_dataframe
         from sand.usgs import DownloadUSGS

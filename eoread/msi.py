@@ -120,23 +120,20 @@ def Level1_MSI(dirname : str|Path,
 
     # lat-lon
     log.debug('Extract central wavelength')
-    msi_read_latlon(ds, chunks, xmlgranule)
+    _msi_read_latlon(ds, chunks, xmlgranule)
 
     # msi_read_geometry
     log.debug('Read and compute geometric angles')
     tileangles = xmlgranule['Geometric_Info']['Tile_Angles']
-    ds = msi_read_geometry(ds, tileangles, chunks)
+    ds = _msi_read_geometry(ds, tileangles, chunks)
     
     # msi read quality mask
     log.debug('WARNING: SKIPPING >> Read quality masks')
     # ds = msiread_qi(ds, granule_dir, chunks)
-    
-    # msi assign new bands coordinates
-    # ds = ds.assign_coords({n.bands.name: ds[n.bands.name].data.astype('uint8')})
-        # 
+
     # msi_read_toa and quality masks
     log.debug('Read top of atmosphere data')
-    ds = msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, wvl_name)
+    ds = _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, wvl_name)
     ds = ds.assign({n.cwav.name: ((n.bands.name), cwvl), 
                     n.bnames.name: ((n.bands.name), wvl_name)})
     
@@ -156,7 +153,7 @@ def Level1_MSI(dirname : str|Path,
     return ds.unify_chunks()
     
 
-def msi_read_latlon(ds, chunks, xmlgranule):
+def _msi_read_latlon(ds, chunks, xmlgranule):
 
     dims = (n.rows.name,n.columns.name)
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
@@ -171,7 +168,7 @@ def msi_read_latlon(ds, chunks, xmlgranule):
         chunks=chunks,
     )
 
-def msi_read_qi(ds, granule_dir, chunks):
+def _msi_read_qi(ds, granule_dir, chunks):
     for filename in (granule_dir/'QI_DATA').glob(f'*.jp2'):
         
         if '_PVI' in filename.stem: continue
@@ -184,7 +181,7 @@ def msi_read_qi(ds, granule_dir, chunks):
 
     return ds
 
-def msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, bnames):
+def _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, bnames):
     
     # Retrieve radiometric offset
     if float(processing_baseline) >= 4:
@@ -219,7 +216,7 @@ def msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, c
     return ds.isel({n.bands_nvis.name: order})
 
 
-def msi_read_geometry(ds, tileangles, chunks):
+def _msi_read_geometry(ds, tileangles, chunks):
     """
     Reads and processes geometric data from MSI tiles.
 
@@ -351,6 +348,13 @@ def Level2_MSI(dirname):
 
 
 def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a MSI directory path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     try: 
         from core.files import cache_dataframe
         from sand.copernicus_dataspace import DownloadCDSE

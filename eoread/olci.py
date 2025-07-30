@@ -3,9 +3,11 @@
 
 import xarray as xr
 import dask.array as da
+
 from pathlib import Path
 from typing import Literal
 from datetime import datetime
+from warnings import filterwarnings
 from re import findall
 
 from core import env, log
@@ -18,7 +20,18 @@ from .common import Interpolator, DataArray_from_array
 from eoread.utils import spatial_resample, filter_metadata
 
 
+# To filter warning message raised by instrument_data reading
+filterwarnings('ignore', message=".*Duplicate dimension.*")
+
+
 def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a OLCI file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     try: 
         from core.files.cache import cache_dataframe
         from sand.copernicus_dataspace import DownloadCDSE
@@ -46,12 +59,19 @@ def Level1_OLCI(dirname,
                 v1_compat: bool = False):
     '''
     Read an OLCI Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, reflectances, the angles on the full grid, etc.
+    Formats the Dataset so that it contains the TOA radiances, reflectances, 
+    the angles on the full grid, etc.
     
-    interp_angles:
-        'linear': linear interpolation
-        'atan2': interpolate sin(x) and cos(x), then x = atan2(sin, cos)
-        'legacy': for backward compatibility (nearest for azimuth angles, linear for zenith angles)
+    Arguments:
+        filepath: Path of the ECOSTRESS H5file
+        chunks: Size of chunks for spatial axis
+        tie_params: option to keep tie points in the output dataset
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+        interp_angles:
+            'linear': linear interpolation
+            'atan2': interpolate sin(x) and cos(x), then x = atan2(sin, cos)
+            'legacy': for backward compatibility (nearest for azimuth angles, linear for zenith angles)
     '''
     ds = xr.Dataset()
     dirname = Path(dirname)
@@ -60,6 +80,7 @@ def Level1_OLCI(dirname,
     chunks = dict(rows=chunks[0], columns=chunks[1])
 
     # read manifest file for file names and footprint
+    log.debug('Read metadata')
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     manifest = read_xml(dirname/'xfdumanifest.xml')
     ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
@@ -93,7 +114,8 @@ def Level1_OLCI(dirname,
         f'expected level1 encountered {level_from_manifest}'
 
     # Read main product
-    ds = read_bands(ds, dirname, chunks, 1)
+    log.debug('Read radiances')
+    ds = _read_bands(ds, dirname, chunks, 1)
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
@@ -109,6 +131,7 @@ def Level1_OLCI(dirname,
     ds = ds.rename({'rows':n.rows.name, 'columns':n.columns.name})
 
     # tie geometry interpolation
+    log.debug('read geometric tie points')
     tie_geom_file = dirname/'tie_geometries.nc'
     tie_ds = xr.open_dataset(tie_geom_file).chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
@@ -144,6 +167,7 @@ def Level1_OLCI(dirname,
         if tie_param: ds[ds_full+'_tie'] = tie_ds[ds_tie]
 
     # tie meteo interpolation
+    log.debug('read meteorological tie points')
     tie_meteo_file = dirname/'tie_meteo.nc'
     tie = xr.open_dataset(tie_meteo_file).chunk(chunks=-1)
     tie = tie.assign_coords(
@@ -180,36 +204,16 @@ def Level1_OLCI(dirname,
                                       # this variable has duplicate dimensions, drop it
                                       drop_variables='relative_spectral_covariance'
                                       ).chunk(chunks=chunks)
-    for x in instrument_data.variables:
-        ds[x] = instrument_data[x]
+    ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # quality flags
+    log.debug('read quality masks')
     qf_file = dirname/'qualityFlags.nc'
     qf = xr.open_dataset(qf_file).chunk(chunks)
     for var in qf.variables: ds[var] = qf[var]
-
-    # flags
-    # if level == 'level1':
-        # ds[naming.flags] = xr.zeros_like(
-        #     ds.vza,
-        #     dtype=naming.flags_dtype)
-        # qf = getflags(ds.quality_flags)
-
-        # # raise LAND mask when land is raised but not fresh_inland_water
-        # raiseflag(
-        #     ds[naming.flags],
-        #     "LAND",
-        #     flags["LAND"],
-        #     ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
-        # )
-        # raiseflag(
-        #     ds[naming.flags],
-        #     "L1_INVALID",
-        #     flags["L1_INVALID"],
-        #     ds.quality_flags & qf["invalid"],
-        # )
     
     # attributes
+    log.debug('add important attributes')
     meta = manifest['metadataSection']['metadataObject']
     date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
     start = datetime.fromisoformat(date['startTime'])
@@ -225,9 +229,10 @@ def Level1_OLCI(dirname,
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
     ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
-
-    olci_init_spectral(ds, chunks)
-    init_Rtoa(ds)
+    
+    log.debug('compute reflectances')
+    _olci_init_spectral(ds, chunks)
+    ds = init_Rtoa(ds)
 
     if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
@@ -281,7 +286,7 @@ def Level2_OLCI(dirname,
         f'expected level2 encountered {level_from_manifest}'
 
     # Read main product
-    ds = read_bands(ds, dirname, chunks, 2)
+    ds = _read_bands(ds, dirname, chunks, 2)
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
@@ -450,27 +455,28 @@ def Level2_OLCI(dirname,
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
 
-    if init_spectral: olci_init_spectral(ds, chunks)
+    if init_spectral: _olci_init_spectral(ds, chunks)
 
     ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
 
     return ds.unify_chunks()
 
 
-def read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
+def _read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
     
     prod_list = []
     for filename in dirname.glob('O*radiance.nc'):
         data = xr.open_dataarray(filename).chunk(chunks)
         prod_list.append(data)
 
-    if level == 1: param_name = n.ltoa.name
-    else: param_name = n.rho_w.name
+    if level == 1: param_name, unit = n.ltoa.name, 'W/sr/m^2'
+    else: param_name, unit = n.rho_w.name, None
     
     ds[param_name] = xr.concat(prod_list, dim=n.bands.name)
+    ds[param_name].attrs.update(unit=unit)
     return ds
 
-def olci_init_spectral(ds, chunks):
+def _olci_init_spectral(ds, chunks):
     '''
     Broadcast all spectral (detector-wise) dataset to the whole image
 
@@ -499,7 +505,7 @@ def olci_init_spectral(ds, chunks):
     ds[n.F0.name].attrs.update(ds.solar_flux.attrs)
 
 
-def decompose_flags(value, flags):
+def _decompose_flags(value, flags):
     '''
     return list of flag meanings for a given binary value
     flags: dictionary of meaning: value

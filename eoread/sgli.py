@@ -18,6 +18,13 @@ from core import env, log
 
 
 def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a SGLI file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     # Assumes that sample file exists locally in dir_samples
     # Downloaded from /standard/GCOM-C/GCOM-C.SGLI/L1B/2/2019/12/05
     sample = Path('/archive2/data/EOREAD_TESTDATA/SGLI/GC1SG1_201912050159F05712_1BSG_VNRDQ_1007.h5')
@@ -37,12 +44,18 @@ def Level1_SGLI(filepath: str|Path,
                 add_ancillary_data: bool = False, 
                 v1_compat: bool = False):
     """
-    Read SGLI Level1 VIS-NIR bands
+    Read an SGLI Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances,
+    the angles on the full grid, etc.
 
-    Ex: GC1SG1_201912050000N02307_1BSG_VNRDK_1007.h5
-
-    https://suzaku.eorc.jaxa.jp/GCOM_C/instruments/product.html
+    Arguments:
+        filepath: Path of the ECOSTRESS H5file (Ex: GC1SG1_201912050000N02307_1BSG_VNRDK_1007.h5)
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        add_ancillary_data: Option to add ancillary data contained in provided file to the output dataset
+        v1_compat: Option to format output xarray.Dataset such as version 1
     """
+    
     ds = xr.Dataset()
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
@@ -66,7 +79,7 @@ def Level1_SGLI(filepath: str|Path,
     log.debug('Read and compute geometric angles')
     _init_geometry(ds, tree, shape, chunks)
     init_geo(ds)
-
+    
     log.debug('Read top of atmosphere data')
     ds = _init_toa(ds, imdata, chunks)
 
@@ -78,7 +91,7 @@ def Level1_SGLI(filepath: str|Path,
     ds.attrs[n.sensor.name] = 'SGLI'
     ds.attrs[n.resolution.name] = 250
     ds.attrs[n.input_directory.name] = str(filepath.parent)
-
+    
     # # Flags
     # ds[naming.flags] = xr.zeros_like(
     #     ds.vza,
@@ -97,7 +110,7 @@ def Level1_SGLI(filepath: str|Path,
     return drop_unused_dims(ds).unify_chunks()
 
 
-def init_toa(ds, imdata, split):
+def _init_toa(ds, imdata, chunks):
 
     for i in range(len(ds.bands)):
         Rtoa = imdata[f'Lt_VN{i+1:02}'].chunk(chunks)
@@ -106,12 +119,13 @@ def init_toa(ds, imdata, split):
         Rtoa = Rtoa/ds.mus
         Rtoa.attrs = attrs
         ds[n.rtoa.name+f'_{i+1}'] = Rtoa
-
+        
     ds = merge(ds, dim=n.bands_nvis.name)
     ds[n.rtoa.name].attrs['unit'] = None
     return ds
 
 
+def _init_geometry(ds, tree, shape, chunks):
     
     geom = tree['Geometry_data'].to_dataset()
 
@@ -190,3 +204,18 @@ def calc_central_wavelength():
         wav_data.append(wav_eq)
 
     return sgli_bands, wav_data
+
+def _read_metadata(ds, tree, template):
+    filter_fn = (lambda x,y: x) if template is None else filter_metadata
+    metadata = tree['Global_attributes'].attrs
+    ds.attrs['metadata'] = filter_fn(metadata, template)
+    return metadata
+
+def _read_ancillary(ds, tree):
+    log.info('Read ancillary data')
+    ancillary = tree['Ancillary_data'].to_dict()
+    for name, data in ancillary.items():
+        for var, val in data.variables.items():
+            n = '/'.join([name, var]) 
+            ds = ds.assign({n:val})
+    return ds

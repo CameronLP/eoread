@@ -30,12 +30,12 @@ from .common import bin_centers
 
 
 
-def url_tile(tile_name):
+def _url_tile(tile_name):
     url = 'https://storage.googleapis.com/global-surface-water/downloads2021/occurrence/occurrence_{}.tif'
     return url.format(tile_name)
 
 
-class GSW_tile:
+class _GSW_tile:
     
     convert_missing_data = True
     
@@ -59,15 +59,15 @@ class GSW_tile:
         
         if not self.filename.exists():
             A = xr.DataArray(
-                aggregate(
-                    fetch_gsw_tile(self.tile_name),
+                _aggregate(
+                    _fetch_gsw_tile(self.tile_name),
                     agg=self.agg),
                 name='occurrence',
             )
 
             # set attributes
             A.attrs['aggregation factor'] = str(self.agg)
-            A.attrs['source_file'] = url_tile(self.tile_name)
+            A.attrs['source_file'] = _url_tile(self.tile_name)
 
             # write nc file
             to_netcdf(
@@ -85,11 +85,11 @@ def read_tile(tile_name, agg, directory):
 
     Data is accessed on demand
     '''
-    tile = GSW_tile(tile_name, agg, directory)
+    tile = _GSW_tile(tile_name, agg, directory)
     return da.from_array(tile, meta=np.array([], tile.dtype))
 
 
-def list_tiles():
+def _list_tiles():
     lons = [str(w) + "W" for w in range(180, 0, -10)]
     lons.extend([str(e) + "E" for e in range(0, 180, 10)])
     lats = [str(s) + "S" for s in range(50, 0, -10)]
@@ -98,7 +98,7 @@ def list_tiles():
     return lats, lons
 
 
-def aggregate(A, agg=1):
+def _aggregate(A, agg=1):
     """
     Aggregate array `A` by a factor `agg` 
     """    
@@ -109,11 +109,11 @@ def aggregate(A, agg=1):
     return A.thin(x=agg, y=agg)
 
 
-def fetch_gsw_tile(tile_name):
+def _fetch_gsw_tile(tile_name):
     """
     Read remote file and returns its content as a numpy array
     """
-    url = url_tile(tile_name)
+    url = _url_tile(tile_name)
     
     with TemporaryDirectory() as tmpdir:
         
@@ -125,7 +125,7 @@ def fetch_gsw_tile(tile_name):
         data = data.rename(x=n.columns.name, y=n.rows.name)
         data = drop_unused_dims(data)
     
-    if GSW_tile.convert_missing_data:
+    if _GSW_tile.convert_missing_data:
         # Fill missing values
         val_nodata = 255
         data = data.where(data != val_nodata, 100)  # fill invalid data (assume water)
@@ -161,7 +161,7 @@ def GSW(directory=None, agg=1) -> xr.DataArray:
     if directory is None:
         directory = mdir(env.getdir('DIR_ANCILLARY')/'GSW')
 
-    lats, lons = list_tiles()
+    lats, lons = _list_tiles()
 
     # concat the delayed dask objects for all tiles
     gsw = da.concatenate([
@@ -204,7 +204,7 @@ if __name__ == "__main__":
              '\tDirectory:', args.directory, '\n',
              '\tAggregation factor:', args.agg)
 
-    lats, lons = list_tiles()
+    lats, lons = _list_tiles()
     for lat in lats:
         for lon in lons:
-            GSW_tile(f'{lon}_{lat}', args.agg, args.directory)[:,:]
+            _GSW_tile(f'{lon}_{lat}', args.agg, args.directory)[:,:]

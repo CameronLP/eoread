@@ -14,9 +14,10 @@ import xarray as xr
 import numpy as np
 
 
+# FIXME: should be removed when download_nextcloud will be fixed
 nextcloud_url = 'https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/'
 
-class ArrayLike_SRTM:
+class _ArrayLike_SRTM:
     """
     Array like object to manage SRTM tiles from usgs server 
     """
@@ -151,7 +152,7 @@ def SRTM(directory=None, agg=1, missing=None, type_srtm=1, chunk=10000, verbose=
         directory = mdir(env.getdir("DIR_STATIC") / srtm)
 
     # concat the delayed dask objects for all tiles
-    srtm = ArrayLike_SRTM(directory=directory, agg=agg, missing=missing, 
+    srtm = _ArrayLike_SRTM(directory=directory, agg=agg, missing=missing, 
                           type_srtm=type_srtm, verbose=verbose)
     srtm = da.from_array(srtm,
                          chunks=(chunk,chunk),

@@ -16,6 +16,17 @@ def Level1_ECOSTRESS(filepath: Path | str,
                      chunks: int = 500, 
                      metadata_template: list = None,
                      v1_compat: bool = False):
+    '''
+    Read an ECOSTRESS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
+    the angles on the full grid, etc.
+
+    Arguments:
+        filepath: Path of the ECOSTRESS H5file
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
     
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
@@ -33,12 +44,12 @@ def Level1_ECOSTRESS(filepath: Path | str,
     
     log.debug('parsing metadata text')
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
-    p = parser(info.split('\n'))
+    p = _parser(info.split('\n'))
     p.parse()
     
     # Change radiometry of input data 
     log.debug('compute brightness temperature')
-    l1 = transform_radiometry(raw, granule_mtd)   
+    l1 = _transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
@@ -67,7 +78,7 @@ def Level1_ECOSTRESS(filepath: Path | str,
     
     # Add latlon variables
     log.debug('add latlon variables')
-    l1 = supplement_latlon(l1, list(chunks))
+    l1 = _supplement_latlon(l1, list(chunks))
     
     if v1_compat: return _v1_compat(l1)
     else: return l1
@@ -86,11 +97,11 @@ def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     attributes  = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
     
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
-    p = parser(info.split('\n'))
+    p = _parser(info.split('\n'))
     p.parse()
     
     # Change radiometry of input data 
-    l2 = transform_radiometry(raw, granule_mtd)   
+    l2 = _transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
     for att in list(attributes):
@@ -107,26 +118,27 @@ def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     l2 = l2.assign_coords(coords)
     
     # Add latlon variables
-    l2 = supplement_latlon(l2, chunks)
+    l2 = _supplement_latlon(l2, chunks)
     return l2
 
 
-def transform_radiometry(raw_data, granule_mtd):
+def _transform_radiometry(raw_data, granule_mtd):
     
     # Combine band radiances into a single variable 
     level1 = merge(raw_data, dim=n.bands.name, pattern=r'(.+)_(\d+)')
     
     # Rename radiance variable
     level1 = level1.rename({'radiance': n.ltoa.name})
+    level1[n.ltoa.name].attrs['unit'] = 'W/sr/m^2'
     
     # Compute brightness temperature for Emissive bands 
-    level1[n.bt.name] = compute_bt(level1, granule_mtd)
+    level1[n.bt.name] = _compute_bt(level1, granule_mtd)
     level1[n.bt.name].attrs = {}
     level1[n.bt.name].attrs['unit'] = 'Kelvin'
     
     return level1
 
-def supplement_latlon(l1, chunks): 
+def _supplement_latlon(l1, chunks): 
         
     # Compute LatLon variables
     size = l1['cloud'].shape
@@ -144,7 +156,7 @@ def supplement_latlon(l1, chunks):
                                   dims=dims).chunk(chunks=chunks)
     return l1
 
-def compute_bt(l1, granule_mtd) -> xr.DataArray:
+def _compute_bt(l1, granule_mtd) -> xr.DataArray:
     """Calibration for the emissive channels."""
     # Initialized constants
     K1 = 1.191042 * 1e8
@@ -163,6 +175,7 @@ def compute_bt(l1, granule_mtd) -> xr.DataArray:
     return bt.rename({n.bands.name: n.bands_ir.name})
 
 def _v1_compat(ds):
+    """Ensure back-compatibility"""
     
     # Rename IR bands into bands_tir
     ds = ds.rename({n.bands_ir.name: 'bands_tir'})
@@ -183,12 +196,18 @@ def _v1_compat(ds):
     ds.attrs['CRS']        = str(ds.metadata['CRS'])
     ds.attrs['Boundary']   = str(ds.metadata['SceneBoundaryLatLonWKT'])
     ds.attrs['version']    = str(ds.metadata['PGEVersion'])  
-    ds.attrs[n.resolution.name] = 70
 
     return ds
 
 
-def get_sample(level: Literal['1B','1C','2A'], use_cache:bool=True) -> Path:
+def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a ECOSTRESS file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     try: 
         from core.files import cache_dataframe
         from sand.nasa import DownloadNASA
@@ -207,7 +226,7 @@ def get_sample(level: Literal['1B','1C','2A'], use_cache:bool=True) -> Path:
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 
-class parser:
+class _parser:
     
     def __init__(self, text: list):
         self.data = {}

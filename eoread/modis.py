@@ -34,6 +34,17 @@ def Level1_MODIS(filepath: Path | str,
                  chunks: int = 100,
                  metadata_template: list = None,
                  v1_compat: bool = False):
+    '''
+    Read an MODIS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
+    the angles on the full grid, etc.
+
+    Arguments:
+        filepath: Path of the MODIS H4file
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
     
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
@@ -47,12 +58,12 @@ def Level1_MODIS(filepath: Path | str,
         'SensorZenith': n.vza.name, 'SensorAzimuth': n.vaa.name,
         'SolarZenith': n.sza.name, 'SolarAzimuth': n.saa.name
     })
-             
+ 
     # Read metadata
     metadata = {}
     log.debug('parsing metadata text')
     for name in ['CoreMetadata.0','ArchiveMetadata.0','StructMetadata.0']:
-        p = parser_attrs(l1.attrs[name].split('\n'))
+        p = _parser_attrs(l1.attrs[name].split('\n'))
         p.parse()
         metadata.update(p.data)
     
@@ -68,8 +79,8 @@ def Level1_MODIS(filepath: Path | str,
 
     # Change radiometry of input data   
     log.debug('Read top of atmosphere data')
-    l1 = transform_radiometry(l1, chunks)
-    l1 = aggregate_vars(l1, chunks)
+    l1 = _transform_radiometry(l1, chunks)
+    l1 = _aggregate_vars(l1, chunks)
     # l1 = compute_bt(l1)
     
     # Upscale latlon variables
@@ -79,7 +90,7 @@ def Level1_MODIS(filepath: Path | str,
     l1[n.lon.name] = spatial_resample(l1[n.lon.name], shape, chunks)
 
     # Change dimensions name and update coordinates
-    l1 = rename_dims(l1)
+    l1 = _rename_dims(l1)
 
     # Summarize Attributes
     log.debug('Add important attributes')
@@ -104,7 +115,7 @@ def Level1_MODIS(filepath: Path | str,
     return drop_unused_dims(l1).unify_chunks()
 
 
-def transform_radiometry(level1, chunks):
+def _transform_radiometry(level1, chunks):
     
     rad_varnames = ['EV_250_Aggr1km_RefSB','EV_500_Aggr1km_RefSB','EV_1KM_RefSB','EV_1KM_Emissive'] #TOA
     rad_bandnames = ["new_Band_250M:MODIS_SWATH_Type_L1B", 
@@ -121,10 +132,6 @@ def transform_radiometry(level1, chunks):
         scale = xr.DataArray(rad.radiance_scales, dims=rad_bandname)
         offset = xr.DataArray(rad.radiance_offsets, dims=rad_bandname)
 
-        # Expand scale/offset to match rad's dims for broadcasting
-        scale = scale.broadcast_like(rad)
-        offset = offset.broadcast_like(rad)
-
         nd = scale * rad + offset
         nd.attrs['desc'] = n.ltoa.desc
         nd.attrs['unit'] = n.ltoa.unit
@@ -133,7 +140,7 @@ def transform_radiometry(level1, chunks):
     # Combine into one dimension
     level1[n.ltoa.name] = xr.concat(data_arrays, dim="bands_ltoa")
     level1[n.ltoa.name] = level1[n.ltoa.name].chunk([1]+list(chunks))
-    
+
     # Compute Reflectance
     data_arrays = []
     for rad_varname, rad_bandname in zip(rad_varnames[:3], rad_bandnames[:3]):
@@ -142,10 +149,6 @@ def transform_radiometry(level1, chunks):
         # Broadcast scales and offsets with appropriate dimensions
         scale = xr.DataArray(rad.reflectance_scales, dims=rad_bandname)
         offset = xr.DataArray(rad.reflectance_offsets, dims=rad_bandname)
-
-        # Expand scale/offset to match rad's dims for broadcasting
-        scale = scale.broadcast_like(rad)
-        offset = offset.broadcast_like(rad)
 
         nd = scale * rad + offset
         nd.attrs['desc'] = n.rtoa.desc
@@ -159,7 +162,7 @@ def transform_radiometry(level1, chunks):
     return level1.drop_vars(rad_varnames)
 
 
-def aggregate_vars(l1, chunks):
+def _aggregate_vars(l1, chunks):
     
     # Combine uncertainty in a single variable
     uncert_label = 'Uncert_Indexes'
@@ -171,7 +174,7 @@ def aggregate_vars(l1, chunks):
     return l1.rename(b=n.bands.name)
 
 
-def rename_dims(l1):
+def _rename_dims(l1):
     
     revize_dims = {
         '2*nscans:MODIS_SWATH_Type_L1B': n.rows.name+'_red', 
@@ -192,7 +195,7 @@ def rename_dims(l1):
 
     return l1.rename(revize_dims)
 
-def compute_bt(ds):
+def _compute_bt(ds):
     """Calibration for the emissive channels."""
 
     # Planck's law constants 
@@ -241,7 +244,7 @@ def compute_bt(ds):
     return ds
 
 
-class parser_attrs:
+class _parser_attrs:
     
     def __init__(self, text: list):
         self.data = {}
@@ -300,6 +303,13 @@ class parser_attrs:
         return False
 
 def get_sample(level: int=1, use_cache:bool=True):
+    """
+    Bring a MODIS file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
     sample = Path('/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
     assert sample.exists()
     return sample

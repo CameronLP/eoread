@@ -20,21 +20,21 @@ config = {
 }
 
 
-def Level1_GOESNG(file_1km,
+def Level1_GOESNG(filepath: str|Path,
                   auxfile=None,
                   convert_auxfile=True,
                   cloudmask=False,
                   chunksize=1000):
     '''
-    Load GOES-NG (at 1km) product as xarray Dataset
+    Read an GOES-NG Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
+    the angles on the full grid, etc.
 
     Arguments:
-        file_1km: file at 1km
-            (ex: Emultic1kmNC4_goes16_201808101100.nc)
+        filepath: file at 1km (ex: Emultic1kmNC4_goes16_201808101100.nc)
         auxfile: path to angles file (default: config['auxfile'])
         cloudmask: whether to include the cloud mask
-        chunksize: int, or dict {'x': <value>, 'y': <value>}
-                   (chunksize at 1km)
+        chunksize: int, or dict {'x': <value>, 'y': <value>} (chunksize at 1km)
     '''
     ds = xr.Dataset()
     

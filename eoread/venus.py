@@ -50,8 +50,13 @@ def Level1_VENUS(dirname,
     the angles on the full grid, etc.
 
     Arguments:
-        chunk: size of a single chunk
+        dirname: Path of the VENµS directory
+        chunks: Size of chunks for spatial axis
+        read_masks: Option to read compressed masks
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
     '''
+    
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Folder does not exists'
@@ -59,22 +64,22 @@ def Level1_VENUS(dirname,
     
     # read metadata
     log.debug('Reading metadata')
-    ds, metadata_granule = venus_read_metadata(ds, dirname, metadata_template)
+    ds, metadata_granule = _venus_read_metadata(ds, dirname, metadata_template)
 
     # read geaometry
     log.debug('Read and compute geometric angles')
-    ds = venus_read_geometry(ds, dirname, chunks)
+    ds = _venus_read_geometry(ds, dirname, chunks)
 
     # read TOA
     log.debug('Read top of atmosphere data')
     radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
-    ds = venus_read_toa(ds, dirname, quantif, chunks)
+    ds = _venus_read_toa(ds, dirname, quantif, chunks)
 
     # lat-lon
     log.debug('Compute LatLon raster')
     geocoding = metadata_granule['Geoposition_Informations']
-    venus_read_latlon(ds, geocoding, chunks)
+    _venus_read_latlon(ds, geocoding, chunks)
     
     # read cloud altitude
     log.debug('Open masks')
@@ -84,29 +89,29 @@ def Level1_VENUS(dirname,
     ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat')
     
     if read_masks:
-    
-    # read cloud mask
-    cld = open_raster(dirname/'MASKS','*CLD_XS.zip','.zip').chunk(chunks)
-    ds['CLD_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
-    
-    # read cloud mask
-    usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
-    ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
-    
-    # Read quality masks
-    for bn in ds[n.bnames.name]:
         
-        pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
-        ds[f'PIX_{bn.values}'] = pix.rename(x=n.columns.name, y=n.rows.name)
+        # read cloud mask
+        cld = open_raster(dirname/'MASKS','*CLD_XS.zip','.zip').chunk(chunks)
+        ds['CLD_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
         
-        sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
-        ds[f'SAT_{bn.values}'] = sat.rename(x=n.columns.name, y=n.rows.name)
+        # read cloud mask
+        usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
+        ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    
+        # Read quality masks
+        for bn in ds[n.bnames.name]:
+            
+            pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
+            ds[f'PIX_{bn.values}'] = pix.rename(x=n.columns.name, y=n.rows.name)
+            
+            sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
+            ds[f'SAT_{bn.values}'] = sat.rename(x=n.columns.name, y=n.rows.name)
     
     else: 
         log.debug('Masks are not red due to uncompression time consuming. '
                   'Active option read_masks to read them')
         
-    ds = merge(ds, n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)        
+    ds = merge(ds, n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)    
     ds = ds.assign_coords({n.bands.name: ds[n.bands.name].data.astype(int),
                            n.bands_nvis.name: ds[n.bands.name].data.astype(int)})    
     return drop_unused_dims(ds).unify_chunks()
@@ -129,21 +134,21 @@ def Level2_VENUS(dirname,
     
     # read metadata
     log.debug('Reading metadata')
-    ds, metadata_granule = venus_read_metadata(ds, dirname, metadata_template)
+    ds, metadata_granule = _venus_read_metadata(ds, dirname, metadata_template)
     
     # lat-lon
     log.debug('Compute LatLon raster')
     geocoding = metadata_granule['Geoposition_Informations']
-    venus_read_latlon(ds, geocoding, chunks)
+    _venus_read_latlon(ds, geocoding, chunks)
 
     # read geaometry
     log.debug('Read and compute geometric angles')
-    ds = venus_read_geometry(ds, dirname, chunks)
+    ds = _venus_read_geometry(ds, dirname, chunks)
 
     # read reflectances
     radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
-    ds = venus_read_rho(ds, dirname, quantif, chunks)
+    ds = _venus_read_rho(ds, dirname, quantif, chunks)
     
     # read cloud mask
     log.debug('Open masks')
@@ -169,7 +174,7 @@ def Level2_VENUS(dirname,
     return drop_unused_dims(ds).unify_chunks()
 
 
-def venus_read_metadata(ds, dirname, metadata_template):
+def _venus_read_metadata(ds, dirname, metadata_template):
 
     # load xml file
     xmlfiles = list((dirname/'DATA').glob('*UII_ALL.xml'))
@@ -222,22 +227,22 @@ def venus_read_metadata(ds, dirname, metadata_template):
     return ds, xmlgranule
 
 
-def venus_read_latlon(ds, geocoding, chunks):
+def _venus_read_latlon(ds, geocoding, chunks):
     
     ds[n.lat.name] = DataArray_from_array(
-        LATLON(geocoding, 'lat', ds),
+        _LATLON(geocoding, 'lat', ds),
         (n.rows.name, n.columns.name),
         chunks=chunks,
     )
 
     ds[n.lon.name] = DataArray_from_array(
-        LATLON(geocoding, 'lon', ds),
+        _LATLON(geocoding, 'lon', ds),
         (n.rows.name, n.columns.name),
         chunks=chunks,
     )
 
-def venus_read_toa(ds, granule_dir, quantif, chunks):
-
+def _venus_read_toa(ds, granule_dir, quantif, chunks):
+    
     for name in ds[n.bnames.name]:
         
         arr = open_raster(granule_dir, f'*REF_{name.values}.tif').chunk(chunks)
@@ -252,7 +257,7 @@ def venus_read_toa(ds, granule_dir, quantif, chunks):
     return ds
 
 
-def venus_read_rho(ds, granule_dir, quantif, chunks):
+def _venus_read_rho(ds, granule_dir, quantif, chunks):
 
     for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
         for name in ds[n.bnames.name]:
@@ -273,7 +278,7 @@ def venus_read_rho(ds, granule_dir, quantif, chunks):
 
     return ds
 
-def venus_read_geometry(ds, dirname, chunks):
+def _venus_read_geometry(ds, dirname, chunks):
 
     # read solar angles
     sa = open_raster(dirname/'DATA','*SOL_ALL.tif').chunk([1]+list(chunks))
@@ -285,7 +290,7 @@ def venus_read_geometry(ds, dirname, chunks):
     
     return ds.rename(band=n.bands.name+'_angle')
 
-class LATLON:
+class _LATLON:
     '''
     An array-like to calculate the VENUS lat-lon
     '''
@@ -375,6 +380,14 @@ def get_SRF(
     return ds
 
 def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a VENµS directory path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    return Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
     try: 
         from core.files import cache_dataframe
         from sand.geodes import DownloadCNES
