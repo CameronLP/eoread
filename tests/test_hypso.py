@@ -29,11 +29,10 @@ def test_time(level1_hypso, chunks):
     params = {'filepath': level1_hypso, 'chunks': chunks}
     generic.test_execution_time(Level1_HYPSO, params)
 
-@pytest.mark.skip()
 def test_v1_compat(level1_hypso):
     v1_data = Path('/mnt/ceph/data/eoread')
-    l1 = Level1_HYPSO(level1_hypso, '60', v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_hypso.stem+f'_60'))
+    l1 = Level1_HYPSO(level1_hypso, v1_compat=True)
+    old = xr.open_dataset(v1_data/(level1_hypso.stem+f'_res'))
     generic.compare_version(l1, old)
     
 def test_lazy_load(hypso_product):

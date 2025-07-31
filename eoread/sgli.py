@@ -12,7 +12,6 @@ from eoread.eo import init_geometry as init_geo
 from eoread.utils import spatial_resample, filter_metadata
 
 from core.geo import n
-from core.tools import raiseflag
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
@@ -107,6 +106,7 @@ def Level1_SGLI(filepath: str|Path,
     if add_ancillary_data: ds = _read_ancillary(ds, tree)
     ds = ds.assign_coords({n.bands.name: ds[n.bands_nvis.name].data})
 
+    if v1_compat: return _v1_compat(ds, imdata)
     return drop_unused_dims(ds).unify_chunks()
 
 
@@ -218,4 +218,45 @@ def _read_ancillary(ds, tree):
         for var, val in data.variables.items():
             n = '/'.join([name, var]) 
             ds = ds.assign({n:val})
+    return ds
+
+def _v1_compat(ds, imdata):
+    
+    import numpy as np
+    from core.tools import raiseflag
+    
+    # Rename tie points dimensions
+    ds = ds.rename({n.rows.name+'_tie': 'rows_tie',
+                    n.columns.name+'_tie': 'columns_tie'})
+    
+    # Define central wavelength as coordinates for band dimension
+    ds = ds.assign_coords(bands=[380, 412, 443, 490, 530, 565, 673, 674, 763, 868, 869])
+    
+    # Drop NVIS bands dimension
+    ds = ds.assign(Rtoa=(('bands','y','x'), ds[n.rtoa.name].data))
+    
+    # Flags
+    ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')
+
+    raiseflag(
+        ds['flags'],
+        'LAND',
+        1,
+        imdata['Land_water_flag'] > 20,
+    )
+
+    # Central wavelengths
+    sgli_central_wavelengths = np.array([
+        380.00, 412.00, 443.00, 490.00,
+        530.00, 565.00, 673.50, 673.50,
+        763.00, 868.50, 868.50], dtype='float32')
+    
+    ds['wav'] = xr.DataArray(
+        da.from_array(sgli_central_wavelengths),
+        dims=('bands'),
+    )
+    
+    # Level up metadata in attribute dictionary 
+    ds.attrs.update(ds.attrs['metadata'])
+    
     return ds

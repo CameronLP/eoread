@@ -128,6 +128,7 @@ def Level1_MERIS(filepath: str|Path,
     d = dstart + (dstop - dstart)//2
     ds.attrs[n.datetime.name] = d.isoformat()
     
+    if v1_compat: return _v1_compat(ds, prod, lock, chunks)
     return drop_unused_dims(ds).unify_chunks()
 
 
@@ -230,3 +231,73 @@ def get_sample(level: int=1, use_cache:bool=True) -> Path:
     sample = Path('/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1')
     assert sample.exists()
     return sample
+
+def _v1_compat(ds, prod, lock, chunks):
+    
+    from core.tools import raiseflag
+    from .common import len_slice
+    
+    class READ_BITMASK:
+        '''
+        An array-like to read MERIS bitmask
+        '''
+        def __init__(self, prod, bmexpr, lock):
+            self.width = prod.get_scene_width()
+            self.height = prod.get_scene_height()
+            self.prod = prod
+            self.lock = lock
+            self.bmexpr = bmexpr
+            self.shape = (self.height, self.width)
+            self.ndim = len(self.shape)
+            self.dtype = np.bool
+
+        def __getitem__(self, keys):
+            width = len_slice(keys[1], self.width)
+            height = len_slice(keys[0], self.height)
+            raster = epr.create_bitmask_raster(
+                width, height,
+                xstep=keys[1].step or 1,
+                ystep=keys[0].step or 1,
+                )
+            with self.lock:
+                self.prod.read_bitmask_raster(
+                    self.bmexpr,
+                    xoffset=keys[1].start or 0,
+                    yoffset=keys[0].start or 0,
+                    raster=raster)
+
+            return raster.data
+    
+    BANDS_MERIS = [412, 443, 490, 510, 560,
+                620, 665, 681, 709, 754,
+                760, 779, 865, 885, 900]
+    
+    # Define central wavelength as coordinates for band dimension
+    ds = ds.assign_coords(bands=BANDS_MERIS)
+    
+    # Add other computed variables
+    ds['horizontal_wind'] = np.sqrt(ds['zonal_wind']**2 + ds['merid_wind']**2)
+    ds['total_column_ozone'] = ds['ozone']
+    ds['sea_level_pressure'] = ds['atm_press']
+
+    # Flags
+    ds['flags'] = xr.zeros_like(ds[n.lat.name], dtype='uint8')
+    for (flag, val, bmexpr) in [
+            ('LAND', 1, 'l1_flags.LAND_OCEAN'),
+            ('L1_INVALID', 4, '(l1_flags.INVALID) OR (l1_flags.SUSPECT) OR (l1_flags.COSMETIC)'),
+        ]:
+        raiseflag(
+            ds['flags'],
+            flag,
+            val,
+            DataArray_from_array(
+                READ_BITMASK(prod, bmexpr, lock),
+                ('y','x'),
+                chunks=chunks,
+            ),
+        )
+    
+    # Level up metadata in attribute dictionary 
+    ds.attrs.update(ds.attrs['metadata'])
+    
+    return ds

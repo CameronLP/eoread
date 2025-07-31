@@ -36,7 +36,6 @@ def test_l1c_time(chunks):
 def test_l1c_subset(VENUS_product):
     generic.test_subset(VENUS_product)
     
-@pytest.mark.skip('No output from version 1')
 def test_l1c_v1_compat():
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_VENUS(product_l1, v1_compat=True)

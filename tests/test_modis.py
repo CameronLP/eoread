@@ -31,12 +31,10 @@ def test_l1c_time(chunks, level1_modis):
 def test_l1c_subset(product_modis):
     generic.test_subset(product_modis)
 
-@pytest.mark.skip('No product from version 1')
 def test_l1c_v1_compat(level1_modis):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_MODIS(level1_modis, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_modis.stem))
-    old = old.reset_coords(['altitude','latitude','longitude'])
+    old = xr.open_dataset(v1_data/(level1_modis.stem+'_res'))
     generic.compare_version(l1, old)
     
 def test_l1c_lazy_load(product_modis):

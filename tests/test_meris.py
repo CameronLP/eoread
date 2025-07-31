@@ -31,11 +31,10 @@ def test_time(level1_meris, chunks):
     params = {'filepath': level1_meris, 'chunks': chunks}
     generic.test_execution_time(Level1_MERIS, params)
 
-@pytest.mark.skip('No output from version 1')
 def test_v1_compat(level1_meris):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_MERIS(level1_meris, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_meris.stem+f'_60'))
+    old = xr.open_dataset(v1_data/(level1_meris.stem+'_res'))
     generic.compare_version(l1, old)
     
 def test_lazy_load(product_meris):

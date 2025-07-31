@@ -76,6 +76,7 @@ def Level1_HYPSO(filepath: str|Path,
 
     # ds[naming.flags] = xr.zeros_like(ds.vza, dtype=naming.flags_dtype)
     
+    if v1_compat: return _v1_compat(ds)
     return drop_unused_dims(ds).unify_chunks()
 
 
@@ -90,3 +91,10 @@ def get_sample(level: int=1, use_cache:bool=True) -> Path:
     sample = Path('/mnt/ceph/user/francois/HYPSO/sample1/vancouver_2022-07-30_1825Z-l1b.nc')
     assert sample.exists()
     return sample
+
+def _v1_compat(ds):
+    
+    # Add flags
+    ds["flags"] = xr.zeros_like(ds.vza, dtype="uint8")
+    
+    return ds

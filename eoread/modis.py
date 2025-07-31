@@ -69,6 +69,7 @@ def Level1_MODIS(filepath: Path | str,
     
     # Add band information
     log.debug('Add central wavelength')
+    l1 = l1.assign_coords({n.bands.name: da.arange(len(bnames),dtype=int)+1})
     l1 = l1.assign({n.bnames.name: ((n.bands.name), da.array(bnames).astype(str)),
                     n.cwav.name: ((n.bands.name), cwvl)})
     
@@ -81,7 +82,7 @@ def Level1_MODIS(filepath: Path | str,
     log.debug('Read top of atmosphere data')
     l1 = _transform_radiometry(l1, chunks)
     l1 = _aggregate_vars(l1, chunks)
-    # l1 = compute_bt(l1)
+    l1 = _compute_bt(l1)
     
     # Upscale latlon variables
     log.debug('upscale latlon variables')
@@ -112,6 +113,7 @@ def Level1_MODIS(filepath: Path | str,
     metadata['attributes'] = attributes
     l1.attrs['metadata'] = filter_fn(metadata, metadata_template)
 
+    if v1_compat: return _v1_compat(l1, filepath)
     return drop_unused_dims(l1).unify_chunks()
 
 
@@ -158,6 +160,7 @@ def _transform_radiometry(level1, chunks):
     # Combine into one dimension
     level1[n.rtoa.name] = xr.concat(data_arrays, dim="bands_rtoa")
     level1[n.rtoa.name] = level1[n.rtoa.name].chunk([1]+list(chunks))
+    level1 = level1.assign_coords(bands_rtoa=da.arange(len(level1['bands_rtoa']))+1)
     
     return level1.drop_vars(rad_varnames)
 
@@ -236,11 +239,13 @@ def _compute_bt(ds):
     cwvl = 1. / (cwn * 100)
 
     # Some versions of the modis files do not contain all the bands
-    bnames = list(ds[n.bnames.name].data.astype(float).tolist())
+    bnames = list(ds[n.bnames.name].values.astype(float))
     bands_em = [bnames.index(x) for x in ds['Band_1KM_Emissive']]
     array = ds[n.ltoa.name].sel({bands: bands_em})
     array = K2 / (cwvl * da.log(K1 / (1e6 * array * cwvl ** 5) + 1))
     ds[n.bt.name] = ((array - tci) / tcs).rename({bands: n.bands_ir.name})
+    ds[n.bt.name].attrs['unit'] = 'Kelvin'
+    ds = ds.assign_coords({n.bands_ir.name: bands_em})
     return ds
 
 
@@ -313,3 +318,30 @@ def get_sample(level: int=1, use_cache:bool=True):
     sample = Path('/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
     assert sample.exists()
     return sample
+
+def _v1_compat(ds, filepath):
+    
+    bands_vis = [650,860,470,555,1240,1640,2130,410,440,485,530,550,668,670,680,685,750,870,900,935,940,1375]
+    bands_tir = [3750,3960,4050,4460,4510,1375,6710,7230,8550,9730,11000,12000,13230,13630,13930,14230]
+    
+    # Drop some variables
+    keep = ['latitude','longitude','sza','saa','vza','vaa','Rtoa','BT']
+    ds = drop_unused_dims(ds[keep])
+    
+    # Rename bands IR and change coordinates
+    ds = ds.rename({n.bands_ir.name: 'bands_tir'})
+    ds = ds.assign_coords(bands_tir=bands_tir)
+    
+    # Rename Rtoa dimension
+    ds = ds.rename({n.bands_nvis.name: 'bands'})
+    ds = ds.assign_coords(bands=bands_vis)
+    
+    # Open reduce latlon arrays
+    latlon = load_hdf4(filepath, trim_dims=True)
+    ds = ds.assign({n.lat.name: (('y_red','x_red'), latlon['Latitude'].data),
+                    n.lon.name: (('y_red','x_red'), latlon['Longitude'].data)})
+    
+    # Flags
+    ds['flags'] = ds['BT'].isel(bands_tir=0).isnull().astype('uint8')
+    
+    return ds

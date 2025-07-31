@@ -113,7 +113,9 @@ def Level1_VENUS(dirname,
         
     ds = merge(ds, n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)    
     ds = ds.assign_coords({n.bands.name: ds[n.bands.name].data.astype(int),
-                           n.bands_nvis.name: ds[n.bands.name].data.astype(int)})    
+                           n.bands_nvis.name: ds[n.bands.name].data.astype(int)})  
+    
+    if v1_compat: return _v1_compat(ds, chunks)  
     return drop_unused_dims(ds).unify_chunks()
 
 
@@ -405,3 +407,81 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
     dl = DownloadCNES(sensor, level)
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
+
+def _v1_compat(ds, chunks):
+    
+    import numpy as np
+    
+    def read_xml_block(item):
+        '''
+        read a block of xml data and returns it as a numpy float32 array
+        '''
+        d = [i.split() for i in item]
+        return np.array(d, dtype='float32')
+    
+    # Redefine geometric angles based on grnaule metadata
+    angles = ds.attrs['metadata_granule']['Geometric_Informations']['Angles_Grids_List']
+    sza = read_xml_block(angles['Sun_Angles_Grids']['Zenith']['Values_List']['VALUES'])
+    saa = read_xml_block(angles['Sun_Angles_Grids']['Azimuth']['Values_List']['VALUES'])
+
+    shp = (ds.totalheight, ds.totalwidth)
+
+    # read view angles (for each band)
+    vza = {}
+    vaa = {}
+    via_list = angles['Viewing_Incidence_Angles_Grids_List']['Band_Viewing_Incidence_Angles_Grids_List']
+    for e in via_list['Viewing_Incidence_Angles_Grids']:
+
+        # read zenith angles
+        data = read_xml_block(e['Zenith']['Values_List']['VALUES'])
+        bandid = int(e['attributes']['detector_id'])
+        if bandid not in vza:
+            vza[bandid] = data
+        else:
+            ok = ~np.isnan(data)
+            vza[bandid][ok] = data[ok]
+
+        # read azimuth angles
+        data = read_xml_block(e['Azimuth']['Values_List']['VALUES'])
+        bandid = int(e['attributes']['detector_id'])
+        if bandid not in vaa:
+            vaa[bandid] = data
+        else:
+            ok = ~np.isnan(data)
+            vaa[bandid][ok] = data[ok]
+
+    # use the first band as vza and vaa
+    k = sorted(vza.keys())[0]
+    assert k in vaa
+
+    # initialize the dask arrays
+    dims = ('tie_rows', 'tie_columns')
+    out = dict(zip(dims, ds[n.lat.name].shape))
+    for name, tie in [(n.sza.name, sza),
+                      (n.saa.name, saa),
+                      (n.vza.name, vza[k]),
+                      (n.vaa.name, vaa[k]),
+                      ]:
+        da_tie = xr.DataArray(
+            tie,
+            dims=dims,
+            coords={'tie_rows': np.linspace(0, shp[0]-1, sza.shape[0]),
+                    'tie_columns': np.linspace(0, shp[1]-1, sza.shape[1])})
+        ds[name+'_tie'] = da_tie
+        ds[name] = spatial_resample(da_tie, out, chunks, 'linear')
+    
+    # Assign central wavelengths as band coordinates
+    venus_band_names = [420,443,490,555,620,622,667,702,742,782,865,910]
+    ds = ds.assign_coords(bands=venus_band_names)
+    
+    # Drop NVIS bands dimension
+    ds = ds.assign(Rtoa=(('bands','y','x'),ds[n.rtoa.name].data))
+    
+    # Flags 
+    ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')
+    
+    # Add CRS 
+    crs = ds.attrs['metadata_granule']['Geoposition_Informations']['Coordinate_Reference_System']['Horizontal_Coordinate_System']['HORIZONTAL_CS_CODE']
+    ds.attrs[n.crs.name] = 'epsg:'+str(crs)
+    
+    return ds

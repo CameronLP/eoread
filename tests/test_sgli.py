@@ -36,11 +36,10 @@ def test_time(level1_sgli, chunks):
     params = {'filepath': level1_sgli, 'chunks': chunks}
     generic.test_execution_time(Level1_SGLI, params)
 
-@pytest.mark.skip('No version 1 output')
 def test_v1_compat(level1_sgli):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_SGLI(level1_sgli, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_sgli.stem))
+    old = xr.open_dataset(v1_data/(level1_sgli.stem+'_res'))
     generic.compare_version(l1, old)
     
 def test_lazy_load(sgli_product):

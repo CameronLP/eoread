@@ -11,6 +11,7 @@ from .conftest import savefig
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import dask
 import pytest
 
@@ -153,9 +154,14 @@ def compare_version(v2, v1):
     for key, val in v1.attrs.items():
         if key == 'git_commit': continue
         assert key in v2.attrs
-        if val != v2.attrs[key]:
-            log.warning(f'[Different values] For {key}, should be {val} but '
-                        f'got {v2.attrs[key]}')
+        if isinstance(val, np.ndarray): 
+            if any(val != v2.attrs[key]):
+                log.warning(f'[Different values] For {key}, should be {val} but '
+                            f'got {v2.attrs[key]}')            
+        else:
+            if val != v2.attrs[key]:
+                log.warning(f'[Different values] For {key}, should be {val} but '
+                            f'got {v2.attrs[key]}')
 
 def test_lazy_load(ds):
     
