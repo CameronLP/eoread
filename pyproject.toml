@@ -11,9 +11,14 @@ dependencies = [
     "pyhdf",
     "pysolar",
     "pyepr",
-    "rioxarray",
-    "core @ git+https://github.com/hygeos/core@v2",
-    "sand @ git+https://github.com/hygeos/sand@bak"]
+    "rioxarray"
+    ]
+
+[project.optional-dependencies]
+git = [
+    "core @ git+https://github.com/hygeos/core.git@v2",
+    "sand @ git+https://github.com/hygeos/sand.git@bak"
+]
 
 [build-system]
 requires = ["poetry-core"]
@@ -24,7 +29,7 @@ channels = ["conda-forge"]
 platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
-eoread = { path = ".", editable = true }
+eoread = { path = ".", editable = true, extras = ["git"]}
 
 [tool.pixi.tasks]
 tests = "pytest tests/"
