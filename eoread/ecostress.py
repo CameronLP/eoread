@@ -72,7 +72,7 @@ def Level1_ECOSTRESS(filepath: Path | str,
     revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
     l1 = l1.rename_dims(revize_dims)
     l1 = l1.assign({
-        n.cwav.name: ((n.bands.name), granule_mtd.BandSpecification.values[1:]),
+        n.cwav.name: ((n.bands.name), granule_mtd.BandSpecification.values[1:]*1e3),
         n.bnames.name: ((n.bands.name), l1[n.bands.name].values.astype(str))
     })
     
