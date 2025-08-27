@@ -4,9 +4,9 @@
 import pytest
 import xarray as xr
 
-from . import generic, conftest
+from . import generic
 from pathlib import Path
-from eoread.msi import *
+from eoread.msi import get_sample, Level1_MSI
 from eoread import eo
 
 resolutions = ['10', '20', '60']
@@ -45,7 +45,7 @@ def test_time(level1_msi, resolution, chunks):
 def test_v1_compat(level1_msi):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_MSI(level1_msi, '60', v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_msi.stem+f'_60'))
+    old = xr.open_dataset(v1_data/(level1_msi.stem+'_60'))
     generic.compare_version(l1, old)
     
 def test_lazy_load(S2_product):

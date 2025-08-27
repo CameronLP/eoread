@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-from eoread.venus import *
+from eoread.venus import Level1_VENUS, Level2_VENUS
 from . import generic
 
 import pytest

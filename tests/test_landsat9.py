@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from pathlib import Path
 import pytest
 
-from eoread.landsat_oli import *
+from eoread.landsat_oli import Level1_OLI
+import xarray as xr
 from . import generic
 
 

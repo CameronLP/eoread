@@ -250,14 +250,14 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.23.0-py312h66e93f0_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb8e6e7a_2.conda
       - pypi: https://files.pythonhosted.org/packages/8c/73/6ede2ec59bce19b3edf4209d70004253ec5f4e319f9a2e3f2f15601ed5f7/charset_normalizer-3.4.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-      - pypi: git+https://github.com/hygeos/core?rev=v2#8cfe255d167c80a71412e6474c598feb353325c6
+      - pypi: git+https://github.com/hygeos/core?rev=v2#371435a57477edd6fda80f44a785cef665bf898a
       - pypi: https://files.pythonhosted.org/packages/ed/1d/409e819e00aed51f3e23df570e219621c0d64c458c9b8df4e7ae1c27e23d/eumdac-3.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/69/f8/693b1a10a891197143c0673fcce5b75fc69132afa81a36e4568c12c8faba/lxml-6.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/71/d4/d9440ff5da6547ac2587f93a9af7e779be0aed78e1f0734dede94e440f6b/pysolar-0.13-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5f/ed/539768cf28c661b5b068d66d96a2f155c4971a5d55684a514c1a0e0dec2f/python_dotenv-1.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7c/e4/56027c4a6b4ae70ca9de302488c5ca95ad4a39e190093d6c1a8ace08341b/requests-2.32.4-py3-none-any.whl
-      - pypi: git+https://github.com/hygeos/sand.git?rev=bak#204652cd1ffc02b67c7daa82a51b33dd0d17f040
+      - pypi: git+https://github.com/hygeos/sand.git?rev=bak#0120c950a66d3eaf0812cb040309aa196453ac9d
       - pypi: https://files.pythonhosted.org/packages/1f/1e/83ec268ab8254a446b4178b45616ab5822d7b9d2b7eb6e27cf0b82f45601/shapely-2.1.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl
       - pypi: ./
@@ -829,9 +829,9 @@ packages:
   - pkg:pypi/contourpy?source=hash-mapping
   size: 292588
   timestamp: 1753561158900
-- pypi: git+https://github.com/hygeos/core?rev=v2#8cfe255d167c80a71412e6474c598feb353325c6
+- pypi: git+https://github.com/hygeos/core?rev=v2#371435a57477edd6fda80f44a785cef665bf898a
   name: core
-  version: 1.0.28
+  version: 1.0.29
   requires_dist:
   - tqdm
   - xarray
@@ -3319,9 +3319,9 @@ packages:
   purls: []
   size: 383097
   timestamp: 1753407970803
-- pypi: git+https://github.com/hygeos/sand.git?rev=bak#204652cd1ffc02b67c7daa82a51b33dd0d17f040
+- pypi: git+https://github.com/hygeos/sand.git?rev=bak#0120c950a66d3eaf0812cb040309aa196453ac9d
   name: sand
-  version: 1.0.0
+  version: 1.0.1
   requires_dist:
   - numpy
   - requests

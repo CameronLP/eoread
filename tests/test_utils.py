@@ -1,5 +1,5 @@
 from numpy.random import randint
-from eoread.utils import *
+from eoread.utils import filter_metadata, spatial_resample
 import xarray as xr
 import pytest
 

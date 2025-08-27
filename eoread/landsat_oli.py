@@ -23,7 +23,7 @@ from tempfile import TemporaryDirectory
 from eoread.utils import filter_metadata, open_raster
 
 from core import log, env
-from core.math import interp, Linear
+from core.interpolate import interp, Linear
 from core.tools import merge, drop_unused_dims
 from core.table import read_xml
 from core.geo import n, convert_latlon
@@ -36,7 +36,7 @@ cwvl = [442.96,482.04,561.41,654.59,864.67,1608.86,2200.73,1373.43,10895,12050,]
 def Level1_OLI(dirname: str|Path,
                l9_angles = None,
                chunks: int|tuple = 500,
-               metadata_template: list = None,
+               metadata_template: list|None = None,
                v1_compat: bool = False):
     '''
     Read an Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset

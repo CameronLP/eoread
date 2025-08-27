@@ -1,4 +1,7 @@
-from eoread.hypso import *
+from pathlib import Path
+from eoread.hypso import Level1_HYPSO, get_sample
+import xarray as xr
+
 from . import generic
 
 import pytest 
@@ -32,7 +35,7 @@ def test_time(level1_hypso, chunks):
 def test_v1_compat(level1_hypso):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_HYPSO(level1_hypso, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_hypso.stem+f'_res'))
+    old = xr.open_dataset(v1_data/(level1_hypso.stem+'_res'))
     generic.compare_version(l1, old)
     
 def test_lazy_load(hypso_product):

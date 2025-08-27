@@ -2,7 +2,7 @@ import pytest
 import xarray as xr
 
 from pathlib import Path
-from eoread.ecostress import *
+from eoread.ecostress import Level1_ECOSTRESS, get_sample
 from . import generic
 
 

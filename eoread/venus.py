@@ -30,19 +30,19 @@ import pyproj
 
 from core.geo import n
 from core.table import read_xml
-from core.download import download_url
+from core.network.download import download_url
 from core.files import mdir
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
-from eoread.utils import *
+from eoread.utils import open_raster, spatial_resample
 from eoread.common import DataArray_from_array
 
 
 def Level1_VENUS(dirname, 
                  chunks: int|tuple = 500,
                  read_masks: bool = False, 
-                 metadata_template: list = None,
+                 metadata_template: list|None = None,
                  v1_compat: bool = False):
     '''
     Read an Venµs Level1 product as an xarray.Dataset

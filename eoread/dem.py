@@ -1,6 +1,6 @@
 from core.files import mdir, uncompress
 from eoread.common import bin_centers
-from core.download import *
+from core.network.download import download_nextcloud, download_url
 from core.geo import n
 from core import env
 

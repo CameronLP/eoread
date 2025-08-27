@@ -24,7 +24,7 @@ from tempfile import TemporaryDirectory
 from core.geo import n 
 from core import env, log
 from core.tools import drop_unused_dims
-from core.download import download_url
+from core.network.download import download_url
 from core.files import mdir, to_netcdf
 from .common import bin_centers
 

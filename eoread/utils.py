@@ -1,5 +1,5 @@
 from core.geo import n, convert_latlon
-from core.math import Linear, Nearest, interp
+from core.interpolate import Linear, Nearest, interp
 from core.files import uncompress
 from dask.array import linspace
 from tempfile import TemporaryDirectory

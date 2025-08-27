@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 
 
+from pathlib import Path
 import pytest
-from eoread.meris import *
+from eoread.meris import Level1_MERIS, get_sample
+import xarray as xr
 from . import generic
 
 

@@ -37,7 +37,7 @@ from core.tools import merge, drop_unused_dims
 from core.table import read_xml
 from core import env, log
 from core.geo import n
-from core.math import interp, Linear
+from core.interpolate import interp, Linear
 
 from eoread.utils import filter_metadata, spatial_resample
 from eoread.common import DataArray_from_array

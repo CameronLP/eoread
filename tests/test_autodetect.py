@@ -1,5 +1,5 @@
 from eoread.msi import get_sample
-from eoread.autodetect import *
+from eoread.autodetect import Level1, Level2
 import pytest
 
 level1 = pytest.fixture(lambda: get_sample(1), scope='module')

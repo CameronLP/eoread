@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from pathlib import Path
 import pytest
 import xarray as xr 
-from eoread.olci import *
+from eoread.olci import get_sample, Level1_OLCI, Level2_OLCI
 from eoread.olci import get_valid_l2_pixels
 from eoread import eo
 from . import generic

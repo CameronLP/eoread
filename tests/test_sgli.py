@@ -3,8 +3,9 @@
 
 from pathlib import Path
 import pytest
+import xarray as xr
 
-from eoread.sgli import *
+from eoread.sgli import get_sample, Level1_SGLI
 from . import generic
 
 
