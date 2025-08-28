@@ -8,6 +8,8 @@ https://oceancolor.gsfc.nasa.gov/resources/docs/ancillary/
 
 '''
 
+import warnings
+
 from datetime import datetime
 from pathlib import Path
 import xarray as xr
@@ -18,6 +20,7 @@ from eoread.utils.naming import naming
 from dateutil.parser import parse
 
 from core import env
+warnings.warn("This module will be deprecated. Please use SAND instead.")
 
 
 # resources are a list of functions taking the date, and returning the list

@@ -13,11 +13,15 @@ How to install SeaDAS OCSSW (see https://seadas.gsfc.nasa.gov/downloads/)
 """
 
 from pathlib import Path
+import warnings
 import xarray as xr
 import numpy as np
 from datetime import datetime
+import subprocess
 
-from core.geo import n
+from core.files.uncompress import uncompress_decorator
+from core.network.download import download_url
+from core.geo.naming import names as n
 from .common import DataArray_from_array
 from . import eo
 
@@ -42,9 +46,9 @@ def Level1_NASA(filename, chunks=500):
     
     geo_data = xr.open_dataset(filename, group='/geophysical_data', chunks=chunks)
     geo_data = geo_data.rename_dims({'number_of_lines':n.rows.name, 'pixels_per_line':n.columns.name})
-    for n,r,p in [(n.rtoa.name+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
+    for _n,r,p in [(n.rtoa.name+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
         try:
-            ds[n] = geo_data[r]/geo_data[p]
+            ds[_n] = geo_data[r]/geo_data[p]
         except:
             pass
 
@@ -57,7 +61,7 @@ def Level1_NASA(filename, chunks=500):
 
     eo.init_geometry(ds)
 
-    ds[naming.flags] = xr.zeros_like(ds[naming.lat], dtype=naming.flags_dtype)
+    ds[n.flags.name] = xr.zeros_like(ds[n.lat.name], dtype=naming.flags_dtype)
     for (flag, flag_list) in [('LAND',['LAND']), ('L1_INVALID',['ATMFAIL','PRODFAIL'])]:
         flag_value = 0
         for f in flag_list:
