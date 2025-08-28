@@ -150,7 +150,7 @@ def _supplement_latlon(l1, chunks):
     west   = coords[:,0].min()
     
     dims = [n.rows.name,n.columns.name]
-    lat = da.linspace(south,north,size[0]).reshape((size[0],1))
+    lat = da.linspace(north,south,size[0]).reshape((size[0],1))
     lon = da.linspace(west,east,size[1]).reshape((1,size[1]))
     l1[n.lon.name] = xr.DataArray(da.repeat(lon, size[0], axis=0), 
                                   dims=dims).chunk(chunks=chunks)
