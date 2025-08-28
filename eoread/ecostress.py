@@ -3,7 +3,7 @@ from core.tools import merge
 from core import env, log
 from core.geo import n
 from pathlib import Path
-from typing import Literal
+from shapely import wkt
 
 import numpy as np
 import xarray as xr 
@@ -142,17 +142,19 @@ def _supplement_latlon(l1, chunks):
         
     # Compute LatLon variables
     size = l1['cloud'].shape
-    north = l1.metadata['NorthBoundingCoordinate']
-    south = l1.metadata['SouthBoundingCoordinate']
-    east  = l1.metadata['EastBoundingCoordinate']
-    west  = l1.metadata['WestBoundingCoordinate']
+    poly = wkt.loads(l1.metadata['SceneBoundaryLatLonWKT'])
+    coords = np.array(poly.exterior.coords)
+    north  = coords[:,1].max()
+    south  = coords[:,1].min()
+    east   = coords[:,0].max()
+    west   = coords[:,0].min()
     
     dims = [n.rows.name,n.columns.name]
-    lat = da.linspace(south,north,size[1]).reshape((1,size[1]))
-    lon = da.linspace(west,east,size[0]).reshape((size[0],1))
-    l1[n.lon.name] = xr.DataArray(da.repeat(lon, size[1], axis=1), 
+    lat = da.linspace(south,north,size[0]).reshape((size[0],1))
+    lon = da.linspace(west,east,size[1]).reshape((1,size[1]))
+    l1[n.lon.name] = xr.DataArray(da.repeat(lon, size[0], axis=0), 
                                   dims=dims).chunk(chunks=chunks)
-    l1[n.lat.name] = xr.DataArray(da.repeat(lat, size[0], axis=0), 
+    l1[n.lat.name] = xr.DataArray(da.repeat(lat, size[1], axis=1), 
                                   dims=dims).chunk(chunks=chunks)
     return l1
 
