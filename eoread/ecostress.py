@@ -34,7 +34,7 @@ def Level1_ECOSTRESS(filepath: Path | str,
     
     # Revize variables    
     log.debug('Reading h5file')
-    data = xr.open_datatree(filepath, phony_dims='sort')
+    data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
     raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
     raw = raw.to_dataset().chunk(chunks=dict(zip(list(raw.dims), chunks)))
     
@@ -88,7 +88,7 @@ def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     
     # Revize variables
     filepath = Path(filepath)
-    data = xr.open_datatree(filepath, phony_dims='sort')
+    data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
     raw = data['HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields']
     l2 = raw.to_dataset().chunk(chunks=chunks)
     
