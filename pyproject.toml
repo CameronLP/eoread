@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 git = [
-    "core @ git+https://github.com/hygeos/core.git@v2",
+    "core @ git+https://github.com/hygeos/core.git",
     "sand @ git+https://github.com/hygeos/sand.git@bak"
 ]
 
