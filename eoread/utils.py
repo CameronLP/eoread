@@ -84,7 +84,10 @@ def spatial_resample(arr,
         'd0': n.rows.name,
         'd1': n.columns.name})
 
-def open_raster(dirname, pattern: str, compress_ext: str = None):
+def open_raster(dirname, 
+                pattern: str, 
+                compress_ext: str = None, 
+                engine='h5netcdf'):
     """
     Methods to find a raster file based on a pattern and open it
     """
@@ -98,5 +101,5 @@ def open_raster(dirname, pattern: str, compress_ext: str = None):
     if compress_ext: 
         with TemporaryDirectory() as tmpdir:
             path = uncompress(path, tmpdir)
-            return xr.open_dataarray(path).squeeze()
-    return xr.open_dataarray(path).squeeze()
+            return xr.open_dataarray(path, engine=engine).squeeze()
+    return xr.open_dataarray(path, engine=engine).squeeze()

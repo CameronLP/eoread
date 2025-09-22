@@ -84,7 +84,7 @@ def Level1_VENUS(dirname,
     # read cloud altitude
     log.debug('Open masks')
     ratio = {n.columns.name: ds.totalwidth, n.rows.name: ds.totalheight} 
-    cld = open_raster(dirname/'DATA', '*CLA_ALL.tif')
+    cld = open_raster(dirname/'DATA', '*CLA_ALL.tif', engine='rasterio')
     cld = cld.rename(x=n.columns.name, y=n.rows.name)
     ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat')
     
@@ -154,23 +154,23 @@ def Level2_VENUS(dirname,
     
     # read cloud mask
     log.debug('Open masks')
-    cld = open_raster(dirname/'MASKS','*CLM_XS.tif').chunk(chunks)
+    cld = open_raster(dirname/'MASKS','*CLM_XS.tif', engine='rasterio').chunk(chunks)
     ds['CLM_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
     
     # read other masks
-    usi = open_raster(dirname/'MASKS','*USI_XS.tif').chunk(chunks)
+    usi = open_raster(dirname/'MASKS','*USI_XS.tif', engine='rasterio').chunk(chunks)
     ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
     
-    cld = open_raster(dirname/'MASKS','*SAT_XS.tif').chunk(chunks)
+    cld = open_raster(dirname/'MASKS','*SAT_XS.tif', engine='rasterio').chunk(chunks)
     ds['SAT_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
     
-    usi = open_raster(dirname/'MASKS','*PIX_XS.tif').chunk([1]+list(chunks))
+    usi = open_raster(dirname/'MASKS','*PIX_XS.tif', engine='rasterio').chunk([1]+list(chunks))
     ds['PIX_XS'] = usi.rename(x=n.columns.name, y=n.rows.name, band=n.bands.name)
     
-    cld = open_raster(dirname/'MASKS','*IAB_XS.tif').chunk(chunks)
+    cld = open_raster(dirname/'MASKS','*IAB_XS.tif', engine='rasterio').chunk(chunks)
     ds['IAB_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
     
-    usi = open_raster(dirname/'MASKS','*EDG_XS.tif').chunk(chunks)
+    usi = open_raster(dirname/'MASKS','*EDG_XS.tif', engine='rasterio').chunk(chunks)
     ds['EDG_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
     
     return drop_unused_dims(ds).unify_chunks()
@@ -247,7 +247,7 @@ def _venus_read_toa(ds, granule_dir, quantif, chunks):
     
     for name in ds[n.bnames.name]:
         
-        arr = open_raster(granule_dir, f'*REF_{name.values}.tif').chunk(chunks)
+        arr = open_raster(granule_dir, f'*REF_{name.values}.tif', engine='rasterio').chunk(chunks)
         arr = (arr/quantif).astype('float32')
         
         ratio = {n.rows.name: ds.totalheight, n.columns.name: ds.totalwidth}        
@@ -264,7 +264,7 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
     for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
         for name in ds[n.bnames.name]:
             
-            arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif').chunk(chunks)
+            arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif', engine='rasterio').chunk(chunks)
             arr = (arr/quantif).astype('float32')
 
             ratio = {'y': ds.totalheight, 'x': ds.totalwidth}  
@@ -274,7 +274,7 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
     ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
     
     # read Aerosol_Optical_Thickness of waper vapor content
-    atb = open_raster(granule_dir, '*ATB_XS.tif').chunk([1]+list(chunks))
+    atb = open_raster(granule_dir, '*ATB_XS.tif', engine='rasterio').chunk([1]+list(chunks))
     ds['water_vapor'] = atb.sel(band=1)
     ds['aod'] = atb.sel(band=2)
 
@@ -283,11 +283,11 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
 def _venus_read_geometry(ds, dirname, chunks):
 
     # read solar angles
-    sa = open_raster(dirname/'DATA','*SOL_ALL.tif').chunk([1]+list(chunks))
+    sa = open_raster(dirname/'DATA','*SOL_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
     ds['SOL_ALL'] = sa.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
     
     # read view angles
-    va = open_raster(dirname/'DATA','*VIE_ALL.tif').chunk([1]+list(chunks))
+    va = open_raster(dirname/'DATA','*VIE_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
     ds['VIE_ALL'] = va.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
     
     return ds.rename(band=n.bands.name+'_angle')

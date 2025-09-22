@@ -74,7 +74,7 @@ class _GSW_tile:
                 A.to_dataset(),
                 filename=self.filename)
         else:
-            A = xr.open_dataarray(self.filename, chunks={})
+            A = xr.open_dataarray(self.filename, engine='h5netcdf', chunks={})
             
         return A[key].compute(scheduler='sync').values
 
@@ -121,7 +121,7 @@ def _fetch_gsw_tile(tile_name):
         p = download_url(url, tmpdir, if_exists='skip')
 
         # read geotiff data
-        data = xr.open_dataarray(p).squeeze().compute(scheduler='sync')
+        data = xr.open_dataarray(p, engine='rasterio').squeeze().compute(scheduler='sync')
         data = data.rename(x=n.columns.name, y=n.rows.name)
         data = drop_unused_dims(data)
     

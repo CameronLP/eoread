@@ -129,7 +129,7 @@ def Level1_MSI(dirname : str|Path,
     
     # msi read quality mask
     log.debug('WARNING: SKIPPING >> Read quality masks')
-    # ds = msiread_qi(ds, granule_dir, chunks)
+    # ds = _msi_read_qi(ds, granule_dir, chunks)
 
     # msi_read_toa and quality masks
     log.debug('Read top of atmosphere data')
@@ -172,7 +172,8 @@ def _msi_read_qi(ds, granule_dir, chunks):
     for filename in (granule_dir/'QI_DATA').glob(f'*.jp2'):
         
         if '_PVI' in filename.stem: continue
-        arr = xr.open_dataarray(filename).squeeze().chunk(chunks)
+        arr = xr.open_dataarray(filename, engine='rasterio')
+        arr = arr.chunk([1]+list(chunks))
         arr = arr.rename(x='x_red', y='y_red').astype('float32')
         ds[filename.stem] = arr.rename({'band':n.detector.name})
     

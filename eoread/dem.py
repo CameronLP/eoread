@@ -201,12 +201,15 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
     
     if directory is None:
         directory = mdir(env.getdir("DIR_STATIC") / "GTOPO30")
+    else:
+        directory = Path(directory)
 
     # concat the delayed dask objects for all tiles
     basename = 'GTOPO30_DZ_MLUT.nc'
     download_nextcloud(basename, directory, if_exists='skip')
     filepath = directory/basename
-    gtopo = xr.open_dataset(filepath).elev.chunk(chunks=(chunk,chunk))
+    gtopo = xr.open_dataset(filepath, engine='h5netcdf')
+    gtopo = gtopo.elev.chunk(chunks=(chunk,chunk))
     gtopo = xr.where(gtopo > 0, gtopo, missing)
     revize_dims = dict(zip(['lat','lon'], ['latitude','longitude']))
     gtopo = gtopo.rename(revize_dims)

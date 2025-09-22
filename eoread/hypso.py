@@ -29,7 +29,7 @@ def Level1_HYPSO(filepath: str|Path,
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
 
-    ds_root = xr.open_datatree(filepath)
+    ds_root = xr.open_datatree(filepath, engine='h5netcdf')
     if isinstance(chunks, int): chunks = [chunks]*2
     ds_products = ds_root["products"].to_dataset()
     ds_nav = ds_root["navigation"].to_dataset()

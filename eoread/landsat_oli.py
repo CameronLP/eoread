@@ -168,7 +168,7 @@ def _read_geometry(ds, dirname, l9_angles, chunks):
                          (n.sza.name, 'LC*_SZA.TIF'),
                          (n.vaa.name, 'LC*_VAA.TIF'),
                          (n.vza.name, 'LC*_VZA.TIF')]:
-        data = open_raster(dirname, search).chunk(chunks)
+        data = open_raster(dirname, search, engine='rasterio').chunk(chunks)
         ds[name] = (data/100).astype('float32')
     
     if (n.saa.name not in ds) and (l9_angles is not None):
@@ -185,7 +185,7 @@ def _read_radiometry(ds, dirname, chunks):
     files = list(dirname.glob(f'LC*_B8.TIF'))
     assert len(files) == 1, 'None or several files have been found for panchromatic band'
     a, m = rescale[f'RADIANCE_ADD_BAND_8'], rescale[f'RADIANCE_MULT_BAND_8']
-    data = xr.open_dataarray(files[0]).chunk([1]+list(chunks))
+    data = xr.open_dataarray(files[0], engine='rasterio').chunk([1]+list(chunks))
     ds['Panchromatic'] = (dims,(m*data.squeeze()+a).data.astype('float32'))
     
     for f in dirname.glob(f'LC*_B*.TIF'):
@@ -200,7 +200,7 @@ def _read_radiometry(ds, dirname, chunks):
         # read radiances
         a = rescale[f'RADIANCE_ADD_BAND_{b[2:]}']
         m = rescale[f'RADIANCE_MULT_BAND_{b[2:]}']
-        data = xr.open_dataarray(f).chunk([1]+list(chunks))
+        data = xr.open_dataarray(f, engine='rasterio').chunk([1]+list(chunks))
         ds[n.ltoa.name+b] = (m*data.squeeze()+a).astype('float32')
     
     ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
@@ -220,7 +220,7 @@ def _read_radiometry(ds, dirname, chunks):
         a = rescale[f'REFLECTANCE_ADD_BAND_{b[2:]}']
         m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
         filenames = list(dirname.glob(f'LC*{b}.TIF'))
-        data = xr.open_dataarray(filenames[0]).chunk([1]+list(chunks))
+        data = xr.open_dataarray(filenames[0], engine='rasterio').chunk([1]+list(chunks))
         ds[n.rtoa.name+b] = (m*data.squeeze()+a).astype('float32')
     
     ds = merge(ds, dim='bands_nvis', pattern=r'(.+)_B(.+)', dtype=str)
@@ -248,7 +248,7 @@ def _read_masks(ds, dirname, chunks):
     for t in dirname.glob('*_QA_*'):
         search = re.search(r'QA_[A-Z]*', t.name)
         name = t.name[search.start():search.end()]
-        ds[name] = xr.open_dataarray(t).chunk([1]+list(chunks)).squeeze()
+        ds[name] = xr.open_dataarray(t, engine='rasterio').chunk([1]+list(chunks)).squeeze()
 
 
 def _v1_compat(ds):

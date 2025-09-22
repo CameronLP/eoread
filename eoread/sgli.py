@@ -60,7 +60,7 @@ def Level1_SGLI(filepath: str|Path,
     assert filepath.exists(), 'File does not exists'
 
     # open image_data
-    tree = xr.open_datatree(filepath, phony_dims='sort')
+    tree = xr.open_datatree(filepath, engine='h5netcdf', phony_dims='sort')
     imdata = tree['Image_data'].to_dataset()
     
     # read metadata

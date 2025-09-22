@@ -108,7 +108,7 @@ def Level1_OLCI(dirname,
     # Check if product level is 1
     text = manifest['informationPackageMap']['contentUnit']['attributes']
     levels = findall(r'Level .', text['textInfo'])
-    assert len(levels) == 1, f'Invalid textinfo in manifest: "{text['textInfo']}"'
+    assert len(levels) == 1, f'Invalid textinfo in manifest: {text["textInfo"]}'
     level_from_manifest = levels[0].replace('Level ','level')
     assert 'level1' == level_from_manifest, \
         f'expected level1 encountered {level_from_manifest}'
@@ -119,7 +119,7 @@ def Level1_OLCI(dirname,
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
-    geo = xr.open_dataset(geo_coords_file).chunk(chunks)
+    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks)
     for k in geo.variables: 
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
@@ -133,7 +133,7 @@ def Level1_OLCI(dirname,
     # tie geometry interpolation
     log.debug('read geometric tie points')
     tie_geom_file = dirname/'tie_geometries.nc'
-    tie_ds = xr.open_dataset(tie_geom_file).chunk(chunks=-1)
+    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
         tie_columns=da.arange(tie_ds.sizes['tie_columns'])*ac_factor,
         tie_rows=da.arange(tie_ds.sizes['tie_rows'])*al_factor,
@@ -169,7 +169,7 @@ def Level1_OLCI(dirname,
     # tie meteo interpolation
     log.debug('read meteorological tie points')
     tie_meteo_file = dirname/'tie_meteo.nc'
-    tie = xr.open_dataset(tie_meteo_file).chunk(chunks=-1)
+    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
     tie = tie.assign_coords(
                 tie_columns = da.arange(tie.sizes['tie_columns'])*ac_factor,
                 tie_rows = da.arange(tie.sizes['tie_rows'])*al_factor,
@@ -200,6 +200,7 @@ def Level1_OLCI(dirname,
 
     # instrument data
     instrument_data = xr.open_dataset(dirname/'instrument_data.nc',
+                                      engine='h5netcdf',
                                       mask_and_scale=False,
                                       # this variable has duplicate dimensions, drop it
                                       drop_variables='relative_spectral_covariance'
@@ -209,7 +210,7 @@ def Level1_OLCI(dirname,
     # quality flags
     log.debug('read quality masks')
     qf_file = dirname/'qualityFlags.nc'
-    qf = xr.open_dataset(qf_file).chunk(chunks)
+    qf = xr.open_dataset(qf_file, engine='h5netcdf').chunk(chunks)
     for var in qf.variables: ds[var] = qf[var]
     
     # attributes
@@ -280,7 +281,7 @@ def Level2_OLCI(dirname,
     # Retrieve product level
     text = manifest['informationPackageMap']['contentUnit']['attributes']
     levels = findall(r'Level .', text['textInfo'])
-    assert len(levels) == 1, f'Invalid textinfo in manifest: "{text['textInfo']}"'
+    assert len(levels) == 1, f'Invalid textinfo in manifest: {text["textInfo"]}'
     level_from_manifest = levels[0].replace('Level ','level')
     assert 'level2' == level_from_manifest, \
         f'expected level2 encountered {level_from_manifest}'
@@ -290,7 +291,7 @@ def Level2_OLCI(dirname,
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
-    geo = xr.open_dataset(geo_coords_file).chunk(chunks=chunks)
+    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks=chunks)
     for k in geo.variables: 
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
@@ -303,7 +304,7 @@ def Level2_OLCI(dirname,
 
     # tie geometry interpolation
     tie_geom_file = dirname/'tie_geometries.nc'
-    tie_ds = xr.open_dataset(tie_geom_file).chunk(chunks=-1)
+    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
         tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
         tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
@@ -348,7 +349,7 @@ def Level2_OLCI(dirname,
 
     # tie meteo interpolation
     tie_meteo_file = dirname/'tie_meteo.nc'
-    tie = xr.open_dataset(tie_meteo_file).chunk(chunks=-1)
+    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
     tie = tie.assign_coords(
                 tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
                 tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
@@ -398,6 +399,7 @@ def Level2_OLCI(dirname,
     # instrument data
     instrument_data_file = dirname/'instrument_data.nc'
     instrument_data = xr.open_dataset(instrument_data_file,
+                                      engine='h5netcdf',
                                       mask_and_scale=False,
                                       # this variable has duplicate dimensions, drop it
                                       drop_variables='relative_spectral_covariance'
@@ -407,22 +409,22 @@ def Level2_OLCI(dirname,
 
     # chl_nn
     fname = os.path.join(dirname, 'chl_nn.nc')
-    qf = xr.open_dataset(fname).chunk(chunks=chunks)
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
     ds['chl_nn'] = qf.CHL_NN
 
     # chl_oc4me
     fname = os.path.join(dirname, 'chl_oc4me.nc')
-    qf = xr.open_dataset(fname).chunk(chunks=chunks)
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
     ds['chl_oc4me'] = qf.CHL_OC4ME
 
     # quality flags
     fname = os.path.join(dirname, 'wqsf.nc')
-    qf = xr.open_dataset(fname).chunk(chunks=chunks)
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
     ds['wqsf'] = qf.WQSF
 
     # aerosol properties
     fname = os.path.join(dirname, 'w_aer.nc')
-    qf = xr.open_dataset(fname).chunk(chunks=chunks)
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
     ds['A865'] = qf.A865
     ds['T865'] = qf.T865
 
@@ -466,7 +468,7 @@ def _read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
     
     prod_list = []
     for filename in dirname.glob('O*radiance.nc'):
-        data = xr.open_dataarray(filename).chunk(chunks)
+        data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
         prod_list.append(data)
 
     if level == 1: param_name, unit = n.ltoa.name, 'W/sr/m^2'
