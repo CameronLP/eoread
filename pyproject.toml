@@ -3,7 +3,7 @@ name = "eoread"
 authors = [{name = "HYGEOS team"}]
 description = "Modular implementation of satellite data input/output relying on xarray."
 license = "Apache 2.0"
-version = "0.3-dev"
+version = "0.3.1"
 requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [
@@ -39,25 +39,19 @@ reader = "python3 scripts/eval_readers.py"
 pytest = "*"
 pytest-html = "*"
 pytest-xdist = "*"
-numpy = "*"
-xarray = "*"
-pandas = "*"
-pyproj = "*"
+# pandas = "*"
 matplotlib-base = "*"
-toml = "*"
-h5py = "*"
-h5netcdf = "*"
-pyhdf = "*"
+# toml = "*"
+# h5py = "*"
+# h5netcdf = "*"
 ipykernel = "*"
-pyepr = "*"
-rioxarray = "*"
-libgdal-jp2openjpeg = "*"
+# libgdal-jp2openjpeg = "*"
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
 
 [tool.pixi.feature.sys.dependencies]
-libgdal-jp2openjpeg = "*"
+# libgdal-jp2openjpeg = "*"
 
 [tool.pixi.feature.hyp.dependencies]
 xarray = "*"

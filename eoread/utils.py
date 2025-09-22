@@ -1,4 +1,4 @@
-from core.geo import n, convert_latlon
+from core.geo import n, convert_latlon_2D
 from core.interpolate import Linear, Nearest, interp
 from core.files import uncompress
 from dask.array import linspace
@@ -76,7 +76,7 @@ def spatial_resample(arr,
         
         raster = [linspace(0, arr.sizes[d], output_shape[d]) for d in arr.dims]
         raster = [xr.DataArray(l, dims=('d0','d1')).chunk(chunks) 
-                  for l in convert_latlon(*raster)]
+                  for l in convert_latlon_2D(*raster)]
         params = {d: m(raster[i]) for i,d in enumerate(arr.dims)}
         arr_resampled = interp(arr.compute(), **params)
 

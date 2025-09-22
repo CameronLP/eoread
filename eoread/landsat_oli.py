@@ -26,7 +26,7 @@ from core import log, env
 from core.interpolate import interp, Linear
 from core.tools import merge, drop_unused_dims
 from core.table import read_xml
-from core.geo import n, convert_latlon
+from core.geo import n, convert_latlon_2D
 
 
 # Central wavelengths aren't described in metadata. Thus, they are hard-coded
@@ -137,7 +137,7 @@ def _read_coordinates(ds, chunks):
     ])
     
     # Compute latlon arrays
-    y, x = convert_latlon(da.linspace(0,1,len(ds[n.rows.name])),
+    y, x = convert_latlon_2D(da.linspace(0,1,len(ds[n.rows.name])),
                           da.linspace(0,1,len(ds[n.columns.name])))
     x = xr.DataArray(x, dims=(n.rows.name, n.columns.name)).chunk(chunks)
     y = xr.DataArray(y, dims=(n.rows.name, n.columns.name)).chunk(chunks)
@@ -157,8 +157,8 @@ def _gen_l9_angles(dirname, l9_angles=None):
     path_exe = Path(l9_angles).absolute()
     path_angles = Path(angles_txt_file[0]).absolute()
     with TemporaryDirectory() as tmpdir:
-        system(f'cd {tmpdir} && {path_exe} {path_angles} BOTH 1 -b 1')
-        system(f'cp -v {tmpdir/'*'} {dirname}')
+        system(f"cd {tmpdir} && {path_exe} {path_angles} BOTH 1 -b 1")
+        system(f"cp -v {tmpdir/'*'} {dirname}")
 
 
 def _read_geometry(ds, dirname, l9_angles, chunks):
