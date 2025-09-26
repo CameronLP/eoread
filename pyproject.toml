@@ -12,7 +12,7 @@ dependencies = [
     "pysolar",
     "pyepr",
     "rioxarray"
-    ]
+]
 
 [project.optional-dependencies]
 git = [
@@ -39,19 +39,15 @@ reader = "python3 scripts/eval_readers.py"
 pytest = "*"
 pytest-html = "*"
 pytest-xdist = "*"
-# pandas = "*"
 matplotlib-base = "*"
-# toml = "*"
-# h5py = "*"
-# h5netcdf = "*"
 ipykernel = "*"
-# libgdal-jp2openjpeg = "*"
+libgdal-jp2openjpeg = "*"  # Required to read compress jp2 file in MSI reader
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
 
 [tool.pixi.feature.sys.dependencies]
-# libgdal-jp2openjpeg = "*"
+libgdal-jp2openjpeg = "*"
 
 [tool.pixi.feature.hyp.dependencies]
 xarray = "*"
