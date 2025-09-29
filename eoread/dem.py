@@ -1,11 +1,10 @@
-from core.files import mdir, uncompress
 from eoread.common import bin_centers
-from core.network.download import download_nextcloud, download_url
+from core.network.download import download_url
+from core.files import mdir, uncompress
 from core.geo import n
 from core import env
 
 from os.path import getsize
-from os import remove, system
 from dask import array as da
 from pathlib import Path
 from math import ceil
@@ -13,9 +12,6 @@ from math import ceil
 import xarray as xr
 import numpy as np
 
-
-# FIXME: should be removed when download_nextcloud will be fixed
-nextcloud_url = 'https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/'
 
 class _ArrayLike_SRTM:
     """
@@ -29,9 +25,9 @@ class _ArrayLike_SRTM:
         self.verbose    = verbose
         self.directory  = Path(directory)
 
-        static = mdir(self.directory)
-        system(f'wget {nextcloud_url}download?files=valid_{self.srtm}_tiles.txt -c -O {static}/valid_{self.srtm}_tiles.txt')
-        self.tiles_list = np.loadtxt(f'{static}/valid_{self.srtm}_tiles.txt', dtype=str)
+        url = f'http://download.hygeos.com/eoread/valid_{self.srtm}_tiles.txt'  
+        tile_file = download_url(url, self.directory, if_exists='skip')
+        self.tiles_list = np.loadtxt(tile_file, dtype=str)
 
         self.tile_size  = 3601 if type_srtm == 1 else 1201
         self.width      = 360 * self.tile_size // self.agg
@@ -77,9 +73,9 @@ class _ArrayLike_SRTM:
                 filepath = self.directory/'.'.join(list_name)
                 if url in self.tiles_list:
                     if not filepath.exists():                        
-                        filename = download_url(url, self.directory, wget_opts='-q', )
-                        filepath = uncompress(filename, self.directory)
-                        remove(filename)
+                        filename = download_url(url, self.directory, wget_opts='-q')
+                        uncompress(filename, self.directory)
+                        filename.unlink()
                     data = read_hgt(str(filepath))
                 else:
                     continue
@@ -206,9 +202,10 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
 
     # concat the delayed dask objects for all tiles
     basename = 'GTOPO30_DZ_MLUT.nc'
-    download_nextcloud(basename, directory, if_exists='skip')
-    filepath = directory/basename
-    gtopo = xr.open_dataset(filepath, engine='h5netcdf')
+    
+    url = 'http://download.hygeos.com/eoread/GTOPO30_DZ_MLUT.nc'  
+    gtopo_file = download_url(url, directory, if_exists='skip')
+    gtopo = xr.open_dataset(gtopo_file, engine='h5netcdf')
     gtopo = gtopo.elev.chunk(chunks=(chunk,chunk))
     gtopo = xr.where(gtopo > 0, gtopo, missing)
     revize_dims = dict(zip(['lat','lon'], ['latitude','longitude']))
