@@ -389,7 +389,7 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
         level (int, optional): Level of the product. Defaults to 1.
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
-    return Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
+    # return Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
     try: 
         from core.files import cache_dataframe
         from sand.geodes import DownloadCNES
@@ -404,7 +404,8 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
     
     sensor = 'VENUS'
     params = products[sensor][f'level{level}']
-    dl = DownloadCNES(sensor, level)
+    params.update(collection_sand=sensor, level=int(level))
+    dl = DownloadCNES()
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 

@@ -224,7 +224,8 @@ def get_sample(level: int=1, use_cache:bool=True) -> Path:
     
     sensor = 'ECOSTRESS'
     params = products[sensor][f'level{level}']
-    dl = DownloadNASA(sensor, int(level))
+    params.update(collection_sand=sensor, level=int(level))
+    dl = DownloadNASA()
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 

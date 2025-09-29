@@ -2,41 +2,39 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-from eoread.venus import Level1_VENUS, Level2_VENUS
+from eoread.venus import Level1_VENUS, Level2_VENUS, get_sample
 from . import generic
 
 import pytest
 import xarray as xr
 
 
-# product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
-# product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
-product_l1 = Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
-product_l2 = Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L2A_VILAINE_C_V3-1/')
+product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
+product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):
     return request.param
 
 @pytest.fixture
-def VENUS_product(chunks):
+def VENUS_product(product_l1, chunks):
     return Level1_VENUS(product_l1, chunks=chunks)
 
     
-def test_l1c_instantiation(chunks):
+def test_l1c_instantiation(product_l1,chunks):
     Level1_VENUS(product_l1, chunks=chunks)
     
 def test_l1c_main(VENUS_product):
     generic.test_main(VENUS_product, angle_data=False)
     
-def test_l1c_time(chunks): 
+def test_l1c_time(product_l1, chunks): 
     params = {'dirname': product_l1, 'chunks': chunks}
     generic.test_execution_time(Level1_VENUS, params)
 
 def test_l1c_subset(VENUS_product):
     generic.test_subset(VENUS_product)
     
-def test_l1c_v1_compat():
+def test_l1c_v1_compat(product_l1):
     v1_data = Path('/mnt/ceph/data/eoread')
     l1 = Level1_VENUS(product_l1, v1_compat=True)
     old = xr.open_dataset(v1_data/(product_l1.stem+f'_res'))
@@ -45,5 +43,5 @@ def test_l1c_v1_compat():
 def test_l1c_lazy_load(VENUS_product):
     generic.test_lazy_load(VENUS_product)
 
-def test_level2(chunks):
+def test_level2(product_l2, chunks):
     Level2_VENUS(product_l2, chunks=chunks)

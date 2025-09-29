@@ -279,6 +279,7 @@ def get_sample(level:int, use_cache:bool=True) -> Path:
     
     sensor = 'LANDSAT-8-OLI'
     params = products[sensor][f'level{level}']
-    dl = DownloadUSGS(sensor, level)
+    params.update(collection_sand=sensor, level=int(level))
+    dl = DownloadUSGS()
     ls = cache_deco(dl.query)(**params)
     return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
