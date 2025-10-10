@@ -11,7 +11,8 @@ dependencies = [
     "pyhdf",
     "pysolar",
     "pyepr",
-    "rioxarray"
+    "rioxarray",
+    "cdsapi"
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,9 @@ pytest-xdist = "*"
 matplotlib-base = "*"
 ipykernel = "*"
 libgdal-jp2openjpeg = "*"  # Required to read compress jp2 file in MSI reader
+cdsapi = "*"
+eumdac = "*"
+shapely = "*"
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
