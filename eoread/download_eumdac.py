@@ -8,10 +8,9 @@ from core.fileutils import filegen
 import shutil
 from core.uncompress import uncompress as func_uncompress
 
-import warnings
-from sand.eumdac import DownloadEumDAC as DownloadEumetsat
 
-warnings.warn('Please use DownloadEumDAC class from SAND library')
+# This module should be deprecated in favour of the DownloadEumDAC class
+# from SAND library
 
 def query(collection, **kwargs):
     '''
