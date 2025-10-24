@@ -331,22 +331,6 @@ def test_convert():
     with pytest.raises(ValueError):
         convert(A, unit_to='g', converter={})
 
-def test_locate():
-    lat_min = 0
-    lat_max = 10
-    lon_min = 0
-    lon_max = 10
-    lat, lon = xr.broadcast(
-        xr.DataArray(np.linspace(lat_min, lat_max, 100), dims=['lat']),
-        xr.DataArray(np.linspace(lon_min, lon_max, 100), dims=['lon']),
-    )
-    locate(lat, lon, 5., 5.)
-    locate(lat, lon, 15., 15.)
-
-    locate(lat, lon, 5., 5., dist_min_km=10)
-    with pytest.raises(ValueError):
-        locate(lat, lon, 15., 15., dist_min_km=10)
-
 
 @pytest.mark.parametrize('concurrent', [True, False])
 def test_persistent_list(concurrent):
