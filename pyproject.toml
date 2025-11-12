@@ -27,12 +27,13 @@ git = [
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.pixi.project]
+[tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
 eoread = { path = ".", editable = true, extras = ["git"]}
+eotools = { git = "git+https://github.com/hygeos/eotools.git" }
 
 [tool.pixi.tasks]
 tests = "pytest tests/"

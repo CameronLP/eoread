@@ -241,10 +241,19 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.1-hb9d3cd8_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.23.0-py312h66e93f0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb8e6e7a_1.conda
-      - pypi: git+https://github.com/hygeos/core#91161a338660ba731d90bb84afd3afa6105b3a0d
-      - pypi: git+https://github.com/hygeos/sand.git#1721a6799ebd17032af89577c15c53bcc22289c6
+      - pypi: https://files.pythonhosted.org/packages/41/01/2e486a570e095869a153c12381cb2c143eb0ed187067c3199306b33e5c36/cf_xarray-0.10.9-py3-none-any.whl
+      - pypi: git+https://github.com/hygeos/core.git#85a28c303d28fdae71ee0772fee06d49cbac4fda
+      - pypi: git+https://github.com/hygeos/eotools.git#6754fc791c59930a0f47617b7c760f684f8ad837
+      - pypi: https://files.pythonhosted.org/packages/27/cd/c883e1a7c447479d6e13985565080e3fea88ab5a107c21684c813dba1875/flexcache-0.3-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/96/76/0f7154952f037cb320b83e1c952ec4a19d5d689cf7d27cb8a26887d7bbc1/llvmlite-0.45.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/50/5f/6a802741176c93f2ebe97ad90751894c7b0c922b52ba99a4395e79492205/numba-0.62.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/23/12/0e888c6c114589d8d32d30525d77dbf9cd5c2811a37bfa61748bf412ed6d/pint_xarray-0.6.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/73/cb/ac7874b3e5d58441674fb70742e6c374b28b0c7cb988d37d991cde47166c/platformdirs-4.5.0-py3-none-any.whl
+      - pypi: git+https://github.com/hygeos/sand.git#43e4b7ffbbd580cd15e8e289a489bd609a8b935a
       - pypi: https://files.pythonhosted.org/packages/1f/1e/83ec268ab8254a446b4178b45616ab5822d7b9d2b7eb6e27cf0b82f45601/shapely-2.1.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/d6/45/fc303eb433e8a2a271739c98e953728422fa61a3c1f36077a49e395c972e/xmltodict-0.14.2-py2.py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl
       - pypi: ./
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -728,6 +737,19 @@ packages:
   - pkg:pypi/certifi?source=compressed-mapping
   size: 162721
   timestamp: 1739515973129
+- pypi: https://files.pythonhosted.org/packages/41/01/2e486a570e095869a153c12381cb2c143eb0ed187067c3199306b33e5c36/cf_xarray-0.10.9-py3-none-any.whl
+  name: cf-xarray
+  version: 0.10.9
+  sha256: a41fa218e8f31b6c82c4687d92951f536186e288e5da6d56efd92a57b628eb18
+  requires_dist:
+  - xarray>=2024.7.0
+  - matplotlib ; extra == 'all'
+  - pint>=0.18,!=0.24.0 ; extra == 'all'
+  - shapely ; extra == 'all'
+  - regex ; extra == 'all'
+  - rich ; extra == 'all'
+  - pooch ; extra == 'all'
+  requires_python: '>=3.11'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/cffi-1.17.1-py312h06ac9bb_0.conda
   sha256: cba6ea83c4b0b4f5b5dc59cb19830519b28f95d7ebef7c9c5cf1c14843621457
   md5: a861504bbea4161a9170b85d4d2be840
@@ -829,17 +851,19 @@ packages:
   - pkg:pypi/contourpy?source=hash-mapping
   size: 276332
   timestamp: 1731428454756
-- pypi: git+https://github.com/hygeos/core#91161a338660ba731d90bb84afd3afa6105b3a0d
+- pypi: git+https://github.com/hygeos/core.git#85a28c303d28fdae71ee0772fee06d49cbac4fda
   name: core
-  version: 1.0.29
+  version: 1.1.0
   requires_dist:
   - tqdm
   - xarray
   - dask
-  - scipy
+  - numba
   - h5netcdf
   - python-dotenv
   - toml
+  - lxml
+  requires_python: '>=3.10,<3.14'
 - conda: https://conda.anaconda.org/conda-forge/noarch/cycler-0.12.1-pyhd8ed1ab_1.conda
   sha256: 9827efa891e507a91a8a2acf64e210d2aff394e1cde432ad08e1f8c66b12293c
   md5: 44600c4667a319d67dbe0681fc0bc833
@@ -964,7 +988,7 @@ packages:
 - pypi: ./
   name: eoread
   version: 0.3.dev0
-  sha256: 6dd4b144f27cda74a572f975390ca5db548a43947f47eab09db5b9f0c49f03e4
+  sha256: 0cb1a7b94795691368d8b8a1c5ffd8fdf72ffccbdd7215f509f998e69f7dade0
   requires_dist:
   - lxml
   - pyproj
@@ -979,6 +1003,18 @@ packages:
   - sand @ git+https://github.com/hygeos/sand.git ; extra == 'git'
   requires_python: '>=3.11'
   editable: true
+- pypi: git+https://github.com/hygeos/eotools.git#6754fc791c59930a0f47617b7c760f684f8ad837
+  name: eotools
+  version: 0.1.dev0
+  requires_dist:
+  - xarray
+  - cf-xarray
+  - pint-xarray
+  - xlrd
+  - core @ git+https://github.com/hygeos/core.git ; extra == 'git'
+  - luts @ git+https://github.com/hygeos/luts.git ; extra == 'git'
+  - eoread @ git+https://github.com/hygeos/eoread.git ; extra == 'git'
+  requires_python: '>=3.11'
 - conda: https://conda.anaconda.org/conda-forge/noarch/eumdac-3.0.0-pyhd8ed1ab_0.conda
   sha256: 9f91d53385344153c5e1744aa25b72ef64af99b2821dbbfccab43931e2fb9612
   md5: 862c239a9f5f4d2822d57123970d080b
@@ -1015,6 +1051,28 @@ packages:
   - pkg:pypi/execnet?source=hash-mapping
   size: 38835
   timestamp: 1733231086305
+- pypi: https://files.pythonhosted.org/packages/27/cd/c883e1a7c447479d6e13985565080e3fea88ab5a107c21684c813dba1875/flexcache-0.3-py3-none-any.whl
+  name: flexcache
+  version: '0.3'
+  sha256: d43c9fea82336af6e0115e308d9d33a185390b8346a017564611f1466dcd2e32
+  requires_dist:
+  - typing-extensions
+  - pytest ; extra == 'test'
+  - pytest-mpl ; extra == 'test'
+  - pytest-cov ; extra == 'test'
+  - pytest-subtests ; extra == 'test'
+  requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
+  name: flexparser
+  version: '0.4'
+  sha256: 3738b456192dcb3e15620f324c447721023c0293f6af9955b481e91d00179846
+  requires_dist:
+  - typing-extensions
+  - pytest ; extra == 'test'
+  - pytest-mpl ; extra == 'test'
+  - pytest-cov ; extra == 'test'
+  - pytest-subtests ; extra == 'test'
+  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/fonttools-4.56.0-py312h178313f_0.conda
   sha256: 76ca95b4111fe27e64d74111b416b3462ad3db99f7109cbdf50e6e4b67dcf5b7
   md5: 2f8a66f2f9eb931cdde040d02c6ab54c
@@ -2304,6 +2362,11 @@ packages:
   purls: []
   size: 60963
   timestamp: 1727963148474
+- pypi: https://files.pythonhosted.org/packages/96/76/0f7154952f037cb320b83e1c952ec4a19d5d689cf7d27cb8a26887d7bbc1/llvmlite-0.45.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+  name: llvmlite
+  version: 0.45.1
+  sha256: 5b3796b1b1e1c14dcae34285d2f4ea488402fbd2c400ccf7137603ca3800864f
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/noarch/locket-1.0.0-pyhd8ed1ab_0.tar.bz2
   sha256: 9afe0b5cfa418e8bdb30d8917c5a6cec10372b037924916f1f85b9f4899a67a6
   md5: 91e27ef3d05cc772ce627e51cff111c4
@@ -2504,6 +2567,14 @@ packages:
   purls: []
   size: 122743
   timestamp: 1723652407663
+- pypi: https://files.pythonhosted.org/packages/50/5f/6a802741176c93f2ebe97ad90751894c7b0c922b52ba99a4395e79492205/numba-0.62.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+  name: numba
+  version: 0.62.1
+  sha256: 6ef84d0ac19f1bf80431347b6f4ce3c39b7ec13f48f233a48c01e2ec06ecbc59
+  requires_dist:
+  - llvmlite>=0.45.0.dev0,<0.46
+  - numpy>=1.22,<2.4
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/numpy-1.26.4-py312heda63a1_0.conda
   sha256: fe3459c75cf84dcef6ef14efcc4adb0ade66038ddd27cadb894f34f4797687d8
   md5: d8285bea2a350f63fab23bf460221f3f
@@ -2647,6 +2718,93 @@ packages:
   - pkg:pypi/pillow?source=hash-mapping
   size: 42749785
   timestamp: 1735929845390
+- pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
+  name: pint
+  version: 0.25.2
+  sha256: ca35ab1d8eeeb6f7d9942b3cb5f34ca42b61cdd5fb3eae79531553dcca04dda7
+  requires_dist:
+  - flexcache>=0.3
+  - flexparser>=0.4
+  - platformdirs>=2.1.0
+  - typing-extensions>=4.0.0
+  - babel<=2.8 ; extra == 'all'
+  - dask<2025.3.0 ; extra == 'all'
+  - matplotlib ; extra == 'all'
+  - mip>=1.13 ; python_full_version < '3.13' and extra == 'all'
+  - numpy>=1.23 ; extra == 'all'
+  - pint-pandas>=0.3 ; extra == 'all'
+  - uncertainties>=3.1.6 ; extra == 'all'
+  - xarray ; extra == 'all'
+  - babel<=2.8 ; extra == 'babel'
+  - pytest ; extra == 'codspeed'
+  - pytest-benchmark ; extra == 'codspeed'
+  - pytest-codspeed ; extra == 'codspeed'
+  - pytest-cov ; extra == 'codspeed'
+  - pytest-mpl ; extra == 'codspeed'
+  - pytest-subtests ; extra == 'codspeed'
+  - dask<2025.3.0 ; extra == 'dask'
+  - babel ; extra == 'docs'
+  - commonmark==0.8.1 ; extra == 'docs'
+  - currencyconverter ; extra == 'docs'
+  - docutils ; extra == 'docs'
+  - graphviz ; extra == 'docs'
+  - ipykernel ; extra == 'docs'
+  - ipython<=8.12 ; extra == 'docs'
+  - jupyter-client ; extra == 'docs'
+  - nbsphinx ; extra == 'docs'
+  - pooch ; extra == 'docs'
+  - pygments>=2.4 ; extra == 'docs'
+  - recommonmark==0.5.0 ; extra == 'docs'
+  - sciform ; extra == 'docs'
+  - scipy ; extra == 'docs'
+  - serialize ; extra == 'docs'
+  - sparse ; extra == 'docs'
+  - sphinx-book-theme>=1.1.0 ; extra == 'docs'
+  - sphinx-copybutton ; extra == 'docs'
+  - sphinx-design ; extra == 'docs'
+  - sphinx>=6,<8.2 ; extra == 'docs'
+  - matplotlib ; extra == 'matplotlib'
+  - mip>=1.13 ; python_full_version < '3.13' and extra == 'mip'
+  - numpy>=1.23 ; extra == 'numpy'
+  - pint-pandas>=0.3 ; extra == 'pandas'
+  - pytest ; extra == 'test'
+  - pytest-benchmark ; extra == 'test'
+  - pytest-cov ; extra == 'test'
+  - pytest-subtests ; extra == 'test'
+  - pytest ; extra == 'test-all'
+  - pytest-benchmark ; extra == 'test-all'
+  - pytest-cov ; extra == 'test-all'
+  - pytest-mpl ; extra == 'test-all'
+  - pytest-subtests ; extra == 'test-all'
+  - pytest-mpl ; extra == 'test-mpl'
+  - uncertainties>=3.1.6 ; extra == 'uncertainties'
+  - xarray ; extra == 'xarray'
+  requires_python: '>=3.11'
+- pypi: https://files.pythonhosted.org/packages/23/12/0e888c6c114589d8d32d30525d77dbf9cd5c2811a37bfa61748bf412ed6d/pint_xarray-0.6.0-py3-none-any.whl
+  name: pint-xarray
+  version: 0.6.0
+  sha256: a0bab1f1342b213a9a28d8d7b3fbf8afa23e29f94c7a8c77bda3779e9e00d51f
+  requires_dist:
+  - xarray>=2023.7.0
+  - numpy>=1.26
+  - pint>=0.24
+  requires_python: '>=3.11'
+- pypi: https://files.pythonhosted.org/packages/73/cb/ac7874b3e5d58441674fb70742e6c374b28b0c7cb988d37d991cde47166c/platformdirs-4.5.0-py3-none-any.whl
+  name: platformdirs
+  version: 4.5.0
+  sha256: e578a81bb873cbb89a41fcc904c7ef523cc18284b7e3b3ccf06aca1403b7ebd3
+  requires_dist:
+  - furo>=2025.9.25 ; extra == 'docs'
+  - proselint>=0.14 ; extra == 'docs'
+  - sphinx-autodoc-typehints>=3.2 ; extra == 'docs'
+  - sphinx>=8.2.3 ; extra == 'docs'
+  - appdirs==1.4.4 ; extra == 'test'
+  - covdefaults>=2.3 ; extra == 'test'
+  - pytest-cov>=7 ; extra == 'test'
+  - pytest-mock>=3.15.1 ; extra == 'test'
+  - pytest>=8.4.2 ; extra == 'test'
+  - mypy>=1.18.2 ; extra == 'type'
+  requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/noarch/pluggy-1.5.0-pyhd8ed1ab_1.conda
   sha256: 122433fc5318816b8c69283aaf267c73d87aa2d09ce39f64c9805c9a3b264819
   md5: e9dcbce5f45f9ee500e728ae58b605b6
@@ -3122,19 +3280,18 @@ packages:
   purls: []
   size: 353374
   timestamp: 1741231104518
-- pypi: git+https://github.com/hygeos/sand.git#1721a6799ebd17032af89577c15c53bcc22289c6
+- pypi: git+https://github.com/hygeos/sand.git#43e4b7ffbbd580cd15e8e289a489bd609a8b935a
   name: sand
-  version: 0.4.0
+  version: 2.0.4
   requires_dist:
-  - numpy<2
+  - numpy
   - requests
   - eumdac
   - shapely
-  - xmltodict
   - pillow
   - pandas
-  - core @ git+https://github.com/hygeos/core
-  requires_python: '>=3.10'
+  - core @ git+https://github.com/hygeos/core.git ; extra == 'git'
+  requires_python: '>=3.10,<3.14'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/scipy-1.15.2-py312ha707e6e_0.conda
   sha256: b9faaa024b77a3678a988c5a490f02c4029c0d5903998b585100e05bc7d4ff36
   md5: 00b999c5f9d01fb633db819d79186bd4
@@ -3455,11 +3612,17 @@ packages:
   purls: []
   size: 1648243
   timestamp: 1727733890754
-- pypi: https://files.pythonhosted.org/packages/d6/45/fc303eb433e8a2a271739c98e953728422fa61a3c1f36077a49e395c972e/xmltodict-0.14.2-py2.py3-none-any.whl
-  name: xmltodict
-  version: 0.14.2
-  sha256: 20cc7d723ed729276e808f26fb6b3599f786cbc37e06c65e192ba77c40f20aac
-  requires_python: '>=3.6'
+- pypi: https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl
+  name: xlrd
+  version: 2.0.2
+  sha256: ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9
+  requires_dist:
+  - wheel ; extra == 'build'
+  - twine ; extra == 'build'
+  - sphinx ; extra == 'docs'
+  - pytest ; extra == 'test'
+  - pytest-cov ; extra == 'test'
+  requires_python: '>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/xorg-libxau-1.0.12-hb9d3cd8_0.conda
   sha256: ed10c9283974d311855ae08a16dfd7e56241fac632aec3b92e3cfe73cff31038
   md5: f6ebe2cb3f82ba6c057dde5d9debe4f7
