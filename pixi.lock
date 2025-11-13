@@ -242,7 +242,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.23.0-py312h66e93f0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb8e6e7a_1.conda
       - pypi: https://files.pythonhosted.org/packages/41/01/2e486a570e095869a153c12381cb2c143eb0ed187067c3199306b33e5c36/cf_xarray-0.10.9-py3-none-any.whl
-      - pypi: git+https://github.com/hygeos/core.git#85a28c303d28fdae71ee0772fee06d49cbac4fda
+      - pypi: git+https://github.com/hygeos/core.git#6718dffd6d38d54f3d39920fe8f95ad05bcf6e6f
       - pypi: git+https://github.com/hygeos/eotools.git#6754fc791c59930a0f47617b7c760f684f8ad837
       - pypi: https://files.pythonhosted.org/packages/27/cd/c883e1a7c447479d6e13985565080e3fea88ab5a107c21684c813dba1875/flexcache-0.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
@@ -851,9 +851,9 @@ packages:
   - pkg:pypi/contourpy?source=hash-mapping
   size: 276332
   timestamp: 1731428454756
-- pypi: git+https://github.com/hygeos/core.git#85a28c303d28fdae71ee0772fee06d49cbac4fda
+- pypi: git+https://github.com/hygeos/core.git#6718dffd6d38d54f3d39920fe8f95ad05bcf6e6f
   name: core
-  version: 1.1.0
+  version: 1.2.0
   requires_dist:
   - tqdm
   - xarray
@@ -987,8 +987,8 @@ packages:
   timestamp: 1739491744587
 - pypi: ./
   name: eoread
-  version: 0.3.dev0
-  sha256: 0cb1a7b94795691368d8b8a1c5ffd8fdf72ffccbdd7215f509f998e69f7dade0
+  version: 0.4.0
+  sha256: e7f2a0b82bf62659365b166e013aa3deec90044c3d28637dcd8c9334a0ba4ef7
   requires_dist:
   - lxml
   - pyproj
