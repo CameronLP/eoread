@@ -104,6 +104,7 @@ class Naming:
 
         # Ancillary data
         self.total_column_ozone = 'total_column_ozone'
+        self.total_column_water_vapour = 'total_column_water_vapour'
         self.sea_level_pressure = 'sea_level_pressure'
         self.total_columnar_water_vapour = 'total_columnar_water_vapour'
         self.horizontal_wind = 'horizontal_wind'

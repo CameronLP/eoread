@@ -20,6 +20,7 @@ p = get_sample_products()
 
 @pytest.fixture(params=[
     'total_column_ozone',
+    'total_column_water_vapour',
     'sea_level_pressure',
     'horizontal_wind'])
 def variable(request):

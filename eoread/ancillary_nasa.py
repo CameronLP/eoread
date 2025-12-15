@@ -65,6 +65,8 @@ def open_NASA(target: Path) -> xr.Dataset:
 
     out[naming.total_column_ozone] = wrap_lon(ds['TO3'])
 
+    out[naming.total_column_water_vapour] = wrap_lon(ds['TQV'])
+
     dt = parse(out.attrs['time_coverage_start']).replace(tzinfo=None)
     dtend = parse(out.attrs['time_coverage_end']).replace(tzinfo=None)
     assert dtend == dt
