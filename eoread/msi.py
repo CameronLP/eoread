@@ -109,7 +109,7 @@ def Level1_MSI(dirname,
     # get platform
     tile_id = str(xmlgranule.General_Info.find('TILE_ID')[0])
     platform = tile_id[:3]
-    assert platform in ['S2A', 'S2B']
+    assert platform in ['S2A', 'S2B', 'S2C']
 
     # read image size for current resolution
     for e in geocoding.findall('Size'):
@@ -119,7 +119,11 @@ def Level1_MSI(dirname,
             break
 
     # attributes
-    ds.attrs[n.platform] = platform
+    ds.attrs[n.platform] = {
+        "S2A": "Sentinel-2A",
+        "S2B": "Sentinel-2B",
+        "S2C": "Sentinel-2C",
+    }
     ds.attrs[n.resolution] = resolution
     ds.attrs[n.sensor] = 'MSI'
     ds.attrs[n.product_name] = dirname.name
