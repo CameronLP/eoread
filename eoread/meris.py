@@ -17,209 +17,154 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from core.tools import merge, raiseflag
-from .common import AtIndex, DataArray_from_array, len_slice, convert_for_nc
-from .utils.naming import naming, flags
-
-BANDS_MERIS = [412, 443, 490, 510, 560,
-               620, 665, 681, 709, 754,
-               760, 779, 865, 885, 900]
-
-central_wavelength_meris = {
-        412: 412.691 , 443: 442.559,
-        490: 489.882 , 510: 509.819,
-        560: 559.694 , 620: 619.601,
-        665: 664.573 , 681: 680.821,
-        709: 708.329 , 754: 753.371,
-        760: 761.508 , 779: 778.409,
-        865: 864.876 , 885: 884.944,
-        900: 900.000 ,
-        }
+from core.geo import n
+from core import env, log
+from core.tools import merge, drop_unused_dims
+from eoread.common import AtIndex, DataArray_from_array
+from eoread.utils import filter_metadata
+from core.monitor import Chrono
 
 
-def Level1_MERIS(filename,
-                 dir_smile=None,
-                 split=False,
-                 chunks=500):
+user_guide = 'https://archive.org/details/manualzilla-id-5933919/page/n13/mode/2up'
+
+def Level1_MERIS(filepath: str|Path,
+                 dir_smile: str|Path = None,
+                 read_auxdata: bool = False, 
+                 chunks: int|tuple = 500,
+                 metadata_template: list = None,
+                 v1_compat: bool = False):
     '''
-    Read a MERIS Level1 product as an `xarray.Dataset`.
+    Read an MERIS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances,
+    the angles on the full grid, etc.
 
     Arguments:
-    ----------
-
-    filename: str
-        path to MERIS file
-        (ex: 'MER_FRS_1PNPDE20060822_092058_000001972050_00308_23408_0077.N1')
-    dir_smile: str, default: '../auxdata/meris/'
-        relative path to MERIS per-detector characterization
-    split: bool
-        whether the wavelength dependent variables should be split in multiple 2D variables
-    chunks: int
-        chunk size for dask array
+        filepath: Path of the MERIS file path (ex: 'MER_FRS_1PNPDE20060822_092058_000001972050_00308_23408_0077.N1')
+        dir_smile: Relative path to MERIS per-detector characterization (default: '../auxdata/meris/')
+        read_auxdata: Option read auxilary data contained in dir_smile
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
     '''
-    filename = Path(filename)
-    bname = filename.name
-
+    
     ds = xr.Dataset()
+    filepath = Path(filepath)
+    assert filepath.exists(), 'File does not exists'
+    bname = filepath.name
 
-    # epr api is not thread safe:
-    # we have to use a lock for safe file access
+    # epr api is not thread safe: we have to use a lock for safe file access
     lock = Lock()
 
-    prod = epr.Product(str(filename))
-    ds.attrs[naming.totalwidth] = prod.get_scene_width()
-    ds.attrs[naming.totalheight] = prod.get_scene_height()
+    prod = epr.Product(str(filepath))
+    ds.attrs['totalwidth'] = prod.get_scene_width()
+    ds.attrs['totalheight'] = prod.get_scene_height()
+    
+    # Read metadata
+    log.debug('read metadata')
+    metadata = _read_metadata(ds, prod, metadata_template)
+    bands_names = [f'b{i+1}' for i in range(metadata['NUM_BANDS'])]
+    ds = ds.assign({n.bnames.name: ((n.bands.name), bands_names),
+                    n.cwav.name: ((n.bands.name), metadata['BAND_WAVELEN']/1e3)})
 
-    # read latitude, longitude, geometry, and TOA radiance
-    for (name, param) in [
-            (naming.lat, 'latitude'),
-            (naming.lon, 'longitude'),
-            (naming.sza, 'sun_zenith'),
-            (naming.vza, 'view_zenith'),
-            (naming.saa, 'sun_azimuth'),
-            (naming.vaa, 'view_azimuth'),
-            ('detector_index', 'detector_index'),
-        ] + [(naming.Ltoa+f'_{b}', f'Radiance_{i+1}')
-             for (i, b) in enumerate(BANDS_MERIS)]:
+    # read all rasters
+    log.debug('load raster')
+    for name in prod.get_band_names():
+        band = prod.get_band(name)
         ds[name] = DataArray_from_array(
-            READ_MERIS(prod.get_band(param), lock),
-            naming.dim2,
+            _READ_MERIS(band, lock),
+            (n.rows.name, n.columns.name),
             chunks=chunks,
         )
-
-    if dir_smile is None:
-        dir_smile = Path(__file__).parent/'auxdata'/'meris'
-    else:
-        dir_smile = Path(dir_smile)
-    assert dir_smile.exists(), dir_smile
-    if bname.startswith('MER_RR'):
-        res = 'rr'
-    elif bname.startswith('MER_FR'):
-        res = 'fr'
-    else:
-        raise Exception(f'Error, could not identify whether MERIS file is RR or FR ({bname})')
+        ds[name].attrs['unit'] = band.unit
+        ds[name].attrs['description'] = band.description
+        
+    # Rename several variables and compile radiance rasters
+    log.debug('concatenate ltoa rasters')
+    ds = _rename_meris(ds)
+    ds = merge(ds, dim=n.bands.name)
+    ds = ds.chunk({n.bands.name:1})
+    
+    log.debug('read auxilary data')
+    if dir_smile is None: dir_smile = Path(__file__).parent/'auxdata'/'meris'
+    else: dir_smile = Path(dir_smile)
+    assert dir_smile.exists(), f'{dir_smile} does not exists'
+    
+    if bname.startswith('MER_RR'): res = 'rr'
+    elif bname.startswith('MER_FR'): res = 'fr'
+    else: raise Exception(f'Error, could not identify whether MERIS file is RR or FR ({bname})')
 
     file_sun_spectral_flux = dir_smile/f'sun_spectral_flux_{res}.txt'
     file_detector_wavelength = dir_smile/f'central_wavelen_{res}.txt'
-    F0 = pd.read_csv(file_sun_spectral_flux,
-                     dtype='float32',
-                     delimiter='\t').to_xarray()
-    detector_wavelength = pd.read_csv(file_detector_wavelength,
-                                      delimiter='\t').to_xarray()
+    F0 = pd.read_csv(file_sun_spectral_flux, dtype='float32', delimiter='\t').to_xarray()
+    detector_wavelength = pd.read_csv(file_detector_wavelength, delimiter='\t').to_xarray()
 
-    assert len(F0) == len(BANDS_MERIS) + 1
-    assert len(detector_wavelength) == len(BANDS_MERIS) + 1
+    assert len(F0) == len(ds[n.bands.name]) + 1
+    assert len(detector_wavelength) == len(ds[n.bands.name]) + 1
+    
+    if read_auxdata:
+        
+        # Compute solar Flux
+        valid_mask = (ds.detector_index >= 0).load()
+        F0 = F0.sel(index=ds.detector_index.where(valid_mask, 0))
+        F0 = merge(F0, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
+        ds[n.F0.name] = F0['E0'].where(valid_mask, np.nan)
+        
+        # Compute wavelengths
+        wav = detector_wavelength.sel(index=ds.detector_index.where(valid_mask, 0))
+        wav = merge(wav, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
+        ds[n.wav.name] = wav['lam'].where(valid_mask, np.nan)
 
-    for i, b in enumerate(BANDS_MERIS):
-        ds[f'F0_{b}'] = DataArray_from_array(
-            AtIndex(
-                F0[f'E0_band{i}'],
-                ds.detector_index,
-                'index'),
-            naming.dim2,
-            chunks=chunks,
-        )
-        ds[f'wav_{b}'] = DataArray_from_array(
-            AtIndex(
-                detector_wavelength[f'lam_band{i}'],
-                ds.detector_index,
-                'index'),
-            naming.dim2,
-            chunks=chunks,
-        )
-
-    if not split:
-        ds = merge(ds, dim=naming.bands)
-
-    ds = ds.assign_coords(bands=BANDS_MERIS)
-
-    # central (nominal) wavelength
-    ds[naming.cwav] = xr.DataArray(
-        np.array([central_wavelength_meris[b] for b in ds.bands.data],
-                 dtype='float32'),
-        dims=('bands',))
-
-    #
     # Read attributes
-    #
-    mph = prod.get_mph()
-    for fname in mph.get_field_names():
-        ds.attrs[fname] = convert_for_nc(mph.get_field(fname).get_elem())
-
-    ds.attrs[naming.platform] = 'ENVISAT'
-    ds.attrs[naming.sensor] = 'MERIS'
-    ds.attrs[naming.product_name] = ds.attrs['PRODUCT']
-    ds.attrs[naming.input_directory] = str(filename.parent)
+    ds.attrs[n.platform.name] = 'ENVISAT'
+    ds.attrs[n.sensor.name] = 'MERIS'
+    ds.attrs[n.resolution.name] = 300
+    ds.attrs[n.product_name.name] = metadata['PRODUCT'].decode()
+    ds.attrs[n.input_directory.name] = str(filepath.parent)
+    ds.attrs['user_guide'] = user_guide
 
     # Read date
-    dstart = read_date(mph, 'SENSING_START')
-    dstop = read_date(mph, 'SENSING_STOP')
+    dstart = _read_date(metadata['SENSING_START'])
+    dstop = _read_date(metadata['SENSING_STOP'])
     d = dstart + (dstop - dstart)//2
-    ds.attrs[naming.datetime] = d.isoformat()
-
-    #
-    # Ancillary data
-    #
-    aux = {}
-    for name in ['zonal_wind',
-                 'merid_wind',
-                 'ozone',
-                 'atm_press']:
-        aux[name] = DataArray_from_array(
-            READ_MERIS(prod.get_band(name), lock),
-            naming.dim2,
-            chunks=chunks,
-        )
-        aux[name].attrs['unit'] = prod.get_band(name).unit
-        aux[name].attrs['description'] = prod.get_band(name).description
-
-    ds[naming.horizontal_wind] = np.sqrt(
-        aux['zonal_wind']**2 + aux['merid_wind']**2)
-    ds[naming.total_column_ozone] = aux['ozone']
-    ds[naming.sea_level_pressure] = aux['atm_press']
-
-    #
-    # Flags
-    #
-    ds[naming.flags] = xr.zeros_like(ds[naming.lat],
-                                     dtype=naming.flags_dtype)
-    for (flag, bmexpr) in [
-            ('LAND', 'l1_flags.LAND_OCEAN'),
-            ('L1_INVALID', '(l1_flags.INVALID) OR (l1_flags.SUSPECT) OR (l1_flags.COSMETIC)'),
-        ]:
-        raiseflag(
-            ds[naming.flags],
-            flag,
-            flags[flag],
-            DataArray_from_array(
-                READ_BITMASK(prod, bmexpr, lock),
-                naming.dim2,
-                chunks=chunks,
-            ),
-        )
+    ds.attrs[n.datetime.name] = d.isoformat()
     
-    return ds
+    if v1_compat: return _v1_compat(ds, prod, lock, chunks)
+    return drop_unused_dims(ds).unify_chunks()
 
 
-def read_date(mph, field):
-    dat = mph.get_field(field).get_elem(0)
+def _rename_meris(ds):
+    ds = ds.rename({v: v.replace('radiance', n.ltoa.name) 
+                    for v in ds.variables if 'radiance' in v})
+    return ds.rename({
+        'latitude'    : n.lat.name,
+        'longitude'   : n.lon.name,
+        'view_zenith' : n.vza.name, 
+        'view_azimuth': n.vaa.name,
+        'sun_zenith'  : n.sza.name,
+        'sun_azimuth' : n.saa.name, 
+    })
+
+def _read_metadata(ds, product, template):
+    metadata = {}
+    for ph in [product.get_mph(), product.get_sph()]:
+        metadata.update({
+            f.get_name(): f.get_elem(0) if f.get_num_elems() == 1 else f.get_elems()
+            for f in ph.fields()})
+    
+    filter_fn = (lambda x,y: x) if template is None else filter_metadata 
+    ds.attrs['metadata'] = filter_fn(metadata, template)   
+    
+    return metadata
+
+def _read_date(dat):
     dat = dat.decode('utf-8')
-    dat = dat.replace('-JAN-', '-01-')  # NOTE:
-    dat = dat.replace('-FEB-', '-02-')  # parsing with '%d-%b-%Y...' may be
-    dat = dat.replace('-MAR-', '-03-')  # locale-dependent
-    dat = dat.replace('-APR-', '-04-')
-    dat = dat.replace('-MAY-', '-05-')
-    dat = dat.replace('-JUN-', '-06-')
-    dat = dat.replace('-JUL-', '-07-')
-    dat = dat.replace('-AUG-', '-08-')
-    dat = dat.replace('-SEP-', '-09-')
-    dat = dat.replace('-OCT-', '-10-')
-    dat = dat.replace('-NOV-', '-11-')
-    dat = dat.replace('-DEC-', '-12-')
+    months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+    for i,m in enumerate(months): dat = dat.replace(f'-{m}-', f'-{i+1:02d}-')
     return datetime.strptime(dat, '%d-%m-%Y %H:%M:%S.%f')
 
 
-class READ_MERIS:
+# FIXME : Following classes should be revized
+class _READ_MERIS:
     '''
     An array-like to read data from a given MERIS band
     '''
@@ -232,6 +177,7 @@ class READ_MERIS:
         self.dtype = {
             'float': np.float32,
             'short': np.int16,
+            'uchar': np.uint8,
         }[epr.data_type_id_to_str(band.data_type)]
         self.ndim = len(self.shape)
 
@@ -274,35 +220,84 @@ class READ_MERIS:
         assert r.dtype == self.dtype
         return r[sel[0], sel[1]]
 
+def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a MERIS file path to test reading function
 
-class READ_BITMASK:
-    '''
-    An array-like to read MERIS bitmask
-    '''
-    def __init__(self, prod, bmexpr, lock):
-        self.width = prod.get_scene_width()
-        self.height = prod.get_scene_height()
-        self.prod = prod
-        self.lock = lock
-        self.bmexpr = bmexpr
-        self.shape = (self.height, self.width)
-        self.ndim = len(self.shape)
-        self.dtype = np.bool
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    sample = Path('/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1')
+    assert sample.exists()
+    return sample
 
-    def __getitem__(self, keys):
-        width = len_slice(keys[1], self.width)
-        height = len_slice(keys[0], self.height)
-        raster = epr.create_bitmask_raster(
-            width, height,
-            xstep=keys[1].step or 1,
-            ystep=keys[0].step or 1,
-            )
-        with self.lock:
-            self.prod.read_bitmask_raster(
-                self.bmexpr,
-                xoffset=keys[1].start or 0,
-                yoffset=keys[0].start or 0,
-                raster=raster)
+def _v1_compat(ds, prod, lock, chunks):
+    
+    from core.tools import raiseflag
+    from .common import len_slice
+    
+    class READ_BITMASK:
+        '''
+        An array-like to read MERIS bitmask
+        '''
+        def __init__(self, prod, bmexpr, lock):
+            self.width = prod.get_scene_width()
+            self.height = prod.get_scene_height()
+            self.prod = prod
+            self.lock = lock
+            self.bmexpr = bmexpr
+            self.shape = (self.height, self.width)
+            self.ndim = len(self.shape)
+            self.dtype = np.bool
 
-        return raster.data
+        def __getitem__(self, keys):
+            width = len_slice(keys[1], self.width)
+            height = len_slice(keys[0], self.height)
+            raster = epr.create_bitmask_raster(
+                width, height,
+                xstep=keys[1].step or 1,
+                ystep=keys[0].step or 1,
+                )
+            with self.lock:
+                self.prod.read_bitmask_raster(
+                    self.bmexpr,
+                    xoffset=keys[1].start or 0,
+                    yoffset=keys[0].start or 0,
+                    raster=raster)
 
+            return raster.data
+    
+    BANDS_MERIS = [412, 443, 490, 510, 560,
+                620, 665, 681, 709, 754,
+                760, 779, 865, 885, 900]
+    
+    # Define central wavelength as coordinates for band dimension
+    ds = ds.assign_coords(bands=BANDS_MERIS)
+    
+    # Add other computed variables
+    ds['horizontal_wind'] = np.sqrt(ds['zonal_wind']**2 + ds['merid_wind']**2)
+    ds['total_column_ozone'] = ds['ozone']
+    ds['sea_level_pressure'] = ds['atm_press']
+
+    # Flags
+    ds['flags'] = xr.zeros_like(ds[n.lat.name], dtype='uint8')
+    for (flag, val, bmexpr) in [
+            ('LAND', 1, 'l1_flags.LAND_OCEAN'),
+            ('L1_INVALID', 4, '(l1_flags.INVALID) OR (l1_flags.SUSPECT) OR (l1_flags.COSMETIC)'),
+        ]:
+        raiseflag(
+            ds['flags'],
+            flag,
+            val,
+            DataArray_from_array(
+                READ_BITMASK(prod, bmexpr, lock),
+                ('y','x'),
+                chunks=chunks,
+            ),
+        )
+    
+    # Level up metadata in attribute dictionary 
+    ds.attrs.update(ds.attrs['metadata'])
+    
+    return ds

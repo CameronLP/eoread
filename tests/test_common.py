@@ -13,7 +13,7 @@ from eoread.common import Interpolator, ceil_dt, floor_dt
 from eoread.common import DataArray_from_array, timeit
 from eoread import msi
 from eoread.gsw import GSW
-from core.fileutils import PersistentList
+from core.files.fileutils import PersistentList
 from core.interpolate import interp, Linear
 from core.tools import split, merge, wrap, raiseflag, convert, locate, xrcrop
 from time import sleep
@@ -408,7 +408,7 @@ def test_xrcrop_gsw(request, method):
     This allows .computing the result.
     Otherwise, the further .sel is very slow over large arrays.
     """
-    ds = msi.Level1_MSI(msi.get_sample())
+    ds = msi.Level1_MSI(msi.get_sample(), v1_compat=True)
 
     plt.figure()
     ds.Rtoa.sel(bands=865).plot.imshow(origin='upper')

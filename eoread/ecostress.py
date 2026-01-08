@@ -1,222 +1,284 @@
+from eoread.utils import filter_metadata
 from core.tools import merge
-from core import env
-from eoread.utils.naming import naming as n
+from core import env, log
+from core.geo import n
 from pathlib import Path
-from os.path import exists
+from shapely import wkt
 
 import numpy as np
 import xarray as xr 
 import dask.array as da
 
 
+user_guide = 'https://ecostress.jpl.nasa.gov/downloads/userguides/1_ECOSTRESS_L1_UserGuide_20190619.pdf'
 
-bands_tir = [8290,8780,9200,10490,12090]
+def Level1_ECOSTRESS(filepath: Path | str, 
+                     chunks: int = 500, 
+                     metadata_template: list = None,
+                     v1_compat: bool = False):
+    '''
+    Read an ECOSTRESS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
+    the angles on the full grid, etc.
 
-band_index = {  # Bands      - wavelength (um)   - resolution (m)    - group
-    8290:  1,   # Band 1        0.62 - 0.67	         250              250m
-    8780:  2,   # Band 2        0.84 - 0.87	         250              250m
-    9200:  3,   # Band 3        0.46 - 0.48	         500              500m
-    10490: 4,   # Band 4        0.54 - 0.56          500              500m
-    12090: 5,   # Band 5   	    1.23 - 1.25	         500              500m
-    }
-
-
-def Level1_ECOSTRESS(filepath: Path | str,
-                     radiometry: str = 'reflectance',
-                     chunks: int = 500,
-                     LUT_file: str = None,
-                     split: bool = False):
-    # Revize variables
+    Arguments:
+        filepath: Path of the ECOSTRESS H5file
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
+    
     filepath = Path(filepath)
-    try:
-        raw = xr.open_dataset(filepath, group='HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields')
-    except ValueError as e: 
-        raise ImportError(f"You must install 'h5netcdf' library to use ECOSTRESS reader, got message : {e}")
-    raw = raw.chunk(chunks=chunks)
+    assert filepath.exists(), 'File does not exists'
+    if isinstance(chunks, int): chunks = [chunks]*2    
+    
+    # Revize variables    
+    log.debug('Reading h5file')
+    data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
+    raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
+    raw = raw.to_dataset().chunk(chunks=dict(zip(list(raw.dims), chunks)))
     
     # Read Metadata
-    granule_mtd = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata')
-    attributes  = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata')
-    info = str(xr.open_dataset(filepath, group='HDFEOS INFORMATION')['StructMetadata.0'].values)
+    granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
+    attributes = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
+    
+    log.debug('parsing metadata text')
+    info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
+    p = _parser(info.split('\n'))
+    p.parse()
     
     # Change radiometry of input data 
-    if LUT_file:
-        assert exists(LUT_file), f'{LUT_file} does not exist'
-        LUT_file = xr.open_dataset(LUT_file, group='lut').astype('float32')
-    l1 = transform_radiometry(raw, radiometry, split, granule_mtd, LUT_file)   
+    log.debug('compute brightness temperature')
+    l1 = _transform_radiometry(raw, granule_mtd)   
+    
+    # Add attributes
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    log.debug('add important attributes')
+    l1.attrs['metadata'] = {k: v.item() for k,v in attributes.items()}
+    l1.attrs['metadata'] = filter_fn(l1.attrs['metadata'], metadata_template)
+    l1.attrs['hdfeos_info'] = filter_fn(p.data, metadata_template)
+    l1.attrs['user_guide'] = user_guide
+    
+    # Add general information
+    l1.attrs[n.datetime.name] = l1.metadata['ProductionDateTime']
+    l1.attrs[n.platform.name] = l1.metadata['PlatformShortName']
+    l1.attrs[n.sensor.name] = l1.metadata['InstrumentShortName']
+    l1.attrs[n.product_name.name] = filepath.name
+    l1.attrs[n.input_directory.name] = str(filepath.parent)
+    l1.attrs[n.resolution.name] = 70
     
     # Change dimensions name and update coordinates
-    if not split:
-        new_dims = [n.rows,n.columns,n.bands_tir]
-        coords = {n.bands_tir: list(band_index.keys())}
-    else: new_dims, coords = [n.rows,n.columns], {}
-    
-    revize_dims = dict(zip(list(l1.dims), new_dims))
+    new_dims = (n.rows.name,n.columns.name)    
+    revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
     l1 = l1.rename_dims(revize_dims)
-    l1 = l1.assign_coords(coords)
+    l1 = l1.assign({
+        n.cwav.name: ((n.bands.name), granule_mtd.BandSpecification.values[1:]*1e3),
+        n.bnames.name: ((n.bands.name), l1[n.bands.name].values.astype(str))
+    })
     
-    # Summarize Attributes
-    to_parse = [attr.split("=") for attr in info.split('\n') if len(attr) != 0]
-    info = parse_attrs(to_parse)
-    l1.attrs['Description']     = str(attributes.LongName.values) 
-    l1.attrs[n.product_name]    = str(attributes.LocalGranuleID.values)[:-3]
-    l1.attrs[n.input_directory] = str(filepath.parent)
-    l1.attrs[n.datetime]   = str(attributes.ProductionDateTime.values)
-    l1.attrs[n.resolution] = 70
-    l1.attrs[n.platform]   = str(attributes.PlatformLongName.values)
-    l1.attrs[n.sensor]     = str(attributes.InstrumentShortName.values)
-    l1.attrs[n.shortname]  = str(attributes.ShortName.values)
-    l1.attrs['night']      = str(str(attributes.DayNightFlag.values) != 'Day')
-    l1.attrs['CRS']        = str(attributes.CRS.values)
-    l1.attrs['Boundary']   = str(attributes.SceneBoundaryLatLonWKT.values)
-    l1.attrs['version']    = str(attributes.PGEVersion.values)  
+    # Add latlon variables
+    log.debug('add latlon variables')
+    l1 = _supplement_latlon(l1, list(chunks))
     
-    l1 = supplement_latlon(l1, chunks)
-    return l1
+    if v1_compat: return _v1_compat(l1)
+    else: return l1
 
 
-def Level2_ECOSTRESS(filepath: Path | str,
-                     radiometry: str = 'reflectance',
-                     chunks: int = 500,
-                     split: bool = False):
+def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
+    
     # Revize variables
     filepath = Path(filepath)
-    try:
-        raw = xr.open_dataset(filepath, group='HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields')
-    except ValueError as e: 
-        raise ImportError(f"You must install 'h5netcdf' library to use ECOSTRESS reader, got message : {e}")
-    l1 = raw.chunk(chunks=chunks)
+    data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
+    raw = data['HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields']
+    l2 = raw.to_dataset().chunk(chunks=chunks)
     
     # Read Metadata
-    granule_mtd = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata')
-    attributes  = xr.open_dataset(filepath, group='HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata')
-    info = str(xr.open_dataset(filepath, group='HDFEOS INFORMATION')['StructMetadata.0'].values)
+    granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
+    attributes  = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
+    
+    info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
+    p = _parser(info.split('\n'))
+    p.parse()
+    
+    # Change radiometry of input data 
+    l2 = _transform_radiometry(raw, granule_mtd)   
+    
+    # Add attributes
+    for att in list(attributes):
+        l2.attrs[att] = attributes[att].values.item()
+    l2.attrs['hdfeos_info'] = p.data
+    l2.attrs['user guide'] = user_guide
     
     # Change dimensions name and update coordinates
-    new_dims, coords = [n.rows,n.columns], {}
+    new_dims = [n.rows.name,n.columns.name,n.bands_ir.name]
+    coords = {n.bands_ir.name: granule_mtd.BandSpecification.values[1:]}
     
-    revize_dims = dict(zip(list(l1.dims), new_dims))
-    l1 = l1.rename_dims(revize_dims)
-    l1 = l1.assign_coords(coords)
+    revize_dims = dict(zip(list(l2.dims), new_dims))
+    l2 = l2.rename_dims(revize_dims)
+    l2 = l2.assign_coords(coords)
     
-    # Summarize Attributes
-    to_parse = [attr.split("=") for attr in info.split('\n') if len(attr) != 0]
-    info = parse_attrs(to_parse)
-    l1.attrs['Description']     = str(attributes.LongName.values) 
-    l1.attrs[n.product_name]    = str(attributes.LocalGranuleID.values)[:-3]
-    l1.attrs[n.input_directory] = str(filepath.parent)
-    l1.attrs[n.datetime]   = str(attributes.ProductionDateTime.values)
-    l1.attrs[n.resolution] = 70
-    l1.attrs[n.platform]   = str(attributes.PlatformLongName.values)
-    l1.attrs[n.sensor]     = str(attributes.InstrumentShortName.values)
-    l1.attrs[n.shortname]  = str(attributes.ShortName.values)
-    l1.attrs['night']      = str(str(attributes.DayNightFlag.values) != 'Day')
-    l1.attrs['CRS']        = str(attributes.CRS.values)
-    l1.attrs['Boundary']   = str(attributes.SceneBoundaryLatLonWKT.values)
-    l1.attrs['version']    = str(attributes.PGEVersion.values)  
-    
-    l1 = supplement_latlon(l1, chunks)
-    return l1
+    # Add latlon variables
+    l2 = _supplement_latlon(l2, chunks)
+    return l2
 
 
-
-def transform_radiometry(raw_data, radiometry, split, granule_mtd, LUT_file):
-    assert radiometry in ['radiance','reflectance'], \
-        f'Invalid radiometry value, get {radiometry}'
+def _transform_radiometry(raw_data, granule_mtd):
     
-    quality_vars = [k for k in raw_data.keys() if 'quality' in k]
-    level1 = raw_data.drop_vars(quality_vars)
-    flags = raw_data.data_quality_1 != 0
-    level1[n.flags] = flags.astype(n.flags_dtype)
+    # Combine band radiances into a single variable 
+    level1 = merge(raw_data, dim=n.bands.name, pattern=r'(.+)_(\d+)')
     
-    # Process Emissive bands
-    if radiometry == 'reflectance':
-        bt, unit = n.BT, 'Kelvin'
-        for i in range(len(bands_tir)):
-            band = level1[f'radiance_{i+1}']
-            invalid = band.isnull()
-            level1[f'radiance_{i+1}'] = calibrate_bt(band, i, granule_mtd, invalid, LUT_file)
-    else: 
-        bt, unit = n.Ltoa_tir, raw_data['radiance_1'].units
-    rename = {f'radiance_{i+1}':bt+f'_{i+1}' for i in range(len(bands_tir))}
-    level1 = level1.rename_vars(rename)
-        
-            
-    if not split:
-        level1 = merge(level1, dim='bands', pattern=r'(.+)_(\d+)')
-        level1[bt].attrs = {}
-        level1[bt].attrs['units'] = unit
-        
-    level1 = level1.drop_indexes(list(level1.coords)) \
-                   .reset_coords(drop=True)
+    # Rename radiance variable
+    level1 = level1.rename({'radiance': n.ltoa.name})
+    level1[n.ltoa.name].attrs['unit'] = 'W/sr/m^2'
+    
+    # Compute brightness temperature for Emissive bands 
+    level1[n.bt.name] = _compute_bt(level1, granule_mtd)
+    level1[n.bt.name].attrs = {}
+    level1[n.bt.name].attrs['unit'] = 'Kelvin'
+    
     return level1
 
-def supplement_latlon(l1, chunks): 
+def _supplement_latlon(l1, chunks): 
         
     # Compute LatLon variables
-    size = l1.cloud.shape
-    latlon = [s.strip().split(' ') for s in l1.Boundary[10:-2].split(',')]
-    latlon = np.array(latlon).astype(float)
-    border = np.array((np.min(latlon,axis=0), np.max(latlon,axis=0)))
-    step = (border[1]-border[0])/size
-
-    lat = da.arange(border[0,1],border[1,1],step[1])
-    lon = da.arange(border[0,0],border[1,0],step[0])
-    lat = lat[:size[1]].reshape((1,size[1]))
-    lon = lon[:size[0]].reshape((size[0],1))
-    l1[n.lon] = xr.DataArray(da.repeat(lon, size[1], axis=1), 
-                             dims = [n.rows,n.columns]).chunk(chunks=chunks)
-    l1[n.lat] = xr.DataArray(da.repeat(lat, size[0], axis=0), 
-                             dims = [n.rows,n.columns]).chunk(chunks=chunks)
+    size = l1['cloud'].shape
+    poly = wkt.loads(l1.metadata['SceneBoundaryLatLonWKT'])
+    coords = np.array(poly.exterior.coords)
+    north  = coords[:,1].max()
+    south  = coords[:,1].min()
+    east   = coords[:,0].max()
+    west   = coords[:,0].min()
     
+    dims = [n.rows.name,n.columns.name]
+    lat = da.linspace(north,south,size[0]).reshape((size[0],1))
+    lon = da.linspace(west,east,size[1]).reshape((1,size[1]))
+    l1[n.lon.name] = xr.DataArray(da.repeat(lon, size[0], axis=0), 
+                                  dims=dims).chunk(chunks=chunks)
+    l1[n.lat.name] = xr.DataArray(da.repeat(lat, size[1], axis=1), 
+                                  dims=dims).chunk(chunks=chunks)
     return l1
 
-def calibrate_bt(array, band_index, granule_mtd, flags, LUT_file):
+def _compute_bt(l1, granule_mtd) -> xr.DataArray:
     """Calibration for the emissive channels."""
+    # Initialized constants
+    K1 = 1.191042 * 1e8
+    K2 = 1.4387752 * 1e4
     
-    if LUT_file:
-                
-        def find(Ltoa):
-            if 0 <= Ltoa and Ltoa <= 60:
-                indexLUT = Ltoa // 0.001
-                radiance_x0 = indexLUT * 0.001
-                radiance_x1 = radiance_x0 + 0.001 
-                factor0 = (radiance_x1 - Ltoa) / 0.001
-                factor1 = (Ltoa - radiance_x0) / 0.001     
-                return (factor0 * LUT[indexLUT]) + (factor1 * LUT[indexLUT + 1])
-            else: return 0
+    # Temperature correction
+    cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0=n.bands.name) # convert into µm
+    gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1=n.bands.name)
+    offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1=n.bands.name)
+    l1 = l1.assign({n.cwav.name: ((n.bands_ir.name),cwvl.data)})
+    
+    # Some versions of the modis files do not contain all the bands.
+    valid = ~l1[n.ltoa.name].isnull()
+    array = K2 / (cwvl * np.log(K1 / (l1[n.ltoa.name].where(valid) * cwvl ** 5) + 1))
+    bt = gain * array.where(valid) + offset
+    return bt.rename({n.bands.name: n.bands_ir.name})
 
-        # Interpolate the LUT values for each radiance based on two nearest LUT values        
-        LUT = LUT_file[f'radiance_{band_index+1}']
-        bt = np.vectorize(find)(array)     
-        return bt
+def _v1_compat(ds):
+    """Ensure back-compatibility"""
+    
+    # Rename IR bands into bands_tir
+    ds = ds.rename({n.bands_ir.name: 'bands_tir'})
+    
+    # Assign central wavelengths as bands coordinates
+    ds = ds.assign_coords({'bands_tir': [8290,8780,9200,10490,12090],
+                           n.bands.name: [8290,8780,9200,10490,12090]})
+    
+    # Add a new variables called flags
+    flags = ds.data_quality[0] != 0
+    ds['flags'] = flags.astype(n.flags.dtype)
+    
+    # Add missing attributes
+    ds.attrs['product_name'] = ds.attrs['product_name'][:-3]
+    ds.attrs['Description'] = ds.metadata['LongName']
+    ds.attrs['shortname']  = str(ds.metadata['ShortName'])
+    ds.attrs['night']      = str(str(ds.metadata['DayNightFlag']) != 'Day')
+    ds.attrs['CRS']        = str(ds.metadata['CRS'])
+    ds.attrs['Boundary']   = str(ds.metadata['SceneBoundaryLatLonWKT'])
+    ds.attrs['version']    = str(ds.metadata['PGEVersion'])  
 
-    else:
-        # Initialized constants
-        K1 = 1.191042 * 1e8
-        K2 = 1.4387752 * 1e4
+    return ds
+
+
+def get_sample(level: int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a ECOSTRESS file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    try: 
+        from core.files import cache_dataframe
+        from sand.nasa import DownloadNASA
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
         
-        # Temperature correction
-        cwvl   = bands_tir[band_index] * 1e-3 
-        gain   = granule_mtd.CalibrationGainCorrection[band_index]
-        offset = granule_mtd.CalibrationOffsetCorrection[band_index]
-
-        # Some versions of the modis files do not contain all the bands.
-        array = xr.where(flags, K2 / (cwvl * np.log(K1 / (array * cwvl ** 5) + 1)), array)
-        return xr.where(flags, gain * array + offset, array) 
+    cachefile = env.getdir('DIR_STATIC')/f'query_ecostress_{level}.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
     
-def parse_attrs(stack, out_dic={}):
-    current = [elem.strip() for elem in stack[0]]
-    if len(stack) == 1: return out_dic
-    if 'END' in current[0]:
-        return out_dic, stack
-    elif current[0] in ['GROUP','OBJECT']:
-        out_dic[current[1]], new_stack = parse_attrs(stack[1:],{})
-        return parse_attrs(new_stack[1:], out_dic)
-    else:
-        out_dic[current[0]] = current[1]
-        return parse_attrs(stack[1:], out_dic)
-    
+    sensor = 'ECOSTRESS'
+    params = products[sensor][f'level{level}']
+    params.update(collection_sand=sensor, level=int(level))
+    dl = DownloadNASA()
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 
-def get_sample():
-    return NotImplemented
+class _parser:
+    
+    def __init__(self, text: list):
+        self.data = {}
+        self.text = text.copy()
+    
+    def empty(self): return len(self.text) == 0
+    
+    def consume(self):
+        
+        line = self.text[0]
+        if len(self.text) == 1: # case for last line
+            self.text = []
+            return line.strip()
+                
+        self.text = self.text[1:]
+        
+        line = line.strip()
+        while line == "":
+            line = self.consume()
+        
+        return line.strip()
+    
+    def peek(self):
+        return self.text[0].strip()
+    
+    def parse(self):
+        
+        while not self.empty():
+            end = self._parse_recu(self.data)
+            if end: break
+            
+    def _parse_recu(self, data: dict=None): 
+        
+        line = self.consume()
+        if line == "END":
+            return True
+        
+        key, val = line.split('=')
+        if key in ['GROUP','OBJECT']: 
+            data[val] = {}
+            
+            line = self.peek()
+            while f'END_' not in line:
+                self._parse_recu(data[val])
+                line = self.peek() # refresh peeked line !! 
+            
+            # closing tag
+            self.consume()
+        
+        else: data[key] = val 
+        
+        return False

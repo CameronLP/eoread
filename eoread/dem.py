@@ -1,38 +1,33 @@
-from core.fileutils import mdir
-from eoread.utils.naming import naming
 from eoread.common import bin_centers
-from core.uncompress import uncompress
-from core.env import getdir
-from eoread.download_legacy import download_url
+from core.network.download import download_url
+from core.files import mdir, uncompress
+from core.geo import n
+from core import env
 
-from os.path import exists, join, basename, getsize
-from os import remove, system
-from math import ceil
-from pathlib import Path
+from os.path import getsize
 from dask import array as da
+from pathlib import Path
+from math import ceil
 
 import xarray as xr
 import numpy as np
 
 
-nextcloud_url = 'https://docs.hygeos.com/s/Fy2bYLpaxGncgPM/'
-
-class ArrayLike_SRTM:
+class _ArrayLike_SRTM:
     """
     Array like object to manage SRTM tiles from usgs server 
     """
-    def __init__(self, directory, agg=1, missing=None, type_srtm=None, use_gdal=False, verbose=True):
+    def __init__(self, directory, agg=1, missing=None, type_srtm=None, verbose=True):
 
         self.srtm       = 'SRTM' + str(type_srtm)
         self.agg        = agg
         self.missing    = missing
-        self.use_gdal   = use_gdal
         self.verbose    = verbose
         self.directory  = Path(directory)
 
-        static = mdir(self.directory)
-        system(f'wget {nextcloud_url}download?files=valid_{self.srtm}_tiles.txt -c -O {static}/valid_{self.srtm}_tiles.txt')
-        self.tiles_list = np.loadtxt(f'{static}/valid_{self.srtm}_tiles.txt', dtype=str)
+        url = f'http://download.hygeos.com/eoread/valid_{self.srtm}_tiles.txt'  
+        tile_file = download_url(url, self.directory, if_exists='skip')
+        self.tiles_list = np.loadtxt(tile_file, dtype=str)
 
         self.tile_size  = 3601 if type_srtm == 1 else 1201
         self.width      = 360 * self.tile_size // self.agg
@@ -73,12 +68,14 @@ class ArrayLike_SRTM:
                                         {True: 'E', False: 'W'}[ilon>=0],
                                         abs(ilon))
                 url = self.url_base.format(tile_name)
-                filepath = join(self.directory,basename(url).split('.')[0]+'.hgt')
+                list_name = Path(url).stem.split('.')
+                list_name.pop(1)
+                filepath = self.directory/'.'.join(list_name)
                 if url in self.tiles_list:
-                    if not exists(filepath):
-                        filename = download_url(url, self.directory, verbose=self.verbose, wget_opts='-q')
-                        filepath = uncompress(filename,self.directory)
-                        remove(filename)
+                    if not filepath.exists():                        
+                        filename = download_url(url, self.directory, wget_opts='-q')
+                        uncompress(filename, self.directory)
+                        filename.unlink()
                     data = read_hgt(str(filepath))
                 else:
                     continue
@@ -148,22 +145,22 @@ def SRTM(directory=None, agg=1, missing=None, type_srtm=1, chunk=10000, verbose=
 
     srtm = 'SRTM' + str(type_srtm)
     if directory is None:
-        directory = mdir(getdir("DIR_STATIC") / srtm)
+        directory = mdir(env.getdir("DIR_STATIC") / srtm)
 
     # concat the delayed dask objects for all tiles
-    srtm = ArrayLike_SRTM(directory=directory, agg=agg, missing=missing, 
+    srtm = _ArrayLike_SRTM(directory=directory, agg=agg, missing=missing, 
                           type_srtm=type_srtm, verbose=verbose)
     srtm = da.from_array(srtm,
-                        chunks=(chunk,chunk),
-                        meta=da.array([],dtype=float))
+                         chunks=(chunk,chunk),
+                         meta=da.array([],dtype=float))
 
     return xr.DataArray(
         srtm,
         name='occurrence',
-        dims=(naming.lat, naming.lon),
+        dims=(n.lat.name, n.lon.name),
         coords={
-            naming.lat: bin_centers(srtm.shape[0], 60, -56),
-            naming.lon: bin_centers(srtm.shape[1], -180, 180),
+            n.lat.name: bin_centers(srtm.shape[0], 60, -56),
+            n.lon.name: bin_centers(srtm.shape[1], -180, 180),
         }
     )
 
@@ -199,13 +196,17 @@ def GTOPO30(directory=None, agg=1, missing=None, chunk=500):
     """
     
     if directory is None:
-        directory = mdir(getdir("DIR_STATIC") / "GTOPO30")
+        directory = mdir(env.getdir("DIR_STATIC") / "GTOPO30")
+    else:
+        directory = Path(directory)
 
     # concat the delayed dask objects for all tiles
     basename = 'GTOPO30_DZ_MLUT.nc'
-    system(f'wget {nextcloud_url}download?files={basename} -c -O {directory/basename}')
-    filepath = directory/basename
-    gtopo = xr.open_dataset(filepath).elev.chunk(chunks=(chunk,chunk))
+    
+    url = 'http://download.hygeos.com/eoread/GTOPO30_DZ_MLUT.nc'  
+    gtopo_file = download_url(url, directory, if_exists='skip')
+    gtopo = xr.open_dataset(gtopo_file, engine='h5netcdf')
+    gtopo = gtopo.elev.chunk(chunks=(chunk,chunk))
     gtopo = xr.where(gtopo > 0, gtopo, missing)
     revize_dims = dict(zip(['lat','lon'], ['latitude','longitude']))
     gtopo = gtopo.rename(revize_dims)
@@ -217,8 +218,8 @@ def read_hgt(filename):
     """
     Reads a compressed SRTM file (binary) to a numpy array
     """
-    assert filename.endswith('.hgt')
-    size = getsize(filename)
+    assert str(filename).endswith('.hgt')
+    size = getsize(str(filename))
     N = int(np.sqrt(size/2))
     data = np.fromfile(filename, np.dtype('>i2'), N*N)  # big endian int16
     return data.reshape((N, N))

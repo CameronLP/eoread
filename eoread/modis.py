@@ -1,60 +1,24 @@
+from eoread.utils import filter_metadata, spatial_resample
 from eoread.hdf4 import load_hdf4
-from core.tools import merge
-from core import env
-from eoread.utils.naming import naming as n
 from pathlib import Path
 
-import numpy as np
+from core.geo import n
+from core import env, log
+from core.tools import drop_unused_dims
+
 import xarray as xr
 import dask.array as da
 
 
 
-bands_250 = [650,860]
-bands_500 = [470,555,1240,1640,2130]
-bands_vis = [410,440,485,530,550,668,670,680,685,750,870,900,935,940,1375]
-bands_tir = [3750,3960,4050,4460,4510,1375,6710,7230,8550,9730,11000,12000,13230,13630,13930,14230]
+user_guide = 'https://mcst.gsfc.nasa.gov/sites/default/files/file_attachments/M1054E_PUG_2022_1005_V6.2.2_Terra_V6.2.3_Aqua.pdf'
 
-band_index = { # Bands      - wavelength (um)   - resolution (m)    - group
-    650:  1,   # Band 1        0.62 - 0.67	         250              250m
-    860:  2,   # Band 2        0.84 - 0.87	         250              250m
-    470:  3,   # Band 3        0.46 - 0.48	         500              500m
-    555:  4,   # Band 4        0.54 - 0.56           500              500m
-    1240: 5,   # Band 5   	   1.23 - 1.25	         500              500m
-    1640: 6,   # Band 6   	   1.63 - 1.65	         500              500m
-    2130: 7,   # Band 7   	   2.11 - 2.16	         500              500m
-    410:  8,   # Band 8   	   0.40 - 0.42	         1000            Ref_1km
-    440:  9,   # Band 9   	   0.44 - 0.45	         1000            Ref_1km
-    485:  10,  # Band 10  	   0.48 - 0.49	         1000            Ref_1km
-    530:  11,  # Band 11  	   0.52 - 0.53 	         1000            Ref_1km
-    550:  12,  # Band 12  	   0.54 - 0.56	         1000            Ref_1km
-    670:  13,  # Band 13  	   0.66 - 0.67	         1000            Ref_1km
-    672:  13.5,# Band 13  	   0.66 - 0.67	         1000            Ref_1km
-    680:  14,  # Band 14  	   0.67 - 0.68	         1000            Ref_1km
-    682:  14.5,# Band 14  	   0.67 - 0.68	         1000            Ref_1km
-    750:  15,  # Band 15  	   0.74 - 0.75 	         1000            Ref_1km
-    870:  16,  # Band 16  	   0.86 - 0.88 	         1000            Ref_1km
-    900:  17,  # Band 17  	   0.89 - 0.92	         1000            Ref_1km
-    935:  18,  # Band 18  	   0.93 - 0.94	         1000            Ref_1km
-    940:  19,  # Band 19  	   0.91 - 0.96	         1000            Ref_1km
-    3750: 20,  # Band 20  	   3.66 - 3.84	         1000            Emi_1km
-    3960: 21,  # Band 21  	   3.93 - 3.99	         1000            Emi_1km
-    3962: 22,  # Band 22  	   3.93 - 3.99	         1000            Emi_1km
-    4050: 23,  # Band 23  	   4.02 - 4.08	         1000            Emi_1km
-    4460: 24,  # Band 24  	   4.43 - 4.50	         1000            Emi_1km
-    4510: 25,  # Band 25       4.48 - 4.55	         1000            Emi_1km
-    1375: 26,  # Band 26 	   1.36 - 1.39	         1000            Ref_1km
-    6710: 27,  # Band 27 	   6.53 - 6.89	         1000            Emi_1km
-    7230: 28,  # Band 28  	   7.17 - 7.47	         1000            Emi_1km
-    8550: 29,  # Band 29  	   8.40 - 8.70	         1000            Emi_1km
-    9730: 30,  # Band 30  	   9.58 - 9.88	         1000            Emi_1km
-    11000:31,  # Band 31  	   10.78 - 10.28         1000            Emi_1km
-    12000:32,  # Band 32  	   11.77 - 12.27         1000            Emi_1km
-    13230:33,  # Band 33       13.18 - 13.48         1000            Emi_1km
-    13630:34,  # Band 34       13.48 - 13.78         1000            Emi_1km
-    13930:35,  # Band 35       13.78 - 14.08         1000            Emi_1km
-    14230:36,  # Band 36       14.08 - 14.38         1000            Emi_1km
-    }
+bnames = [1,2,3,4,5,6,7,8,9,10,11,12,13,13.5,14,14.5,15,16,17,18,19,20,21,22,
+          23,24,25,26,27,28,29,30,31,32,33,34,35,36]
+
+cwvl = [650, 860, 470, 555, 1240, 1640, 2130, 410, 440, 485, 530, 550, 670, 672, 
+        680, 682, 750, 870, 900, 935, 940, 3750, 3960, 3962, 4050, 4460, 4510, 
+        1375, 6710, 7230, 8550, 9730, 11000, 12000, 13230, 13630, 13930, 14230]
 
 # Planck's law constants 
 h = 6.6260755e-34
@@ -66,142 +30,175 @@ K1 = 2.0 * h * c * c
 K2 = h * c / k
 
 
-def Level1_MODIS(filepath: Path | str,
-                 radiometry: str ='reflectance',
-                 chunks: int = 500,
-                 split: bool = False):
-    # Revize variables
-    filepath = Path(filepath)
-    raw = load_hdf4(filepath, trim_dims=True, chunks=chunks)
-    coords = raw.coords
-    reverse_band_index = {v:k for k,v in band_index.items()}
-    keep_vars = ['Latitude', 'Longitude', 'SensorZenith', 'SensorAzimuth', 'SolarZenith', 'SolarAzimuth', 'gflags']
-    new_vars  = [n.lat, n.lon, n.vza, n.vaa, n.sza, n.saa, n.flags]
-    drop_vars = [n for n in list(raw.variables.keys()) if n not in keep_vars]
-    l1 = raw.drop_vars(drop_vars)
-    l1 = l1.rename_vars(dict(zip(keep_vars, new_vars)))
+def Level1_MODIS(filepath: Path | str, 
+                 chunks: int = 100,
+                 metadata_template: list = None,
+                 v1_compat: bool = False):
+    '''
+    Read an MODIS Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
+    the angles on the full grid, etc.
 
+    Arguments:
+        filepath: Path of the MODIS H4file
+        chunks: Size of chunks for spatial axis
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+    '''
+    
+    filepath = Path(filepath)
+    assert filepath.exists(), 'File does not exists'
+    if isinstance(chunks, int): chunks = [chunks]*2   
+    
+    # Revize variables
+    log.debug('Reading h4file')
+    l1 = load_hdf4(filepath, trim_dims=True)
+    l1 = l1.rename_vars({
+        'Latitude': n.lat.name, 'Longitude': n.lon.name,
+        'SensorZenith': n.vza.name, 'SensorAzimuth': n.vaa.name,
+        'SolarZenith': n.sza.name, 'SolarAzimuth': n.saa.name
+    })
+ 
+    # Read metadata
+    metadata = {}
+    log.debug('parsing metadata text')
+    for name in ['CoreMetadata.0','ArchiveMetadata.0','StructMetadata.0']:
+        p = _parser_attrs(l1.attrs[name].split('\n'))
+        p.parse()
+        metadata.update(p.data)
+    
+    # Add band information
+    log.debug('Add central wavelength')
+    l1 = l1.assign_coords({n.bands.name: da.arange(len(bnames),dtype=int)+1})
+    l1 = l1.assign({n.bnames.name: ((n.bands.name), da.array(bnames).astype(str)),
+                    n.cwav.name: ((n.bands.name), cwvl)})
+    
     # Rescale angles data
-    for varname in new_vars[2:-1]:
+    log.debug('Read and compute geometric angles')
+    for varname in [n.vza.name, n.vaa.name, n.sza.name, n.saa.name]:
         l1[varname] = l1[varname].scale_factor * l1[varname]
 
     # Change radiometry of input data   
-    l1 = transform_radiometry(raw, l1, radiometry, split)
+    log.debug('Read top of atmosphere data')
+    l1 = _transform_radiometry(l1, chunks)
+    l1 = _aggregate_vars(l1, chunks)
+    l1 = _compute_bt(l1)
+    
+    # Upscale latlon variables
+    log.debug('upscale latlon variables')
+    shape = {k:v for k,v in zip(l1[n.lat.name].dims, l1[n.ltoa.name].shape[1:])}
+    l1[n.lat.name] = spatial_resample(l1[n.lat.name], shape, chunks)
+    l1[n.lon.name] = spatial_resample(l1[n.lon.name], shape, chunks)
 
     # Change dimensions name and update coordinates
-    old_dims = ['2*nscans:MODIS_SWATH_Type_L1B', '1KM_geo_dim:MODIS_SWATH_Type_L1B', 
-                '10*nscans:MODIS_SWATH_Type_L1B', 'Max_EV_frames:MODIS_SWATH_Type_L1B']
-    new_dims = ['y_red','x_red',n.rows,n.columns]
-    new_coords = {}
-    if not split:
-        new_dims = new_dims + [n.bands,n.bands_tir]
-        old_dims = old_dims + ['bands_vis','bands_bt']
-        new_coords[n.bands_tir] = [reverse_band_index[i] for i in coords['Band_1KM_Emissive'].values]
-        new_coords[n.bands] = [reverse_band_index[i] for i in coords['Band_250M'].values] + \
-                              [reverse_band_index[i] for i in coords['Band_500M'].values] + \
-                              [reverse_band_index[i] for i in coords['Band_1KM_RefSB'].values]
-    
-    revize_dims = dict(zip(old_dims, new_dims))
-    l1 = l1.rename_dims(revize_dims)
-    l1 = l1.assign_coords(new_coords)
+    l1 = _rename_dims(l1)
 
     # Summarize Attributes
-    list_attr = [attr.split("=") for attr in l1.attrs['CoreMetadata.0'].split('\n') if len(attr) != 0]
-    attributes = {}
+    log.debug('Add important attributes')
+    attributes = l1.attrs
+    
     l1.attrs = {}
-    parse_attrs(list_attr, attributes)
-    l1.attrs[n.input_directory] = str(filepath.parent)
-    l1.attrs[n.resolution]   = 1000
-    l1.attrs[n.datetime]     = attributes['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME'][1:-1]
-    l1.attrs['night']        = str(attributes['INVENTORYMETADATA']['ECSDATAGRANULE']['DAYNIGHTFLAG'] != '"Day"')
-    l1.attrs[n.product_name] = attributes['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID'][1:-1]
-    l1.attrs[n.platform]     = attributes['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMSHORTNAME'][1:-1]
-    l1.attrs[n.sensor]       = attributes['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER'][1:-1]
-    l1.attrs[n.shortname]    = attributes['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME'][1:-1]
-    l1.attrs['version']      = int(attributes['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID'])
+    l1.attrs[n.input_directory.name] = str(filepath.parent)
+    l1.attrs[n.resolution.name]   = 1000
+    l1.attrs[n.datetime.name]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
+    l1.attrs['night']             = str(metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['DAYNIGHTFLAG']['VALUE'] != '"Day"')
+    l1.attrs[n.product_name.name] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
+    l1.attrs[n.platform.name]     = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDPLATFORMSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[n.sensor.name]       = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDSENSORSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[n.shortname.name]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
+    l1.attrs['version']           = int(metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID']['VALUE'])
+    l1.attrs['user_guide']        = user_guide
 
-    return l1
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    metadata['attributes'] = attributes
+    l1.attrs['metadata'] = filter_fn(metadata, metadata_template)
 
-def transform_radiometry(raw_data, level1, radiometry, split):
-    assert radiometry in ['radiance','reflectance'], \
-        f'Invalid radiometry value, get {radiometry}'
-    
-    toa = n.Ltoa if radiometry == 'radiance' else n.Rtoa
-    bt  = n.Ltoa_tir if radiometry == 'radiance' else n.BT
-    tag_scale  = f'{radiometry}_scales'
-    tag_offset = f'{radiometry}_offsets'
-    tag_unit   = f'{radiometry}_units'
-    new_varname = [toa+'_250',toa+'_500',toa+'_1km',bt] if split else [toa,toa,toa,bt]
-    old_varname = ['EV_250_Aggr1km_RefSB','EV_500_Aggr1km_RefSB','EV_1KM_RefSB','EV_1KM_Emissive']
+    if v1_compat: return _v1_compat(l1, filepath)
+    return drop_unused_dims(l1).unify_chunks()
 
-    # Process Reflective bands
-    cursor = 0
-    size = raw_data['EV_1KM_Emissive'][0].shape
-    upscale_sza = da.repeat(da.repeat(level1.sza.data,5,axis=0),5,axis=1)
-    upscale_sza = upscale_sza[:size[0],:size[1]].rechunk(chunks=500)
-    for var,new in zip(old_varname[:-1], new_varname[:-1]):
-        ref_b   = raw_data[var]
-        scales  = ref_b.attrs[tag_scale]
-        offsets = ref_b.attrs[tag_offset]
-        unit    = ref_b.attrs[tag_unit]
-        for i,band in enumerate(ref_b):
-            band.attrs = {}
-            level1[new+f'_{cursor+1}'] = scales[i] * (band - offsets[i])
-            level1[new+f'_{cursor+1}'].attrs['unit'] = unit
-            if radiometry == 'reflectance':
-                level1[new+f'_{cursor+1}'] /= da.cos(da.radians(upscale_sza))
-            cursor += 1
-    if not split:
-        level1 = merge(level1, dim=f'bands_vis', pattern=r'(.+)_(\d+)')
-        level1[new].attrs['unit'] = unit
-    
-    # Process Emissive bands
-    emi_b   = raw_data['EV_1KM_Emissive']
-    scales  = emi_b.attrs['radiance_scales']
-    offsets = emi_b.attrs['radiance_offsets']
-    unit    = emi_b.attrs['radiance_units']
-    for i,band in enumerate(emi_b):
-        band.attrs = {}
-        level1[bt+f'_{i+1}'] = scales[i] * (band - offsets[i])
-        level1[bt+f'_{i+1}'].attrs['unit'] = 'Kelvin'
-        if radiometry == 'reflectance':
-            level1[bt+f'_{i+1}'] = calibrate_bt(level1[bt+f'_{i+1}'],i)
-    if not split:
-        level1 = merge(level1, dim='bands_bt', pattern=r'(.+)_(\d+)')
-        level1[bt].attrs['unit'] = 'Kelvin' if radiometry == 'reflectance' else unit
-        level1[n.flags] = level1[bt].isel(bands_bt=0).isnull().astype(n.flags_dtype)
-    
-    level1 = level1.drop_indexes(list(level1.coords)) \
-                   .reset_coords(drop=True)
-    
-    # Revise flags shape according to TOA arrays
-    flags = da.repeat(da.repeat(level1.flags.data,5,axis=0),5,axis=1)
-    flags = flags[:size[0],:size[1]]
-    level1['flags'] = xr.DataArray(flags, dims=level1[bt][0].dims)
-    
-    return level1
 
-def supplement_latlon(l1, chunks): 
-        
-    # Compute LatLon variables
-    size = l1[n.BT].isel(bands_bt=0).squeeze().shape
-    latlon = [s.strip().split(' ') for s in l1.Boundary[10:-2].split(',')]
-    latlon = np.array(latlon).astype(float)
-    border = np.array((np.min(latlon,axis=0), np.max(latlon,axis=0)))
-    step = (border[1]-border[0])/size
-
-    lat = da.arange(border[0,0],border[1,0],step[0])
-    lon = da.arange(border[0,1],border[1,1],step[1])
-    lat = lat[:size[0]].reshape((size[0],1))
-    lon = lon[:size[1]].reshape((1,size[1]))
-    l1[n.lat] = xr.DataArray(da.repeat(lat, size[1], axis=1), 
-                             dims = [n.rows,n.columns]).chunk(chunks=chunks)
-    l1[n.lon] = xr.DataArray(da.repeat(lon, size[0], axis=0), 
-                             dims = [n.rows,n.columns]).chunk(chunks=chunks)
+def _transform_radiometry(level1, chunks):
     
-    return l1
+    rad_varnames = ['EV_250_Aggr1km_RefSB','EV_500_Aggr1km_RefSB','EV_1KM_RefSB','EV_1KM_Emissive'] #TOA
+    rad_bandnames = ["new_Band_250M:MODIS_SWATH_Type_L1B", 
+                     "new_Band_500M:MODIS_SWATH_Type_L1B", 
+                     "new_Band_1KM_RefSB:MODIS_SWATH_Type_L1B",
+                     "new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B"]
+    
+    # Compute radiance
+    data_arrays = []
+    for rad_varname, rad_bandname in zip(rad_varnames, rad_bandnames):
+        rad = level1[rad_varname]
 
-def calibrate_bt(array, band_index):
+        # Broadcast scales and offsets with appropriate dimensions
+        scale = xr.DataArray(rad.radiance_scales, dims=rad_bandname)
+        offset = xr.DataArray(rad.radiance_offsets, dims=rad_bandname)
+
+        nd = scale * rad + offset
+        nd.attrs['desc'] = n.ltoa.desc
+        nd.attrs['unit'] = n.ltoa.unit
+        data_arrays.append(nd.rename({rad_bandname : "bands_ltoa"}))
+
+    # Combine into one dimension
+    level1[n.ltoa.name] = xr.concat(data_arrays, dim="bands_ltoa")
+    level1[n.ltoa.name] = level1[n.ltoa.name].chunk([1]+list(chunks))
+
+    # Compute Reflectance
+    data_arrays = []
+    for rad_varname, rad_bandname in zip(rad_varnames[:3], rad_bandnames[:3]):
+        rad = level1[rad_varname]
+
+        # Broadcast scales and offsets with appropriate dimensions
+        scale = xr.DataArray(rad.reflectance_scales, dims=rad_bandname)
+        offset = xr.DataArray(rad.reflectance_offsets, dims=rad_bandname)
+
+        nd = scale * rad + offset
+        nd.attrs['desc'] = n.rtoa.desc
+        nd.attrs['unit'] = n.rtoa.unit
+        data_arrays.append(nd.rename({rad_bandname : "bands_rtoa"}))
+
+    # Combine into one dimension
+    level1[n.rtoa.name] = xr.concat(data_arrays, dim="bands_rtoa")
+    level1[n.rtoa.name] = level1[n.rtoa.name].chunk([1]+list(chunks))
+    level1 = level1.assign_coords(bands_rtoa=da.arange(len(level1['bands_rtoa']))+1)
+    
+    return level1.drop_vars(rad_varnames)
+
+
+def _aggregate_vars(l1, chunks):
+    
+    # Combine uncertainty in a single variable
+    uncert_label = 'Uncert_Indexes'
+    uncert_names = [d for d in l1.variables if uncert_label in d][:4]
+    uncert_vars = [l1[v].rename({l1[v].dims[0] : "b"}) for v in uncert_names]
+    l1[uncert_label] = xr.concat(uncert_vars, dim="b").chunk([1]+list(chunks))
+    l1 = l1.drop_vars(uncert_names)
+    
+    return l1.rename(b=n.bands.name)
+
+
+def _rename_dims(l1):
+    
+    revize_dims = {
+        '2*nscans:MODIS_SWATH_Type_L1B': n.rows.name+'_red', 
+        '1KM_geo_dim:MODIS_SWATH_Type_L1B': n.columns.name+'_red', 
+        '10*nscans:MODIS_SWATH_Type_L1B': n.rows.name, 
+        'Max_EV_frames:MODIS_SWATH_Type_L1B': n.columns.name,
+        'new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B': n.bands_ir.name,
+        'new_Band_250M:MODIS_SWATH_Type_L1B': n.bands.name + '_250M',
+        'new_Band_500M:MODIS_SWATH_Type_L1B': n.bands.name + '_500M', 
+        'new_Band_1KM_RefSB:MODIS_SWATH_Type_L1B': n.bands.name + '_1KM_NVIS',
+        'bands_ltoa': n.bands.name, 
+        'bands_rtoa': n.bands_nvis.name, 
+        'Band_250M': n.bands.name + '_250M', 
+        'Band_500M': n.bands.name + '_500M', 
+        'Band_1KM_RefSB': n.bands.name + '_1KM_NVIS',
+        'Band_1KM_Emissive': n.bands.name + '_1KM_EM',
+    }
+
+    return l1.rename(revize_dims)
+
+def _compute_bt(ds):
     """Calibration for the emissive channels."""
 
     # Planck's law constants 
@@ -212,60 +209,139 @@ def calibrate_bt(array, band_index):
     # derived constants
     K1 = 2.0 * h * c * c
     K2 = h * c / k
+    bands = 'bands_ltoa'
 
     # Effective central wavenumber (inverse centimeters)
-    cwn = da.array([
+    cwn = xr.DataArray(da.array([
         2.641775E+3, 2.505277E+3, 2.518028E+3, 2.465428E+3,
         2.235815E+3, 2.200346E+3, 1.477967E+3, 1.362737E+3,
         1.173190E+3, 1.027715E+3, 9.080884E+2, 8.315399E+2,
         7.483394E+2, 7.308963E+2, 7.188681E+2, 7.045367E+2],
-        dtype=float)
+        dtype=float), dims=(bands))
 
     # Temperature correction slope (no units)
-    tcs = da.array([
+    tcs = xr.DataArray(da.array([
         9.993411E-1, 9.998646E-1, 9.998584E-1, 9.998682E-1,
         9.998819E-1, 9.998845E-1, 9.994877E-1, 9.994918E-1,
         9.995495E-1, 9.997398E-1, 9.995608E-1, 9.997256E-1,
         9.999160E-1, 9.999167E-1, 9.999191E-1, 9.999281E-1],
-        dtype=float)
+        dtype=float), dims=(bands))
 
     # Temperature correction intercept (Kelvin)
-    tci = da.array([
+    tci = xr.DataArray(da.array([
         4.770532E-1, 9.262664E-2, 9.757996E-2, 8.929242E-2,
         7.310901E-2, 7.060415E-2, 2.204921E-1, 2.046087E-1,
         1.599191E-1, 8.253401E-2, 1.302699E-1, 7.181833E-2,
         1.972608E-2, 1.913568E-2, 1.817817E-2, 1.583042E-2],
-        dtype=float)
+        dtype=float), dims=(bands))
 
     # Transfer wavenumber [cm^(-1)] to wavelength [m]
     cwvl = 1. / (cwn * 100)
 
-    # Some versions of the modis files do not contain all the bands.
-    cwvl = cwvl[band_index]
-    tcs  = tcs[band_index]
-    tci  = tci[band_index]
+    # Some versions of the modis files do not contain all the bands
+    bnames = list(ds[n.bnames.name].values.astype(float))
+    bands_em = [bnames.index(x) for x in ds['Band_1KM_Emissive']]
+    array = ds[n.ltoa.name].sel({bands: bands_em})
     array = K2 / (cwvl * da.log(K1 / (1e6 * array * cwvl ** 5) + 1))
-    array = (array - tci) / tcs
-    return array
+    ds[n.bt.name] = ((array - tci) / tcs).rename({bands: n.bands_ir.name})
+    ds[n.bt.name].attrs['unit'] = 'Kelvin'
+    ds = ds.assign_coords({n.bands_ir.name: bands_em})
+    return ds
 
-def parse_attrs(stack, out_dic={}):
-    current = [elem.strip() for elem in stack[0]]
-    if current[0] == 'END_GROUP':
-        return out_dic, stack
-    elif current[0] == 'GROUP':
-        out_dic[current[1]], new_stack = parse_attrs(stack[1:],{})
-        return parse_attrs(new_stack[1:], out_dic)
-    elif current[0] == 'OBJECT':
-        for i in range(10):
-            sub = [elem.strip() for elem in stack[i+1]]
-            if sub[0] == 'VALUE':
-                out_dic[current[1]] = sub[1]
-            if 'END' in sub[0]:
-                break
-        return parse_attrs(stack[i+2:],out_dic)
-    else:
-        return parse_attrs(stack[1:], out_dic)
+
+class _parser_attrs:
     
+    def __init__(self, text: list):
+        self.data = {}
+        self.text = text.copy()
+    
+    def empty(self): return len(self.text) == 0
+    
+    def consume(self):
+        
+        line = self.text[0]
+                
+        self.text = self.text[1:]
+        
+        line = line.strip()
+        while self.is_void(line):
+            line = self.consume()
+        
+        return line.strip()
+    
+    def peek(self):
+        line = self.text[0].strip()
+        while self.is_void(line): 
+            self.text = self.text[1:]
+            line = self.text[0].strip()
+        return line
+    
+    def is_void(self, line):
+        return len(line) == 0
+    
+    def parse(self):
+        
+        while not self.empty():
+            end = self._parse_recu(self.data)
+            if end: break
+            
+    def _parse_recu(self, data: dict=None): 
+        
+        line = self.consume()
+        if line == "END":
+            return True
+        
+        key, val = [i.strip() for i in line.split('=')]
+        if key in ['GROUP','OBJECT']: 
+            data[val] = {}
+            
+            line = self.peek()
+            while f'END_' not in line:
+                self._parse_recu(data[val])
+                line = self.peek() # refresh peeked line !! 
+            
+            # closing tag
+            self.consume()
+        
+        else: data[key] = val 
+        
+        return False
 
-def get_sample():
-    return NotImplemented
+def get_sample(level: int=1, use_cache:bool=True):
+    """
+    Bring a MODIS file path to test reading function
+
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    sample = Path('/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
+    assert sample.exists()
+    return sample
+
+def _v1_compat(ds, filepath):
+    
+    bands_vis = [650,860,470,555,1240,1640,2130,410,440,485,530,550,668,670,680,685,750,870,900,935,940,1375]
+    bands_tir = [3750,3960,4050,4460,4510,1375,6710,7230,8550,9730,11000,12000,13230,13630,13930,14230]
+    
+    # Drop some variables
+    keep = ['latitude','longitude','sza','saa','vza','vaa','Rtoa','BT']
+    ds = drop_unused_dims(ds[keep])
+    
+    # Rename bands IR and change coordinates
+    ds = ds.rename({n.bands_ir.name: 'bands_tir'})
+    ds = ds.assign_coords(bands_tir=bands_tir)
+    
+    # Rename Rtoa dimension
+    ds = ds.rename({n.bands_nvis.name: 'bands'})
+    ds = ds.assign_coords(bands=bands_vis)
+    
+    # Open reduce latlon arrays
+    latlon = load_hdf4(filepath, trim_dims=True)
+    ds = ds.assign({n.lat.name: (('y_red','x_red'), latlon['Latitude'].data),
+                    n.lon.name: (('y_red','x_red'), latlon['Longitude'].data)})
+    
+    # Flags
+    ds['flags'] = ds['BT'].isel(bands_tir=0).isnull().astype('uint8')
+    
+    return ds

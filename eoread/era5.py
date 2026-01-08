@@ -7,13 +7,13 @@ ERA5 Ancillary data provider
 '''
 
 import argparse
+import warnings
 
 from core import env
 from core.tools import wrap
-from core.fileutils import filegen, mdir
+from core.files.fileutils import filegen, mdir
 from pathlib import Path
 from datetime import datetime, timedelta
-from .utils.naming import naming
 import numpy as np
 
 import xarray as xr
@@ -21,6 +21,7 @@ import cdsapi
 
 from .common import floor_dt, ceil_dt
 
+warnings.warn("This module will be deprecated. Please use HARP instead.")
 
 def open_ERA5(filename):
     '''
@@ -28,10 +29,10 @@ def open_ERA5(filename):
     with the other ancillary data sources
     '''
     ds = xr.open_dataset(filename, chunks={})
-    ds[naming.horizontal_wind] = np.sqrt(ds.u10**2 + ds.v10**2)
+    ds["horizontal_wind"] = np.sqrt(ds.u10**2 + ds.v10**2)
     ds = ds.rename({
-        'sp': naming.sea_level_pressure,  # FIXME: SP/SLP
-        'tco3': naming.total_column_ozone,
+        "sp": "sea_level_pressure",  # FIXME: SP/SLP
+        "tco3": "total_column_ozone",
     }).squeeze()
     return wrap(ds, 'longitude', -180, 180)
 

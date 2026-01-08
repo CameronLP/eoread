@@ -9,13 +9,12 @@ readme = "README.md"
 dependencies = [
     "lxml",
     "pyproj",
-    "rioxarray",
-    "cdsapi",
-    "pyepr",
-    "eumdac",
     "pyhdf",
     "pysolar",
-    "fs"]
+    "pyepr",
+    "rioxarray",
+    "cdsapi"
+]
 
 [project.optional-dependencies]
 git = [
@@ -37,27 +36,27 @@ eotools = { git = "git+https://github.com/hygeos/eotools.git" }
 
 [tool.pixi.tasks]
 tests = "pytest tests/"
+reader = "python3 scripts/eval_readers.py"
 
 [tool.pixi.dependencies]
 pytest = "*"
 pytest-html = "*"
 pytest-xdist = "*"
-numpy = "<2"
-lxml = "*"
-xarray = "*"
-pandas = "*"
-dask = "*"
-pyproj = "*"
-rioxarray = "*"
 matplotlib-base = "*"
+ipykernel = "*"
+libgdal-jp2openjpeg = "*"  # Required to read compress jp2 file in MSI reader
 cdsapi = "*"
-pyepr = "*"
-toml = "*"
-python-dotenv = "*"
-h5py = "*"
-h5netcdf = "*"
 eumdac = "*"
-pyhdf = "*"
+shapely = "*"
+
+[tool.pixi.environments]
+default = { features = ["hyp", "sys"], solve-group = "default" }
+
+[tool.pixi.feature.sys.dependencies]
 libgdal-jp2openjpeg = "*"
-pysolar = "*"
-fs = "*"
+
+[tool.pixi.feature.hyp.dependencies]
+xarray = "*"
+dask = "*"
+scipy = "*"
+numpy = "*"

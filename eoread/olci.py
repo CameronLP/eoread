@@ -1,96 +1,242 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-
-from typing import Optional
 import xarray as xr
-import os
-import numpy as np
-from xml.dom.minidom import parseString
-from datetime import datetime
-from pathlib import Path
-from core import env
+import dask.array as da
 
+from pathlib import Path
+from typing import Literal
+from datetime import datetime
+from warnings import filterwarnings
+from re import findall
+
+from core import env, log
+from core.geo import n
+from core.tools import getflags
+from core.table import read_xml
 
 from .eo import init_Rtoa
-from core.tools import getflags, raiseflag
-from .common import Interpolator
-from .utils.naming import naming, flags
-from .common import DataArray_from_array
+from .common import Interpolator, DataArray_from_array
+from eoread.utils import spatial_resample, filter_metadata
 
 
-olci_band_names = {
-        '01': 400, '02': 412,
-        '03': 443, '04': 490,
-        '05': 510, '06': 560,
-        '07': 620, '08': 665,
-        '09': 674, '10': 681,
-        '11': 709, '12': 754,
-        '13': 760, '14': 764,
-        '15': 767, '16': 779,
-        '17': 865, '18': 885,
-        '19': 900, '20': 940,
-        '21': 1020,
-    }
-
-# central wavelength of the detector (for normalization)
-# (detector 374 of camera 3)
-central_wavelength_olci = {
-    400: 400.664, 412: 412.076,
-    443: 443.183, 490: 490.713,
-    510: 510.639, 560: 560.579,
-    620: 620.632, 665: 665.3719,
-    674: 674.105, 681: 681.66,
-    709: 709.1799, 754: 754.2236,
-    760: 761.8164, 764: 764.9075,
-    767: 767.9734, 779: 779.2685,
-    865: 865.4625, 885: 884.3256,
-    900: 899.3162, 940: 939.02,
-    1020: 1015.9766, 1375: 1375.,
-    1610: 1610., 2250: 2250.,
-}
+# To filter warning message raised by instrument_data reading
+filterwarnings('ignore', message=".*Duplicate dimension.*")
 
 
-def get_sample(kind: str, dir_samples: Optional[Path] = None) -> Path:
-    from eoread.download_eumdac import download_eumdac
+def get_sample(level:int=1, use_cache:bool=True) -> Path:
+    """
+    Bring a OLCI file path to test reading function
 
-    pname = {
-        # France
-        'level1_fr': 'S3B_OL_1_EFR____20220616T101508_20220616T101808_20220617T153119'
-                     '_0179_067_122_2160_MAR_O_NT_002.SEN3',
-        # Rio de la Plata
-        'level2_fr': 'S3A_OL_2_WFR____20240115T131414_20240115T131714_20240115T145301'
-                     '_0179_108_038_3600_MAR_O_NR_003.SEN3'
-    }[kind]
+    Args:
+        level (int, optional): Level of the product. Defaults to 1.
+        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+    """
+    try: 
+        from core.files.cache import cache_dataframe
+        from sand.copernicus_dataspace import DownloadCDSE
+        from sand.sample_product import products
+    except ImportError:
+        log.error('To use get_sample function, you need to install SAND module',
+                  e=ImportError)
+        
+    cachefile = env.getdir('DIR_STATIC')/'query_olci.pickle'
+    if use_cache: cache_deco = cache_dataframe(cachefile)
+    else: cache_deco = lambda x: x
+    
+    sensor = 'SENTINEL-3-OLCI-FR'
+    params = products[sensor][f'level{level}']
+    params.update(collection_sand=sensor, level=int(level))
+    dl = DownloadCDSE()
+    ls = cache_deco(dl.query)(**params)
+    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
 
-    if dir_samples is None:
-        dir_samples = env.getdir("DIR_SAMPLES")
-    target = dir_samples/pname
-    download_eumdac(target)
-    return target
 
-
-def Level1_OLCI(dirname,
-                chunks=500,
-                tie_param=False,
-                init_spectral=True,
-                init_reflectance=False,
-                interp_angles='linear',
-                ):
+def Level1_OLCI(dirname, 
+                chunks: int|tuple = 500,
+                tie_param: bool = False,
+                interp_angles: Literal['atan2','linear','legacy'] = 'linear',
+                metadata_template: list = None, 
+                v1_compat: bool = False):
     '''
     Read an OLCI Level1 product as an xarray.Dataset
+    Formats the Dataset so that it contains the TOA radiances, reflectances, 
+    the angles on the full grid, etc.
+    
+    Arguments:
+        filepath: Path of the ECOSTRESS H5file
+        chunks: Size of chunks for spatial axis
+        tie_params: option to keep tie points in the output dataset
+        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
+        v1_compat: Option to format output xarray.Dataset such as version 1
+        interp_angles:
+            'linear': linear interpolation
+            'atan2': interpolate sin(x) and cos(x), then x = atan2(sin, cos)
+            'legacy': for backward compatibility (nearest for azimuth angles, linear for zenith angles)
     '''
-    ds = read_OLCI(dirname,
-                   level='level1',
-                   chunks=chunks,
-                   tie_param=tie_param,
-                   init_spectral=(init_spectral or init_reflectance),
-                   interp_angles=interp_angles,
-                   )
+    ds = xr.Dataset()
+    dirname = Path(dirname)
+    if (dirname/dirname.name).exists(): dirname = (dirname/dirname.name)
+    if isinstance(chunks, int): chunks = [chunks]*2
+    chunks = dict(rows=chunks[0], columns=chunks[1])
 
-    if init_reflectance:
-        init_Rtoa(ds)
+    # read manifest file for file names and footprint
+    log.debug('Read metadata')
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    manifest = read_xml(dirname/'xfdumanifest.xml')
+    ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
+    
+    # Add latlon footprint
+    footprint = manifest['metadataSection']['metadataObject'][2]
+    footprint = footprint['metadataWrap']['xmlData']['frameSet']['footPrint']
+    idata = iter(footprint['posList'].split())
+    footprint = [(float(v), float(idata.__next__())) for v in idata]
+    lat,lon = zip(*footprint)
+    ds.attrs['footprint_lat'] = lat
+    ds.attrs['footprint_lon'] = lon
+    
+    # Get band informations
+    bandnames, cwvl = [], []
+    info = manifest['metadataSection']['metadataObject'][4]
+    info = info['metadataWrap']['xmlData']['olciProductInformation']
+    for bn, data in info['bandDescriptions'].items():
+        if bn == 'attributes': continue
+        bandnames.append(bn)
+        cwvl.append(data['centralWavelength'])
+    ds = ds.assign({n.cwav.name: ((n.bands.name),cwvl)})
+    ds = ds.assign({n.bnames.name: ((n.bands.name),bandnames)})
+    
+    # Check if product level is 1
+    text = manifest['informationPackageMap']['contentUnit']['attributes']
+    levels = findall(r'Level .', text['textInfo'])
+    assert len(levels) == 1, f'Invalid textinfo in manifest: {text["textInfo"]}'
+    level_from_manifest = levels[0].replace('Level ','level')
+    assert 'level1' == level_from_manifest, \
+        f'expected level1 encountered {level_from_manifest}'
 
+    # Read main product
+    log.debug('Read radiances')
+    ds = _read_bands(ds, dirname, chunks, 1)
+
+    # Geo coordinates
+    geo_coords_file = dirname/'geo_coordinates.nc'
+    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks)
+    for k in geo.variables: 
+        ds[k] = geo[k].astype('float32')
+        ds[k].attrs.update(geo.attrs)
+
+    # dimensions
+    shape = ds.latitude.shape
+    ac_factor = ds.latitude.ac_subsampling_factor
+    al_factor = ds.latitude.al_subsampling_factor
+    ds = ds.rename({'rows':n.rows.name, 'columns':n.columns.name})
+
+    # tie geometry interpolation
+    log.debug('read geometric tie points')
+    tie_geom_file = dirname/'tie_geometries.nc'
+    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
+    tie_ds = tie_ds.assign_coords(
+        tie_columns=da.arange(tie_ds.sizes['tie_columns'])*ac_factor,
+        tie_rows=da.arange(tie_ds.sizes['tie_rows'])*al_factor,
+    )
+    assert tie_ds.tie_columns[0] == ds[n.columns.name][0]
+    assert tie_ds.tie_columns[-1] == ds[n.columns.name][-1]
+    assert tie_ds.tie_rows[0] == ds[n.rows.name][0]
+    assert tie_ds.tie_rows[-1] == ds[n.rows.name][-1]
+
+    if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
+    elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
+    elif interp_angles == 'legacy': interp_aa, interp_za = 'nearest', 'linear'
+    else: raise ValueError(f'Invalid interp_angles "{interp_angles}"')
+    
+    tie_chunks = tuple(chunks.values())
+    shape = dict(tie_rows=shape[0], tie_columns=shape[1])
+    for (ds_full, ds_tie, method) in [
+                (n.sza.name, 'SZA', interp_za),
+                (n.saa.name, 'SAA', interp_aa),
+                (n.vza.name, 'OZA', interp_za),
+                (n.vaa.name, 'OAA', interp_aa),
+            ]:
+        if method == 'atan2':
+            _cos = spatial_resample(da.cos(da.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+            _sin = spatial_resample(da.sin(da.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+            ds[ds_full] = da.degrees(da.arctan2(_sin, _cos))
+        else:
+            ds[ds_full] = spatial_resample(tie_ds[ds_tie], shape, tie_chunks, method)
+            
+        ds[ds_full].attrs = tie_ds[ds_tie].attrs
+        if tie_param: ds[ds_full+'_tie'] = tie_ds[ds_tie]
+
+    # tie meteo interpolation
+    log.debug('read meteorological tie points')
+    tie_meteo_file = dirname/'tie_meteo.nc'
+    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
+    tie = tie.assign_coords(
+                tie_columns = da.arange(tie.sizes['tie_columns'])*ac_factor,
+                tie_rows = da.arange(tie.sizes['tie_rows'])*al_factor,
+                )
+    assert tie.tie_columns[0] == ds[n.columns.name][0]
+    assert tie.tie_columns[-1] == ds[n.columns.name][-1]
+    assert tie.tie_rows[0] == ds[n.rows.name][0]
+    assert tie.tie_rows[-1] == ds[n.rows.name][-1]
+
+    wind0 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=0), shape, tie_chunks, 'linear')
+    wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
+    
+    ds['horizontal_wind'] = da.sqrt(wind0**2 + wind1**2)
+    ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
+    for var_from, var_to in [
+        ('humidity', 'humidity'),
+        ('sea_level_pressure', 'sea_level_pressure'),
+        ('total_columnar_water_vapour', 'total_columnar_water_vapour'),
+        ('total_ozone', 'total_column_ozone')
+        ]:
+        ds[var_to] = spatial_resample(tie[var_from], shape, tie_chunks, 'linear')
+        ds[var_to].attrs = tie[var_from].attrs
+        if tie_param: ds[var_to+'_tie'] = tie[var_from]
+
+    # check subsampling factors
+    assert ((ds.sizes[n.columns.name]-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
+    assert ((ds.sizes[n.rows.name]-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
+
+    # instrument data
+    instrument_data = xr.open_dataset(dirname/'instrument_data.nc',
+                                      engine='h5netcdf',
+                                      mask_and_scale=False,
+                                      # this variable has duplicate dimensions, drop it
+                                      drop_variables='relative_spectral_covariance'
+                                      ).chunk(chunks=chunks)
+    ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
+
+    # quality flags
+    log.debug('read quality masks')
+    qf_file = dirname/'qualityFlags.nc'
+    qf = xr.open_dataset(qf_file, engine='h5netcdf').chunk(chunks)
+    for var in qf.variables: ds[var] = qf[var]
+    
+    # attributes
+    log.debug('add important attributes')
+    meta = manifest['metadataSection']['metadataObject']
+    date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
+    start = datetime.fromisoformat(date['startTime'])
+    stop  = datetime.fromisoformat(date['stopTime'])
+    ds.attrs[n.datetime.name] = (start + (stop - start)/2.).isoformat()
+    
+    platform = meta[1]['metadataWrap']['xmlData']['platform']
+    ds.attrs[n.platform.name] = platform['familyName'] + platform['number']
+    ds.attrs[n.resolution.name] = 500
+    ds.attrs[n.sensor.name] = platform['instrument']['familyName']['attributes']['abbreviation']
+    ds.attrs[n.product_name.name] = dirname.name
+    ds.attrs[n.input_directory.name] = str(dirname.parent)
+
+    ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
+    ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
+    
+    log.debug('compute reflectances')
+    _olci_init_spectral(ds, chunks)
+    ds = init_Rtoa(ds)
+
+    if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
 
 
@@ -103,65 +249,6 @@ def Level2_OLCI(dirname,
     '''
     Read an OLCI Level2 product as an xarray.Dataset
     '''
-    return read_OLCI(dirname,
-                     level='level2',
-                     chunks=chunks,
-                     tie_param=tie_param,
-                     init_spectral=init_spectral,
-                     interp_angles=interp_angles,
-                     )
-
-
-def read_manifest(dirname):
-    # parse file
-    filename = os.path.join(dirname, 'xfdumanifest.xml')
-    bandfilenames = []  # mapping index -> filename
-    with open(filename) as pf:
-        manif = pf.read()
-    dom = parseString(manif)
-    
-    # read product type
-    textinfo = dom.getElementsByTagName('xfdu:contentUnit')[0].attributes['textInfo'].value
-    
-    # read bands and related files
-    for n in dom.getElementsByTagName('dataObject'):
-        inode = n.attributes['ID'].value[:-4]
-        href = n.getElementsByTagName('fileLocation')[0].attributes['href'].value
-        if inode.startswith('Oa'):
-            bandfilenames.append((inode[2:4], href))
-
-    # read footprint
-    n = dom.getElementsByTagName('sentinel-safe:footPrint')[0]
-    footprint = n.getElementsByTagName('gml:posList')[0].lastChild.data
-    idata = iter(footprint.split())
-    footprint = [(float(v), float(idata.__next__())) for v in idata]
-
-    footprint_lat, footprint_lon = zip(*footprint)
-
-    return {'bandfilenames': bandfilenames,
-            'footprint_lat': footprint_lat,
-            'footprint_lon': footprint_lon,
-            'textinfo': textinfo,
-            }
-
-
-def read_OLCI(dirname,
-              chunks=None,
-              level=None,
-              tie_param=False,
-              init_spectral=False,
-              engine=None,
-              interp_angles='linear',
-              ):
-    '''
-    Read an OLCI Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, reflectances, the angles on the full grid, etc.
-    
-    interp_angles:
-        'linear': linear interpolation
-        'atan2': interpolate sin(x) and cos(x), then x = atan2(sin, cos)
-        'legacy': for backward compatibility (nearest for azimuth angles, linear for zenith angles)
-    '''
     ds = xr.Dataset()
 
     dirname = Path(dirname)
@@ -169,79 +256,69 @@ def read_OLCI(dirname,
         dirname = (dirname/dirname.name)
 
     # read manifest file for file names and footprint
-    manifest = read_manifest(dirname)
-    ds.attrs[naming.footprint_lat] = manifest['footprint_lat']
-    ds.attrs[naming.footprint_lon] = manifest['footprint_lon']
-
-    try:
-        level_from_manifest = {
-                'SENTINEL-3 OLCI Level 1 Earth Observation Full Resolution Product': 'level1',
-                'SENTINEL-3 OLCI Level 1 Earth Observation Reduced Resolution Product': 'level1',
-                'SENTINEL-3 OLCI Level 2 Water Product': 'level2',
-                }[manifest['textinfo']]
-    except KeyError:
-        raise Exception('Invalid textinfo in manifest: "{}"'.format(manifest['textinfo']))
-    assert (level is None) or (level == level_from_manifest), \
-        f'expected {level} encountered {level_from_manifest}'
+    manifest = read_xml(dirname/'xfdumanifest.xml')
+    ds.attrs.update(**manifest)
+    
+    # Add latlon footprint
+    footprint = manifest['metadataSection']['metadataObject'][2]
+    footprint = footprint['metadataWrap']['xmlData']['frameSet']['footPrint']
+    idata = iter(footprint['posList'].split())
+    footprint = [(float(v), float(idata.__next__())) for v in idata]
+    lat,lon = zip(*footprint)
+    ds.attrs['footprint_lat'] = lat
+    ds.attrs['footprint_lon'] = lon
+    
+    # Get band informations
+    bandnames, cwvl = [], []
+    info = manifest['metadataSection']['metadataObject'][4]
+    info = info['metadataWrap']['xmlData']['olciProductInformation']
+    for bn, data in info['bandDescriptions'].items():
+        if bn == 'attributes': continue
+        bandnames.append(bn)
+        cwvl.append(data['centralWavelength'])
+    ds = ds.assign({n.cwav.name: (('bands'),cwvl)})
+    ds = ds.assign({n.bnames.name: (('bands'),bandnames)})
+    
+    # Retrieve product level
+    text = manifest['informationPackageMap']['contentUnit']['attributes']
+    levels = findall(r'Level .', text['textInfo'])
+    assert len(levels) == 1, f'Invalid textinfo in manifest: {text["textInfo"]}'
+    level_from_manifest = levels[0].replace('Level ','level')
+    assert 'level2' == level_from_manifest, \
+        f'expected level2 encountered {level_from_manifest}'
 
     # Read main product
-    prod_list = []
-    bands = []
-    for idx, filename in manifest['bandfilenames']:
-        if '_unc' in filename:
-            continue
-        fname = os.path.join(dirname, filename)
-        prod_list.append(xr.open_dataset(fname, chunks=chunks, engine=engine)[os.path.basename(fname)[:-3]])
-        bands.append(olci_band_names[idx])
-
-    index_bands = xr.IndexVariable('bands', bands)
-    if level == 'level1':
-        param_name = naming.Ltoa
-    else:
-        param_name = naming.Rw
-    ds[param_name] = xr.concat(prod_list, dim=index_bands)
+    ds = _read_bands(ds, dirname, chunks, 2)
 
     # Geo coordinates
-    geo_coords_file = os.path.join(dirname, 'geo_coordinates.nc')
-    geo = xr.open_dataset(geo_coords_file, chunks=chunks, engine=engine)
-    for k in geo.variables:
+    geo_coords_file = dirname/'geo_coordinates.nc'
+    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks=chunks)
+    for k in geo.variables: 
         ds[k] = geo[k].astype('float32')
-    ds.attrs.update(geo.attrs)
+        ds[k].attrs.update(geo.attrs)
 
     # dimensions
-    dims2 = ('rows', 'columns')
-    dims3 = ('bands', 'rows', 'columns')
-    if level == 'level1':
-        dims3_full = ('bands', 'rows', 'columns')
-    else:
-        dims3_full = ('bands_full', 'rows', 'columns')
-    assert dims2 == ds.latitude.dims
+    dims2 = ('rows','columns')
     shape2 = ds.latitude.shape
-    assert dims3 == ds[param_name].dims
+    ac_factor = ds.latitude.ac_subsampling_factor
+    al_factor = ds.latitude.al_subsampling_factor
 
     # tie geometry interpolation
-    tie_geom_file = os.path.join(dirname, 'tie_geometries.nc')
-    tie_ds = xr.open_dataset(tie_geom_file, chunks=-1, engine=engine)
+    tie_geom_file = dirname/'tie_geometries.nc'
+    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
-                tie_columns=np.arange(tie_ds.dims['tie_columns'])*ds.ac_subsampling_factor,
-                tie_rows=np.arange(tie_ds.dims['tie_rows'])*ds.al_subsampling_factor,
-                )
+        tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
+        tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
+    )
     assert tie_ds.tie_columns[0] == ds.columns[0]
     assert tie_ds.tie_columns[-1] == ds.columns[-1]
     assert tie_ds.tie_rows[0] == ds.rows[0]
     assert tie_ds.tie_rows[-1] == ds.rows[-1]
 
-    if interp_angles == 'linear':
-        interp_aa = 'linear'
-        interp_za = 'linear'
-    elif interp_angles == 'atan2':
-        interp_aa = 'atan2'
-        interp_za = 'atan2'
-    elif interp_angles == 'legacy':
-        interp_aa = 'nearest'
-        interp_za = 'linear'
-    else:
-        raise ValueError(f'Invalid interp_angles "{interp_angles}"')
+    if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
+    elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
+    elif interp_angles == 'legacy': interp_aa, interp_za = 'nearest', 'linear'
+    else: raise ValueError(f'Invalid interp_angles "{interp_angles}"')
     
     for (ds_full, ds_tie, method) in [
                 ('sza', 'SZA', interp_za),
@@ -272,11 +349,11 @@ def read_OLCI(dirname,
             ds[ds_full+'_tie'] = tie_ds[ds_tie]
 
     # tie meteo interpolation
-    tie_meteo_file = os.path.join(dirname, 'tie_meteo.nc')
-    tie = xr.open_dataset(tie_meteo_file, chunks=-1, engine=engine)
+    tie_meteo_file = dirname/'tie_meteo.nc'
+    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
     tie = tie.assign_coords(
-                tie_columns = np.arange(tie.dims['tie_columns'])*ds.ac_subsampling_factor,
-                tie_rows = np.arange(tie.dims['tie_rows'])*ds.al_subsampling_factor,
+                tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
+                tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
                 )
     assert tie.tie_columns[0] == ds.columns[0]
     assert tie.tie_columns[-1] == ds.columns[-1]
@@ -299,13 +376,13 @@ def read_OLCI(dirname,
         dims2,
         chunks,
     )
-    ds[naming.horizontal_wind] = np.sqrt(wind0**2 + wind1**2)
-    ds[naming.horizontal_wind].attrs = tie[naming.horizontal_wind].attrs
+    ds['horizontal_wind'] = np.sqrt(wind0**2 + wind1**2)
+    ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
     for var_from, var_to in [
         ('humidity', 'humidity'),
-        (naming.sea_level_pressure, naming.sea_level_pressure),
-        (naming.total_columnar_water_vapour, naming.total_columnar_water_vapour),
-        ('total_ozone', naming.total_column_ozone)
+        ('sea_level_pressure', 'sea_level_pressure'),
+        ('total_columnar_water_vapour', 'total_columnar_water_vapour'),
+        ('total_ozone', 'total_column_ozone')
         ]:
         ds[var_to] = DataArray_from_array(
             Interpolator(shape2, tie[var_from]),
@@ -317,101 +394,99 @@ def read_OLCI(dirname,
             ds[var_to+'_tie'] = tie[var_from]
 
     # check subsampling factors
-    assert ((ds.dims['columns']-1)
-            == ds.ac_subsampling_factor*(tie_ds.dims['tie_columns']-1))
-    assert ((ds.dims['rows']-1)
-            == ds.al_subsampling_factor*(tie_ds.dims['tie_rows']-1))
+    assert ((ds.sizes['columns']-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
+    assert ((ds.sizes['rows']-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
 
     # instrument data
-    instrument_data_file = os.path.join(dirname, 'instrument_data.nc')
+    instrument_data_file = dirname/'instrument_data.nc'
     instrument_data = xr.open_dataset(instrument_data_file,
-                                      chunks=chunks,
+                                      engine='h5netcdf',
                                       mask_and_scale=False,
                                       # this variable has duplicate dimensions, drop it
-                                      drop_variables='relative_spectral_covariance',
-                                      engine=engine)
-    if level == 'level2':
-        instrument_data = instrument_data.rename({'bands': 'bands_full'})
-        bands_full = list(olci_band_names.values())
-        assert bands_full == sorted(bands_full)
-        instrument_data = instrument_data.assign_coords(bands_full=bands_full)
+                                      drop_variables='relative_spectral_covariance'
+                                      ).chunk(chunks=chunks)
     for x in instrument_data.variables:
         ds[x] = instrument_data[x]
 
-    if level == 'level1':
-        # quality flags
-        qf_file = os.path.join(dirname, 'qualityFlags.nc')
-        qf = xr.open_dataset(qf_file, chunks=chunks, engine=engine)
-        ds['quality_flags'] = qf.quality_flags
-    else:
-        # chl_nn
-        fname = os.path.join(dirname, 'chl_nn.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
-        ds['chl_nn'] = qf.CHL_NN
+    # chl_nn
+    fname = os.path.join(dirname, 'chl_nn.nc')
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    ds['chl_nn'] = qf.CHL_NN
 
-        # chl_oc4me
-        fname = os.path.join(dirname, 'chl_oc4me.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
-        ds['chl_oc4me'] = qf.CHL_OC4ME
+    # chl_oc4me
+    fname = os.path.join(dirname, 'chl_oc4me.nc')
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    ds['chl_oc4me'] = qf.CHL_OC4ME
 
-        # quality flags
-        fname = os.path.join(dirname, 'wqsf.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
-        ds['wqsf'] = qf.WQSF
+    # quality flags
+    fname = os.path.join(dirname, 'wqsf.nc')
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    ds['wqsf'] = qf.WQSF
 
-        # aerosol properties
-        fname = os.path.join(dirname, 'w_aer.nc')
-        qf = xr.open_dataset(fname, chunks=chunks, engine=engine)
-        ds['A865'] = qf.A865
-        ds['T865'] = qf.T865
+    # aerosol properties
+    fname = os.path.join(dirname, 'w_aer.nc')
+    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    ds['A865'] = qf.A865
+    ds['T865'] = qf.T865
 
     # flags
-    if level == 'level1':
-        ds[naming.flags] = xr.zeros_like(
-            ds.vza,
-            dtype=naming.flags_dtype)
-        qf = getflags(ds.quality_flags)
+    # if level == 'level1':
+        # ds[naming.flags] = xr.zeros_like(
+        #     ds.vza,
+        #     dtype=naming.flags_dtype)
+        # qf = getflags(ds.quality_flags)
 
-        # raise LAND mask when land is raised but not fresh_inland_water
-        raiseflag(
-            ds[naming.flags],
-            "LAND",
-            flags["LAND"],
-            ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
-        )
-        raiseflag(
-            ds[naming.flags],
-            "L1_INVALID",
-            flags["L1_INVALID"],
-            ds.quality_flags & qf["invalid"],
-        )
-
+        # # raise LAND mask when land is raised but not fresh_inland_water
+        # raiseflag(
+        #     ds[naming.flags],
+        #     "LAND",
+        #     flags["LAND"],
+        #     ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
+        # )
+        # raiseflag(
+        #     ds[naming.flags],
+        #     "L1_INVALID",
+        #     flags["L1_INVALID"],
+        #     ds.quality_flags & qf["invalid"],
+        # )
+    
     # attributes
-    dstart = datetime.strptime(ds.start_time, '%Y-%m-%dT%H:%M:%S.%fZ')
-    dstop = datetime.strptime(ds.stop_time, '%Y-%m-%dT%H:%M:%S.%fZ')
-    ds.attrs[naming.datetime] = (dstart + (dstop - dstart)/2.).isoformat()
-    ds.attrs[naming.platform] = 'Sentinel-3'   # FIXME: A or B
-    ds.attrs[naming.sensor] = 'OLCI'
-    ds.attrs[naming.input_directory] = os.path.dirname(dirname)
+    # ds.attrs[naming.datetime] = (dstart + (dstop - dstart)/2.).isoformat()
+    ds.attrs[n.platform.name] = 'Sentinel-3'   # FIXME: A or B
+    ds.attrs[n.sensor.name] = 'OLCI'
+    ds.attrs[n.input_directory.name] = os.path.dirname(dirname)
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
 
-    if init_spectral:
-        olci_init_spectral(ds, chunks)
+    if init_spectral: _olci_init_spectral(ds, chunks)
 
-    return ds.rename({
-        'columns': naming.columns,
-        'rows': naming.rows,
-        })
+    ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
 
-def olci_init_spectral(ds, chunks):
+    return ds.unify_chunks()
+
+
+def _read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
+    
+    prod_list = []
+    for filename in dirname.glob('O*radiance.nc'):
+        data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
+        prod_list.append(data)
+
+    if level == 1: param_name, unit = n.ltoa.name, 'W/sr/m^2'
+    else: param_name, unit = n.rho_w.name, None
+    
+    ds[param_name] = xr.concat(prod_list, dim=n.bands.name)
+    ds[param_name].attrs.update(unit=unit)
+    return ds
+
+def _olci_init_spectral(ds, chunks):
     '''
     Broadcast all spectral (detector-wise) dataset to the whole image
 
     Adds the resulting datasets to `ds`: wav, F0 (in place)
     '''
     # wavelength
-    ds[naming.wav] = xr.apply_ufunc(
+    ds[n.wav.name] = xr.apply_ufunc(
         lambda l0, di: l0[:,0,0,di],
         ds.lambda0,  # (bands x detectors)
         ds.detector_index,   # (rows x columns)
@@ -419,10 +494,10 @@ def olci_init_spectral(ds, chunks):
         input_core_dims=[['detectors'], []],
         output_dtypes=[ds.lambda0.dtype],
     )
-    ds[naming.wav].attrs.update(ds.lambda0.attrs)
+    ds[n.wav.name].attrs.update(ds.lambda0.attrs)
 
     # solar flux
-    ds[naming.F0] = xr.apply_ufunc(
+    ds[n.F0.name] = xr.apply_ufunc(
         lambda sf, di: sf[:,0,0,di],
         ds.solar_flux,  # (bands x detectors)
         ds.detector_index,   # (rows x columns)
@@ -430,16 +505,10 @@ def olci_init_spectral(ds, chunks):
         input_core_dims=[['detectors'], []],
         output_dtypes=[ds.solar_flux.dtype],
     )
-    ds[naming.F0].attrs.update(ds.solar_flux.attrs)
-
-    # central (nominal) wavelength
-    ds[naming.cwav] = xr.DataArray(
-        np.array([central_wavelength_olci[b] for b in ds.bands.data],
-                 dtype='float32'),
-        dims=('bands',))
+    ds[n.F0.name].attrs.update(ds.solar_flux.attrs)
 
 
-def decompose_flags(value, flags):
+def _decompose_flags(value, flags):
     '''
     return list of flag meanings for a given binary value
     flags: dictionary of meaning: value
@@ -462,3 +531,36 @@ def get_valid_l2_pixels(wqsf, flags=[
         bval += int(L2_FLAGS[flag])
 
     return wqsf & bval == 0
+
+
+def _v1_compat(ds):
+    
+    # Reset band coordinates
+    ds = ds.assign_coords(bands=[400, 412, 443, 490, 510, 560, 620, 665, 674, 681, 709, 754, 760, 764, 767, 779, 865, 885, 900, 940, 1020]) 
+    
+    # rename bands variable
+    ds = ds.assign({n.rtoa.name: ((n.bands.name, n.rows.name, n.columns.name), ds[n.rtoa.name].data)})
+    
+    # Add flags
+    ds[n.flags.name] = xr.zeros_like(
+        ds.vza,
+        dtype=n.flags.dtype)
+    qf = getflags(ds.quality_flags)
+
+    # raise LAND mask when land is raised but not fresh_inland_water
+    from .eo import raiseflag
+    raiseflag(
+        ds[n.flags.name],
+        "LAND", 1,
+        ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
+    )
+    raiseflag(
+        ds[n.flags.name],
+        "L1_INVALID", 4,
+        ds.quality_flags & qf["invalid"],
+    )
+    
+    # Complete attributes
+    for k,v in list(ds.longitude.attrs.items())[5:]: ds.attrs[k] = v
+    
+    return ds

@@ -1,38 +1,62 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from pathlib import Path
+import pytest
+import xarray as xr
 
-import numpy as np
-
-from eoread.sgli import Level1_SGLI, calc_central_wavelength, get_sample
-
+from eoread.sgli import get_sample, Level1_SGLI
 from . import generic
-from .generic import indices, param  # noqa
+
 
 sgli_filename = get_sample()
 
-def test_instantiate():
-    Level1_SGLI(sgli_filename)
+@pytest.fixture(scope="module")
+def level1_sgli() -> Path: return get_sample()
+
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
+
+@pytest.fixture
+def sgli_product(level1_sgli, chunks):
+    return Level1_SGLI(level1_sgli, chunks=chunks)
 
 
-def test_central_wavelength():
-    l1 = Level1_SGLI(sgli_filename)
-    _, central_wav = calc_central_wavelength()
+################################################################################
+# Tests for Level-1
+################################################################################
 
-    np.testing.assert_allclose(l1.wav, central_wav)
+def test_instantiation(level1_sgli, chunks):
+    Level1_SGLI(level1_sgli, chunks=chunks)
 
+def test_main(sgli_product):
+    generic.test_main(sgli_product, angle_data=True)
+    
+def test_time(level1_sgli, chunks): 
+    params = {'filepath': level1_sgli, 'chunks': chunks}
+    generic.test_execution_time(Level1_SGLI, params)
 
-def test_main():
-    ds = Level1_SGLI(sgli_filename)
+def test_v1_compat(level1_sgli):
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_SGLI(level1_sgli, v1_compat=True)
+    old = xr.open_dataset(v1_data/(level1_sgli.stem+'_res'))
+    generic.compare_version(l1, old)
+    
+def test_lazy_load(sgli_product):
+    generic.test_lazy_load(sgli_product)
 
-    generic.test_main(ds)
+@pytest.mark.skip()
+@pytest.mark.parametrize('scheduler', [
+    'single-threaded',
+    'threads',
+])
+def test_read(sgli_product, param, indices, scheduler):
+    generic.test_read(sgli_product, param, indices, scheduler)
 
+def test_subset(level1_sgli, chunks): 
+    l1 = Level1_SGLI(level1_sgli, chunks=chunks, metadata_template=[])
+    generic.test_subset(l1)
 
-def test_read(param, indices):
-    ds = Level1_SGLI(sgli_filename)
-    generic.test_read(ds, param, indices, scheduler='sync')
-
-
-def test_subset():
-    ds = Level1_SGLI(sgli_filename)
-    generic.test_subset(ds)
+def test_plot(request, sgli_product):
+    generic.test_plot(request, sgli_product, 4)

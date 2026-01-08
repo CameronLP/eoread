@@ -2,15 +2,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
 import eumdac
-from tqdm import tqdm
-from core.auth import get_auth
-from core.fileutils import filegen
+from core.network.auth import get_auth
+from core.files.fileutils import filegen
 import shutil
-from core.uncompress import uncompress as func_uncompress
+import warnings
+from core.files.uncompress import uncompress as func_uncompress
 
-
-# This module should be deprecated in favour of the DownloadEumDAC class
-# from SAND library
+warnings.warn('Please use DownloadEumDAC class from SAND library')
 
 def query(collection, **kwargs):
     '''

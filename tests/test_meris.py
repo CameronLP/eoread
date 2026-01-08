@@ -2,72 +2,50 @@
 # -*- coding: utf-8 -*-
 
 
+from pathlib import Path
 import pytest
-from matplotlib import pyplot as plt
-from eoread.sample_products import product_getter
-from eoread import eo
-from eoread.meris import Level1_MERIS
-
+from eoread.meris import Level1_MERIS, get_sample
+import xarray as xr
 from . import generic
-from .generic import indices, param
-from .conftest import savefig
 
 
-product = pytest.fixture(params=[
-    # 'prod_meris_L1_20060822',
-    'prod_meris_L1_20080701',
-])(product_getter)
+product = '/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1'
+
+@pytest.fixture(scope="module")
+def level1_meris() -> Path: return get_sample(1)
+
+@pytest.fixture(params=[500, (400, 600)])
+def chunks(request):
+    return request.param
+
+@pytest.fixture
+def product_meris(level1_meris, chunks):
+    return Level1_MERIS(level1_meris, chunks=chunks)
 
 
-@pytest.mark.parametrize('split', [True, False])
-def test_instantiation(product, split):
-    Level1_MERIS(product['path'], split=split)
+def test_instantiation(level1_meris, chunks):
+    Level1_MERIS(level1_meris, chunks=chunks)
 
+def test_main(product_meris):
+    generic.test_main(product_meris, angle_data=True)
+    
+def test_time(level1_meris, chunks): 
+    params = {'filepath': level1_meris, 'chunks': chunks}
+    generic.test_execution_time(Level1_MERIS, params)
 
-def test_preview(product, param, request):
-    """
-    Generate browses of various products
-    """
-    plt.figure()
-    l1 = Level1_MERIS(product['path'])
-    eo.init_Rtoa(l1)
-    if l1[param].ndim == 2:
-        plt.imshow(l1[param][::10, ::10])
-    elif l1[param].ndim == 3:
-        plt.imshow(l1[param][-1, ::10, ::10])
-    plt.colorbar()
-    savefig(request)
-
-
-def test_main(product):
-    l1 = Level1_MERIS(product['path'])
-    eo.init_Rtoa(l1)
-    generic.test_main(l1)
-
-
-@pytest.mark.parametrize('chunks', [500, (300, 500)])
-@pytest.mark.parametrize('scheduler', [
-    'single-threaded',
-    'threads',
-    # 'processes',
-    # epr_api does not work with processes
-    # (TypeError: no default __reduce__ due to non-trivial __cinit__)
-])
-def test_read(product, param, indices, chunks, scheduler):
-    l1 = Level1_MERIS(product['path'], chunks=chunks)
-    eo.init_Rtoa(l1)
-    generic.test_read(l1, param, indices, scheduler)
-
-
-def test_subset(product):
-    l1 = Level1_MERIS(product['path'])
+def test_v1_compat(level1_meris):
+    v1_data = Path('/mnt/ceph/data/eoread')
+    l1 = Level1_MERIS(level1_meris, v1_compat=True)
+    old = xr.open_dataset(v1_data/(level1_meris.stem+'_res'))
+    generic.compare_version(l1, old)
+    
+def test_lazy_load(product_meris):
+    generic.test_lazy_load(product_meris)
+    
+def test_subset(level1_meris, chunks): 
+    l1 = Level1_MERIS(level1_meris, chunks=chunks, metadata_template=[])
     generic.test_subset(l1)
 
-
-def test_flag(product):
-    """
-    Check that flags are properly raised
-    """
-    l1 = Level1_MERIS(product['path'])
-    assert (l1.flags > 0).any()
+def test_plot(request, product_meris):
+    generic.test_plot(request, product_meris, 4)
 
