@@ -10,7 +10,6 @@ from datetime import datetime
 from dateutil import parser
 from pathlib import Path
 
-from eoread.process import map_blocks
 from eoread.hdf4 import load_hdf4
 from eoread import eo
 from dask.array import map_blocks
