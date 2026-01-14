@@ -12,7 +12,7 @@ from eoread import eo
 resolutions = ['10', '20', '60']
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def level1_msi() -> Path: return get_sample(1)
 
 @pytest.fixture(params=resolutions)

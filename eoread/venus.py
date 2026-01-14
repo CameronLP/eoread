@@ -381,33 +381,24 @@ def get_SRF(
 
     return ds
 
-def get_sample(level:int=1, use_cache:bool=True) -> Path:
+def get_sample(level:int=1) -> Path:
     """
     Bring a VENµS directory path to test reading function
 
     Args:
         level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
     # return Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
     try: 
-        from core.files import cache_dataframe
         from sand.geodes import DownloadCNES
         from sand.sample_product import products
     except ImportError:
-        log.error('To use get_sample function, you need to install SAND module',
-                  e=ImportError)
-        
-    cachefile = env.getdir('DIR_STATIC')/'query_venus.pickle'
-    if use_cache: cache_deco = cache_dataframe(cachefile)
-    else: cache_deco = lambda x: x
+        raise ImportError('To use get_sample function, you need to install SAND module')
     
     sensor = 'VENUS'
-    params = products[sensor][f'level{level}']
-    params.update(collection_sand=sensor, level=int(level))
+    prod_id = products[sensor][f'l{level}_product']
     dl = DownloadCNES()
-    ls = cache_deco(dl.query)(**params)
-    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
+    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
 
 def _v1_compat(ds, chunks):
     

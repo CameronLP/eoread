@@ -220,7 +220,7 @@ class _READ_MERIS:
         assert r.dtype == self.dtype
         return r[sel[0], sel[1]]
 
-def get_sample(level: int=1, use_cache:bool=True) -> Path:
+def get_sample(level: int=1) -> Path:
     """
     Bring a MERIS file path to test reading function
 

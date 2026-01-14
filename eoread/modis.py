@@ -307,7 +307,7 @@ class _parser_attrs:
         
         return False
 
-def get_sample(level: int=1, use_cache:bool=True):
+def get_sample(level: int=1):
     """
     Bring a MODIS file path to test reading function
 

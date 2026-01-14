@@ -263,23 +263,15 @@ def get_sample(level:int, use_cache:bool=True) -> Path:
         level (int, optional): Level of the product. Defaults to 1.
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
-    # FIXME
-    return Path('data/sample_products/LC08_L1TP_180054_20250104_20250111_02_T1')
+    # # FIXME
+    # return Path('data/sample_products/LC08_L1TP_180054_20250104_20250111_02_T1')
     try: 
-        from core.files import cache_dataframe
         from sand.usgs import DownloadUSGS
         from sand.sample_product import products
     except ImportError:
-        log.error('To use get_sample function, you need to install SAND module',
-                  e=ImportError)
-        
-    cachefile = env.getdir('DIR_STATIC')/f'query_l9_oli_{level}.pickle'
-    if use_cache: cache_deco = cache_dataframe(cachefile)
-    else: cache_deco = lambda x: x
+        raise ImportError('To use get_sample function, you need to install SAND module')
     
     sensor = 'LANDSAT-8-OLI'
-    params = products[sensor][f'level{level}']
-    params.update(collection_sand=sensor, level=int(level))
+    prod_id = products[sensor][f'l{level}_product']
     dl = DownloadUSGS()
-    ls = cache_deco(dl.query)(**params)
-    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
+    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))

@@ -9,8 +9,8 @@ import pytest
 import xarray as xr
 
 
-product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
-product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
+product_l1 = pytest.fixture(lambda: get_sample(1), scope='session')
+product_l2 = pytest.fixture(lambda: get_sample(2), scope='session')
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):

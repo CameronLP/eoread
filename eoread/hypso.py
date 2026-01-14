@@ -80,7 +80,7 @@ def Level1_HYPSO(filepath: str|Path,
     return drop_unused_dims(ds).unify_chunks()
 
 
-def get_sample(level: int=1, use_cache:bool=True) -> Path:
+def get_sample(level: int=1) -> Path:
     """
     Bring a HYPSO file path to test reading function
 

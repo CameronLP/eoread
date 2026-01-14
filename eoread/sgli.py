@@ -16,7 +16,7 @@ from core.tools import merge, drop_unused_dims
 from core import env, log
 
 
-def get_sample(level: int=1, use_cache:bool=True) -> Path:
+def get_sample(level: int=1) -> Path:
     """
     Bring a SGLI file path to test reading function
 

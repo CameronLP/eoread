@@ -6,7 +6,7 @@ from eoread.ecostress import Level1_ECOSTRESS, get_sample
 from . import generic
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def level1C_ecostress(): return get_sample(1)
 
 @pytest.fixture(params=[500, (400, 600)])

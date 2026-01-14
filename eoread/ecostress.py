@@ -12,10 +12,12 @@ import dask.array as da
 
 user_guide = 'https://ecostress.jpl.nasa.gov/downloads/userguides/1_ECOSTRESS_L1_UserGuide_20190619.pdf'
 
-def Level1_ECOSTRESS(filepath: Path | str, 
-                     chunks: int = 500, 
-                     metadata_template: list = None,
-                     v1_compat: bool = False):
+def Level1_ECOSTRESS(
+        filepath: Path | str, 
+        chunks: int = 500, 
+        metadata_template: list|None = None,
+        v1_compat: bool = False
+    ):
     '''
     Read an ECOSTRESS Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
@@ -30,7 +32,7 @@ def Level1_ECOSTRESS(filepath: Path | str,
     
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
-    if isinstance(chunks, int): chunks = [chunks]*2    
+    chunks = [chunks]*2    
     
     # Revize variables    
     log.debug('Reading h5file')
@@ -202,32 +204,23 @@ def _v1_compat(ds):
     return ds
 
 
-def get_sample(level: int=1, use_cache:bool=True) -> Path:
+def get_sample(level: int=1) -> Path:
     """
     Bring a ECOSTRESS file path to test reading function
 
     Args:
         level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
     try: 
-        from core.files import cache_dataframe
         from sand.nasa import DownloadNASA
         from sand.sample_product import products
     except ImportError:
-        log.error('To use get_sample function, you need to install SAND module',
-                  e=ImportError)
-        
-    cachefile = env.getdir('DIR_STATIC')/f'query_ecostress_{level}.pickle'
-    if use_cache: cache_deco = cache_dataframe(cachefile)
-    else: cache_deco = lambda x: x
+        raise ImportError('To use get_sample function, you need to install SAND module')
     
-    sensor = 'ECOSTRESS'
-    params = products[sensor][f'level{level}']
-    params.update(collection_sand=sensor, level=int(level))
+    sensor = 'ISS-ECOSTRESS'
+    prod_id = products[sensor][f'l{level}_product']
     dl = DownloadNASA()
-    ls = cache_deco(dl.query)(**params)
-    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
+    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
 
 class _parser:
     

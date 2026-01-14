@@ -352,7 +352,7 @@ def Level2_MSI(dirname):
     raise NotImplementedError
 
 
-def get_sample(level:int=1, use_cache:bool=True) -> Path:
+def get_sample(level:int=1) -> Path:
     """
     Bring a MSI directory path to test reading function
 
@@ -361,23 +361,15 @@ def get_sample(level:int=1, use_cache:bool=True) -> Path:
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
     try: 
-        from core.files import cache_dataframe
         from sand.copernicus_dataspace import DownloadCDSE
         from sand.sample_product import products
     except ImportError:
-        log.error('To use get_sample function, you need to install SAND module',
-                  e=ImportError)
-    
-    cachefile = env.getdir('DIR_STATIC')/'query_s2.pickle'
-    if use_cache: cache_deco = cache_dataframe(cachefile)
-    else: cache_deco = lambda x: x
+        raise ImportError('To use get_sample function, you need to install SAND module')
     
     sensor = 'SENTINEL-2-MSI'
-    params = products[sensor][f'level{level}']
-    params.update(collection_sand=sensor, level=int(level))
+    prod_id = products[sensor][f'l{level}_product']
     dl = DownloadCDSE()
-    ls = cache_deco(dl.query)(**params)
-    return dl.download(ls.iloc[0], env.getdir('DIR_SAMPLES'))
+    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
 
 def _v1_compat(ds):
     

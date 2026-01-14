@@ -14,7 +14,7 @@ from eoread.common import DataArray_from_array, timeit
 from eoread import msi
 from eoread.gsw import GSW
 from core.files.fileutils import PersistentList
-from core.interpolate import interp, Linear
+from core.interpolate import interp, Linear, Nearest
 from core.tools import split, merge, wrap, raiseflag, convert, locate, xrcrop
 from time import sleep
 from pathlib import Path
@@ -400,19 +400,29 @@ def test_xrcrop(idx, min_max, expected_len):
     print('Cropped values are', cropped.x.values)
     assert len(cropped.x) == expected_len
 
+@pytest.fixture(scope="session")
+def level1_msi() -> Path: return msi.get_sample(1)
 
 @pytest.mark.parametrize('method', ["nearest", "interp"])
-def test_xrcrop_gsw(request, method):
+def test_xrcrop_gsw(request, method, level1_msi):
     """
     Test the application of xrcrop on gsw.
     This allows .computing the result.
     Otherwise, the further .sel is very slow over large arrays.
     """
-    ds = msi.Level1_MSI(msi.get_sample(), v1_compat=True)
+    ds = msi.Level1_MSI(level1_msi, v1_compat=True)
 
     plt.figure()
     ds.Rtoa.sel(bands=865).plot.imshow(origin='upper')
     conftest.savefig(request)
+    
+    # Select operator
+    if method == 'interp':
+        operator = Linear
+    elif method == 'nearest':
+        operator = Nearest
+    else:
+        raise ValueError
 
     gsw = GSW(agg=4)
     with timeit("Optimize"):
@@ -428,8 +438,8 @@ def test_xrcrop_gsw(request, method):
     with timeit("sel"):
         data = interp(
             gsw,
-            latitude=Linear(ds.latitude),
-            longitude=Linear(ds.longitude),
+            latitude=operator(ds.latitude),
+            longitude=operator(ds.longitude),
         )
     with timeit("compute"):
         print(data.dtype)

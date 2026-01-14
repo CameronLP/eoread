@@ -9,8 +9,8 @@ from eoread.landsat_oli import get_sample, Level1_OLI
 from . import generic
 
 
-product_l1 = pytest.fixture(lambda: get_sample(1), scope='module')
-product_l2 = pytest.fixture(lambda: get_sample(2), scope='module')
+product_l1 = pytest.fixture(lambda: get_sample(1), scope='session')
+product_l2 = pytest.fixture(lambda: get_sample(2), scope='session')
 
 
 @pytest.fixture(params=[500, (400, 600)])

@@ -9,11 +9,11 @@ readme = "README.md"
 dependencies = [
     "lxml",
     "pyproj",
-    "pyhdf",
     "pysolar",
     "pyepr",
     "rioxarray",
-    "cdsapi"
+    "cdsapi",
+    "shapely"
 ]
 
 [project.optional-dependencies]
@@ -37,6 +37,7 @@ eotools = { git = "git+https://github.com/hygeos/eotools.git" }
 [tool.pixi.tasks]
 tests = "pytest tests/"
 reader = "python3 scripts/eval_readers.py"
+clean_sample = "echo SAMPLE_DATA/*"
 
 [tool.pixi.dependencies]
 pytest = "*"
@@ -47,7 +48,8 @@ ipykernel = "*"
 libgdal-jp2openjpeg = "*"  # Required to read compress jp2 file in MSI reader
 cdsapi = "*"
 eumdac = "*"
-shapely = "*"
+pyhdf = "*"
+numba = "*"
 
 [tool.pixi.environments]
 default = { features = ["hyp", "sys"], solve-group = "default" }
