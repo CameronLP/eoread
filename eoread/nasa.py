@@ -13,7 +13,6 @@ How to install SeaDAS OCSSW (see https://seadas.gsfc.nasa.gov/downloads/)
 """
 
 from pathlib import Path
-import warnings
 import xarray as xr
 import numpy as np
 from datetime import datetime
@@ -24,6 +23,87 @@ from core.network.download import download_url
 from core.geo.naming import names as n
 from .common import DataArray_from_array
 from . import eo
+
+
+def check_nasa_download(filename):
+    '''
+    sanity check of file downloaded on NASA earthdata
+    check that downloaded file is not HTML
+    raise an error if it is not the case (authentication error)
+    '''
+    errormsg = 'Error authenticating to NASA EarthData for downloading ancillary data. ' \
+    'Please provide authentication through .netrc. See more information on ' \
+    'https://support.earthdata.nasa.gov/index.php?/Knowledgebase/Article/View/43/21/how-to-access-urs-gated-data-with-curl-and-wget'
+    with open(filename, 'rb') as fp:
+        filehead = fp.read(100)
+        if filehead.startswith((
+            b'<!DOCTYPE html>',
+            # may be the case after Oct 2023 when NASA changed the APIs
+            b'404 Error',
+            b'403 Error')):
+            raise RuntimeError(errormsg)
+
+
+def nasa_download(product, dirname, tmpdir=None, verbose=True, wget_extra=""):
+    '''
+    Download a product on oceandata.sci.gsfc.nasa.gov
+
+    Example:
+        nasa_download('A2005005002500.L1A_LAC.bz2', '/data/')
+    
+    Note: a full URL can be provided instead of just the product name
+    '''
+    if product.startswith('https://'):
+        url = product
+    elif product.startswith('S3'):
+        url= f'https://oceandata.sci.gsfc.nasa.gov/sentinel/getfile/{product}.zip'
+    else:
+        url = f'https://oceandata.sci.gsfc.nasa.gov/getfile/{product}'
+
+    return download_url(
+        url,
+        dirname,
+        verbose=verbose,
+        tmpdir=tmpdir,
+        wget_opts='-nv --load-cookies ~/.urs_cookies --save-cookies ~/.urs_cookies ' \
+                  '--keep-session-cookies --auth-no-challenge '+wget_extra,
+        check_function=check_nasa_download,
+        lock_timeout=3600,
+        if_exists='skip',
+        )
+
+
+def nasa_download_uncompress(product, dirname) -> Path:
+    """
+    Download a product on oceandata.sci.gsfc.nasa.gov with
+    `nasa_download` and uncompress the result
+    """
+    return uncompress_decorator()(nasa_download)(product, dirname)
+
+
+def nasa_search(**kwargs):
+    """
+    Search for files on oceancolor server
+
+    Args are passed directly to the query
+
+    Example:
+
+    nasa_search(sensor='seawifs',
+                sdate='2000-04-17',
+                edate='2000-04-17',
+                dtype='L1',
+                search='*L1A_GAC'):
+
+    See https://oceancolor.gsfc.nasa.gov/data/download_methods/#api
+    """
+    query = [f'{k}={v}' for k, v in kwargs.items()]
+    query += ['addurl=0', 'results_as_file=1']
+
+    query_str = '&'.join(query)
+    cmd = f'wget -q --post-data="{query_str}" -O - https://oceandata.sci.gsfc.nasa.gov/api/file_search'
+    return subprocess.check_output(cmd, shell=True).decode().split()
+
 
 def Level1_NASA(filename, chunks=500):
     ds = xr.open_dataset(filename, chunks=chunks)
