@@ -27,10 +27,10 @@ def init_Rtoa(ds: xr.Dataset):
     init_geometry(ds)
 
     # TOA reflectance
-    if n.rtoa.name not in ds:
-        ds = ds.assign({n.rtoa.name: ((n.bands_nvis.name,n.rows.name,n.columns.name), 
-                       (da.pi*ds[n.ltoa.name]/(ds.mus*ds[n.F0.name])).data)})
-        ds[n.rtoa.name].attrs.update(unit=None)
+    if str(n.rtoa) not in ds:
+        ds = ds.assign({str(n.rtoa): ((str(n.bands_nvis),str(n.rows),str(n.columns)), 
+                       (da.pi*ds[str(n.ltoa)]/(ds.mus*ds[str(n.F0)])).data)})
+        ds[str(n.rtoa)].attrs.update(unit=None)
 
     return ds
 
@@ -53,18 +53,18 @@ def init_geometry(ds: xr.Dataset,
     '''
 
     # mus and muv
-    if n.mus.name not in ds:
-        ds[n.mus.name] = da.cos(da.radians(ds.sza))
-        ds[n.mus.name].attrs['description'] = n.mus.desc
-    if n.muv.name not in ds:
-        ds[n.muv.name] = da.cos(da.radians(ds.vza))
-        ds[n.muv.name].attrs['description'] = n.muv.desc
+    if str(n.mus) not in ds:
+        ds[str(n.mus)] = da.cos(da.radians(ds.sza))
+        ds[str(n.mus)].attrs['description'] = n.mus.desc
+    if str(n.muv) not in ds:
+        ds[str(n.muv)] = da.cos(da.radians(ds.vza))
+        ds[str(n.muv)].attrs['description'] = n.muv.desc
 
     # relative azimuth angle
-    if n.raa.name not in ds:
-        raa = ds[n.saa.name] - ds[n.vaa.name]
+    if str(n.raa) not in ds:
+        raa = ds[str(n.saa)] - ds[str(n.vaa)]
         raa = raa % 360
-        ds[n.raa.name] = raa.where(raa < 180, 360-raa)
+        ds[str(n.raa)] = raa.where(raa < 180, 360-raa)
         ds.raa.attrs['description'] = n.raa.desc
         ds.raa.attrs['unit'] = n.raa.unit
 

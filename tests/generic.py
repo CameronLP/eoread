@@ -45,79 +45,79 @@ def test_main(ds, angle_data):
     ds.chunks
 
     # check spatial dimensions
-    log.check(n.rows.name in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
-    log.check(n.columns.name in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
+    log.check(str(n.rows) in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
+    log.check(str(n.columns) in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
     
     # Check variables
     check_vars(ds)
     
     # Check band dimensions have correct coordinates
-    for bands in [n.bands.name, n.bands_nvis.name, n.bands_ir.name]:
+    for bands in [str(n.bands), str(n.bands_nvis), str(n.bands_ir)]:
         if bands not in ds.dims: continue
         log.check(ds[bands].dtype == int, f'Coordinates of {bands} should be integers')
-        if bands == n.bands.name: continue
-        log.check(all(b.data in ds[n.bands.name] for b in ds[bands]))
+        if bands == str(n.bands): continue
+        log.check(all(b.data in ds[str(n.bands)] for b in ds[bands]))
     
     # check spectral dimensions
-    if n.ltoa.name in ds:
-        log.check(n.bands.name in ds[n.ltoa.name].dims, 
-        f'{n.ltoa.name} variable should have a dimension called {n.bands.name}')
+    if str(n.ltoa) in ds:
+        log.check(str(n.bands) in ds[str(n.ltoa)].dims, 
+        f'{str(n.ltoa)} variable should have a dimension called {str(n.bands)}')
         
-    if n.rtoa.name in ds:
-        log.check(n.bands_nvis.name in ds[n.rtoa.name].dims, 
-        f'{n.rtoa.name} variable should have a dimension called {n.bands_nvis.name}')
+    if str(n.rtoa) in ds:
+        log.check(str(n.bands_nvis) in ds[str(n.rtoa)].dims, 
+        f'{str(n.rtoa)} variable should have a dimension called {str(n.bands_nvis)}')
         
-    if n.bt.name in ds:
-        log.check(n.bands_ir.name in ds[n.bt.name].dims, 
-        f'{n.bt.name} variable should have a dimension called {n.bands_ir.name}')
+    if str(n.bt) in ds:
+        log.check(str(n.bands_ir) in ds[str(n.bt)].dims, 
+        f'{str(n.bt)} variable should have a dimension called {str(n.bands_ir)}')
     
     # Check that following variables exist
     for name, longname in [
-            (n.cwav.name, n.cwav.desc),
-            (n.bnames.name, n.bnames.desc),
-            (n.lat.name, n.lat.desc),
-            (n.lon.name, n.lon.desc),
+            (str(n.cwav), n.cwav.desc),
+            (str(n.bnames), n.bnames.desc),
+            (str(n.lat), n.lat.desc),
+            (str(n.lon), n.lon.desc),
         ]:
         log.check(name in ds, 
         f'Dataset should contain a variable for {longname} named {name}')
 
     # check that attributes exist and its type
     for name, longname, types in [
-            (n.datetime.name, n.datetime.desc, str),
-            (n.platform.name, n.platform.desc, str),
-            (n.sensor.name, n.sensor.desc, str),            
-            (n.resolution.name, n.resolution.desc, int),
-            (n.product_name.name, n.product_name.desc, str), 
-            (n.input_directory.name, n.input_directory.desc, str),
+            (str(n.datetime), n.datetime.desc, str),
+            (str(n.platform), n.platform.desc, str),
+            (str(n.sensor), n.sensor.desc, str),            
+            (str(n.resolution), n.resolution.desc, int),
+            (str(n.product_name), n.product_name.desc, str), 
+            (str(n.input_directory), n.input_directory.desc, str),
         ]:
         log.check(name in ds.attrs, f'Dataset should contain a attribute named {name}')
         log.check(isinstance(ds.attrs[name], types), f'Wrong type for attribute {name}')
     
     # Check that datetime is in isoformat
-    try: datetime.fromisoformat(ds.attrs[n.datetime.name])
+    try: datetime.fromisoformat(ds.attrs[str(n.datetime)])
     except: log.error('Issue to read the format of datetime. '
-                      f'Should be isoformat, got {ds.attrs[n.datetime.name]}')
+                      f'Should be isoformat, got {ds.attrs[str(n.datetime)]}')
 
     # Check that footprints are 2-dimensional 
-    dims2 = (n.rows.name, n.columns.name)
-    log.check(ds[n.lat.name].dims == dims2, 'Latitude should be 2-dimensional')
-    log.check(ds[n.lon.name].dims == dims2, 'Longitude should be 2-dimensional')
+    dims2 = (str(n.rows), str(n.columns))
+    log.check(ds[str(n.lat)].dims == dims2, 'Latitude should be 2-dimensional')
+    log.check(ds[str(n.lon)].dims == dims2, 'Longitude should be 2-dimensional')
     
     # test angle data
     if angle_data:
         
         for name, longname in [
-                (n.vaa.name, n.vaa.desc),
-                (n.vza.name, n.vza.desc),
-                (n.saa.name, n.saa.desc),
-                (n.sza.name, n.sza.desc),
+                (str(n.vaa), n.vaa.desc),
+                (str(n.vza), n.vza.desc),
+                (str(n.saa), n.saa.desc),
+                (str(n.sza), n.sza.desc),
             ]:
             log.check(name in ds, 
             f'Dataset should contain a variable for {longname} named {name}')
 
 def test_plot(request, ds, index_band):
-    if n.ltoa.name in ds: bands, var = n.bands.name, n.ltoa.name
-    else: bands, var = n.bands_nvis.name, n.rtoa.name
+    if str(n.ltoa) in ds: bands, var = str(n.bands), str(n.ltoa)
+    else: bands, var = str(n.bands_nvis), str(n.rtoa)
     ds[var].isel({bands:index_band}).plot.imshow()
     savefig(request)
 
@@ -126,8 +126,8 @@ def test_execution_time(reader_fn, params: dict):
 
 def test_subset(ds):
     sub = ds.isel({
-        n.rows.name:slice(300, 400),
-        n.columns.name:slice(500, 570)})
+        str(n.rows):slice(300, 400),
+        str(n.columns):slice(500, 570)})
 
     with TemporaryDirectory() as tmpdir,\
             dask.config.set(scheduler='single-threaded'):
@@ -165,7 +165,7 @@ def compare_version(v2, v1):
 
 def test_lazy_load(ds):
     
-    specifics = [n.bnames.name, n.cwav.name]
+    specifics = [str(n.bnames), str(n.cwav)]
     
     # Check that variables are lazy-loaded except tie_points and some specific variables
     for key, variable in ds.variables.items():
@@ -177,12 +177,12 @@ def test_lazy_load(ds):
 def check_vars(ds):
     
     # Check that at least one spectral variable is present
-    log.check((n.ltoa.name in ds) or (n.rtoa.name in ds) or (n.bt.name in ds), 
+    log.check((str(n.ltoa) in ds) or (str(n.rtoa) in ds) or (str(n.bt) in ds), 
     'No acquisitions stored in Dataset. Output Dataset should contain at least '
-    f'{n.ltoa.name} or {n.rtoa.name}  or {n.bt.name}')
+    f'{str(n.ltoa)} or {str(n.rtoa)}  or {str(n.bt)}')
     
     # Check that each variable has a unit attribute
-    for name in [n.ltoa.name, n.rtoa.name, n.bt.name]:
+    for name in [str(n.ltoa), str(n.rtoa), str(n.bt)]:
         if name not in ds: continue
         log.check(hasattr(ds[name],'unit'), f'{name} does not have a unit field')
     

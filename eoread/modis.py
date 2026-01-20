@@ -54,9 +54,9 @@ def Level1_MODIS(filepath: Path | str,
     log.debug('Reading h4file')
     l1 = load_hdf4(filepath, trim_dims=True)
     l1 = l1.rename_vars({
-        'Latitude': n.lat.name, 'Longitude': n.lon.name,
-        'SensorZenith': n.vza.name, 'SensorAzimuth': n.vaa.name,
-        'SolarZenith': n.sza.name, 'SolarAzimuth': n.saa.name
+        'Latitude': str(n.lat), 'Longitude': str(n.lon),
+        'SensorZenith': str(n.vza), 'SensorAzimuth': str(n.vaa),
+        'SolarZenith': str(n.sza), 'SolarAzimuth': str(n.saa)
     })
  
     # Read metadata
@@ -69,13 +69,13 @@ def Level1_MODIS(filepath: Path | str,
     
     # Add band information
     log.debug('Add central wavelength')
-    l1 = l1.assign_coords({n.bands.name: da.arange(len(bnames),dtype=int)+1})
-    l1 = l1.assign({n.bnames.name: ((n.bands.name), da.array(bnames).astype(str)),
-                    n.cwav.name: ((n.bands.name), cwvl)})
+    l1 = l1.assign_coords({str(n.bands): da.arange(len(bnames),dtype=int)+1})
+    l1 = l1.assign({str(n.bnames): ((str(n.bands)), da.array(bnames).astype(str)),
+                    str(n.cwav): ((str(n.bands)), cwvl)})
     
     # Rescale angles data
     log.debug('Read and compute geometric angles')
-    for varname in [n.vza.name, n.vaa.name, n.sza.name, n.saa.name]:
+    for varname in [str(n.vza), str(n.vaa), str(n.sza), str(n.saa)]:
         l1[varname] = l1[varname].scale_factor * l1[varname]
 
     # Change radiometry of input data   
@@ -86,9 +86,9 @@ def Level1_MODIS(filepath: Path | str,
     
     # Upscale latlon variables
     log.debug('upscale latlon variables')
-    shape = {k:v for k,v in zip(l1[n.lat.name].dims, l1[n.ltoa.name].shape[1:])}
-    l1[n.lat.name] = spatial_resample(l1[n.lat.name], shape, chunks)
-    l1[n.lon.name] = spatial_resample(l1[n.lon.name], shape, chunks)
+    shape = {k:v for k,v in zip(l1[str(n.lat)].dims, l1[str(n.ltoa)].shape[1:])}
+    l1[str(n.lat)] = spatial_resample(l1[str(n.lat)], shape, chunks)
+    l1[str(n.lon)] = spatial_resample(l1[str(n.lon)], shape, chunks)
 
     # Change dimensions name and update coordinates
     l1 = _rename_dims(l1)
@@ -98,14 +98,14 @@ def Level1_MODIS(filepath: Path | str,
     attributes = l1.attrs
     
     l1.attrs = {}
-    l1.attrs[n.input_directory.name] = str(filepath.parent)
-    l1.attrs[n.resolution.name]   = 1000
-    l1.attrs[n.datetime.name]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
+    l1.attrs[str(n.input_directory)] = str(filepath.parent)
+    l1.attrs[str(n.resolution)]   = 1000
+    l1.attrs[str(n.datetime)]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
     l1.attrs['night']             = str(metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['DAYNIGHTFLAG']['VALUE'] != '"Day"')
-    l1.attrs[n.product_name.name] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
-    l1.attrs[n.platform.name]     = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDPLATFORMSHORTNAME']['VALUE'][1:-1]
-    l1.attrs[n.sensor.name]       = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDSENSORSHORTNAME']['VALUE'][1:-1]
-    l1.attrs[n.shortname.name]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(n.product_name)] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
+    l1.attrs[str(n.platform)]     = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDPLATFORMSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(n.sensor)]       = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDSENSORSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(n.shortname)]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
     l1.attrs['version']           = int(metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID']['VALUE'])
     l1.attrs['user_guide']        = user_guide
 
@@ -140,8 +140,8 @@ def _transform_radiometry(level1, chunks):
         data_arrays.append(nd.rename({rad_bandname : "bands_ltoa"}))
 
     # Combine into one dimension
-    level1[n.ltoa.name] = xr.concat(data_arrays, dim="bands_ltoa")
-    level1[n.ltoa.name] = level1[n.ltoa.name].chunk([1]+list(chunks))
+    level1[str(n.ltoa)] = xr.concat(data_arrays, dim="bands_ltoa")
+    level1[str(n.ltoa)] = level1[str(n.ltoa)].chunk([1]+list(chunks))
 
     # Compute Reflectance
     data_arrays = []
@@ -158,8 +158,8 @@ def _transform_radiometry(level1, chunks):
         data_arrays.append(nd.rename({rad_bandname : "bands_rtoa"}))
 
     # Combine into one dimension
-    level1[n.rtoa.name] = xr.concat(data_arrays, dim="bands_rtoa")
-    level1[n.rtoa.name] = level1[n.rtoa.name].chunk([1]+list(chunks))
+    level1[str(n.rtoa)] = xr.concat(data_arrays, dim="bands_rtoa")
+    level1[str(n.rtoa)] = level1[str(n.rtoa)].chunk([1]+list(chunks))
     level1 = level1.assign_coords(bands_rtoa=da.arange(len(level1['bands_rtoa']))+1)
     
     return level1.drop_vars(rad_varnames)
@@ -174,26 +174,26 @@ def _aggregate_vars(l1, chunks):
     l1[uncert_label] = xr.concat(uncert_vars, dim="b").chunk([1]+list(chunks))
     l1 = l1.drop_vars(uncert_names)
     
-    return l1.rename(b=n.bands.name)
+    return l1.rename(b=str(n.bands))
 
 
 def _rename_dims(l1):
     
     revize_dims = {
-        '2*nscans:MODIS_SWATH_Type_L1B': n.rows.name+'_red', 
-        '1KM_geo_dim:MODIS_SWATH_Type_L1B': n.columns.name+'_red', 
-        '10*nscans:MODIS_SWATH_Type_L1B': n.rows.name, 
-        'Max_EV_frames:MODIS_SWATH_Type_L1B': n.columns.name,
-        'new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B': n.bands_ir.name,
-        'new_Band_250M:MODIS_SWATH_Type_L1B': n.bands.name + '_250M',
-        'new_Band_500M:MODIS_SWATH_Type_L1B': n.bands.name + '_500M', 
-        'new_Band_1KM_RefSB:MODIS_SWATH_Type_L1B': n.bands.name + '_1KM_NVIS',
-        'bands_ltoa': n.bands.name, 
-        'bands_rtoa': n.bands_nvis.name, 
-        'Band_250M': n.bands.name + '_250M', 
-        'Band_500M': n.bands.name + '_500M', 
-        'Band_1KM_RefSB': n.bands.name + '_1KM_NVIS',
-        'Band_1KM_Emissive': n.bands.name + '_1KM_EM',
+        '2*nscans:MODIS_SWATH_Type_L1B': str(n.rows)+'_red', 
+        '1KM_geo_dim:MODIS_SWATH_Type_L1B': str(n.columns)+'_red', 
+        '10*nscans:MODIS_SWATH_Type_L1B': str(n.rows), 
+        'Max_EV_frames:MODIS_SWATH_Type_L1B': str(n.columns),
+        'new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B': str(n.bands_ir),
+        'new_Band_250M:MODIS_SWATH_Type_L1B': str(n.bands) + '_250M',
+        'new_Band_500M:MODIS_SWATH_Type_L1B': str(n.bands) + '_500M', 
+        'new_Band_1KM_RefSB:MODIS_SWATH_Type_L1B': str(n.bands) + '_1KM_NVIS',
+        'bands_ltoa': str(n.bands), 
+        'bands_rtoa': str(n.bands_nvis), 
+        'Band_250M': str(n.bands) + '_250M', 
+        'Band_500M': str(n.bands) + '_500M', 
+        'Band_1KM_RefSB': str(n.bands) + '_1KM_NVIS',
+        'Band_1KM_Emissive': str(n.bands) + '_1KM_EM',
     }
 
     return l1.rename(revize_dims)
@@ -239,13 +239,13 @@ def _compute_bt(ds):
     cwvl = 1. / (cwn * 100)
 
     # Some versions of the modis files do not contain all the bands
-    bnames = list(ds[n.bnames.name].values.astype(float))
+    bnames = list(ds[str(n.bnames)].values.astype(float))
     bands_em = [bnames.index(x) for x in ds['Band_1KM_Emissive']]
-    array = ds[n.ltoa.name].sel({bands: bands_em})
+    array = ds[str(n.ltoa)].sel({bands: bands_em})
     array = K2 / (cwvl * da.log(K1 / (1e6 * array * cwvl ** 5) + 1))
-    ds[n.bt.name] = ((array - tci) / tcs).rename({bands: n.bands_ir.name})
-    ds[n.bt.name].attrs['unit'] = 'Kelvin'
-    ds = ds.assign_coords({n.bands_ir.name: bands_em})
+    ds[str(n.bt)] = ((array - tci) / tcs).rename({bands: str(n.bands_ir)})
+    ds[str(n.bt)].attrs['unit'] = 'Kelvin'
+    ds = ds.assign_coords({str(n.bands_ir): bands_em})
     return ds
 
 
@@ -329,17 +329,17 @@ def _v1_compat(ds, filepath):
     ds = drop_unused_dims(ds[keep])
     
     # Rename bands IR and change coordinates
-    ds = ds.rename({n.bands_ir.name: 'bands_tir'})
+    ds = ds.rename({str(n.bands_ir): 'bands_tir'})
     ds = ds.assign_coords(bands_tir=bands_tir)
     
     # Rename Rtoa dimension
-    ds = ds.rename({n.bands_nvis.name: 'bands'})
+    ds = ds.rename({str(n.bands_nvis): 'bands'})
     ds = ds.assign_coords(bands=bands_vis)
     
     # Open reduce latlon arrays
     latlon = load_hdf4(filepath, trim_dims=True)
-    ds = ds.assign({n.lat.name: (('y_red','x_red'), latlon['Latitude'].data),
-                    n.lon.name: (('y_red','x_red'), latlon['Longitude'].data)})
+    ds = ds.assign({str(n.lat): (('y_red','x_red'), latlon['Latitude'].data),
+                    str(n.lon): (('y_red','x_red'), latlon['Longitude'].data)})
     
     # Flags
     ds['flags'] = ds['BT'].isel(bands_tir=0).isnull().astype('uint8')

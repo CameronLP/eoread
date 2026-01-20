@@ -66,12 +66,12 @@ def Level1_SGLI(filepath: str|Path,
     # read metadata
     log.debug('Reading metadata files')
     metadata = _read_metadata(ds, tree, metadata_template)
-    ds = ds.assign({n.bnames.name: ((n.bands.name), metadata['Stored_channels'].split(',')),
-                    n.cwav.name: ((n.bands.name), sgli_central_wavelengths)})
+    ds = ds.assign({str(n.bnames): ((str(n.bands)), metadata['Stored_channels'].split(',')),
+                    str(n.cwav): ((str(n.bands)), sgli_central_wavelengths)})
 
     imdata = imdata.rename_dims(dict(zip(
         imdata.Lt_VN01.dims,
-        (n.rows.name, n.columns.name)
+        (str(n.rows), str(n.columns))
     )))
     shape = imdata.Lt_VN01.shape
 
@@ -84,12 +84,12 @@ def Level1_SGLI(filepath: str|Path,
 
     # Attributes
     log.debug('Add important attributes')
-    ds.attrs[n.datetime.name] = metadata['Scene_center_time']
-    ds.attrs[n.product_name.name] = metadata['Product_file_name']
-    ds.attrs[n.platform.name] = 'GCOM-C'
-    ds.attrs[n.sensor.name] = 'SGLI'
-    ds.attrs[n.resolution.name] = 250
-    ds.attrs[n.input_directory.name] = str(filepath.parent)
+    ds.attrs[str(n.datetime)] = metadata['Scene_center_time']
+    ds.attrs[str(n.product_name)] = metadata['Product_file_name']
+    ds.attrs[str(n.platform)] = 'GCOM-C'
+    ds.attrs[str(n.sensor)] = 'SGLI'
+    ds.attrs[str(n.resolution)] = 250
+    ds.attrs[str(n.input_directory)] = str(filepath.parent)
     
     # # Flags
     # ds[naming.flags] = xr.zeros_like(
@@ -104,7 +104,7 @@ def Level1_SGLI(filepath: str|Path,
     # )
     
     if add_ancillary_data: ds = _read_ancillary(ds, tree)
-    ds = ds.assign_coords({n.bands.name: ds[n.bands_nvis.name].data})
+    ds = ds.assign_coords({str(n.bands): ds[str(n.bands_nvis)].data})
 
     if v1_compat: return _v1_compat(ds, imdata)
     return drop_unused_dims(ds).unify_chunks()
@@ -118,10 +118,10 @@ def _init_toa(ds, imdata, chunks):
         Rtoa = (Rtoa & attrs['Mask']) * attrs['Slope_reflectance'] + attrs['Offset_reflectance']
         Rtoa = Rtoa/ds.mus
         Rtoa.attrs = attrs
-        ds[n.rtoa.name+f'_{i+1}'] = Rtoa
+        ds[str(n.rtoa)+f'_{i+1}'] = Rtoa
         
-    ds = merge(ds, dim=n.bands_nvis.name)
-    ds[n.rtoa.name].attrs['unit'] = None
+    ds = merge(ds, dim=str(n.bands_nvis))
+    ds[str(n.rtoa)].attrs['unit'] = None
     return ds
 
 
@@ -131,7 +131,7 @@ def _init_geometry(ds, tree, shape, chunks):
 
     geom = geom.rename_dims(dict(zip(
         geom.Latitude.dims,
-        (n.rows.name+'_tie', n.columns.name+'_tie')
+        (str(n.rows)+'_tie', str(n.columns)+'_tie')
     )))
 
     ds['lat_tie'] = geom.Latitude
@@ -149,18 +149,18 @@ def _init_geometry(ds, tree, shape, chunks):
         ds[x] = ds[x] * ds[x].Slope
 
     # assign tiepoint coordinates
-    ds[n.columns.name+'_tie'] = da.arange(ds.sizes[n.columns.name+'_tie'])*delta
-    ds[n.rows.name+'_tie'] = da.arange(ds.sizes[n.rows.name+'_tie'])*delta
+    ds[str(n.columns)+'_tie'] = da.arange(ds.sizes[str(n.columns)+'_tie'])*delta
+    ds[str(n.rows)+'_tie'] = da.arange(ds.sizes[str(n.rows)+'_tie'])*delta
 
     # Create interpolated datasets
     shape = dict(zip(ds.lat_tie.dims, shape))
     for (name, A) in [
-            (n.lat.name, ds.lat_tie),
-            (n.lon.name, ds.lon_tie),
-            (n.vza.name, ds.vza_tie),
-            (n.vaa.name, ds.vaa_tie),
-            (n.sza.name, ds.sza_tie),
-            (n.saa.name, ds.saa_tie),
+            (str(n.lat), ds.lat_tie),
+            (str(n.lon), ds.lon_tie),
+            (str(n.vza), ds.vza_tie),
+            (str(n.vaa), ds.vaa_tie),
+            (str(n.sza), ds.sza_tie),
+            (str(n.saa), ds.saa_tie),
         ]:
         ds[name] = spatial_resample(A, shape, chunks=chunks)
 
@@ -226,14 +226,14 @@ def _v1_compat(ds, imdata):
     from core.tools import raiseflag
     
     # Rename tie points dimensions
-    ds = ds.rename({n.rows.name+'_tie': 'rows_tie',
-                    n.columns.name+'_tie': 'columns_tie'})
+    ds = ds.rename({str(n.rows)+'_tie': 'rows_tie',
+                    str(n.columns)+'_tie': 'columns_tie'})
     
     # Define central wavelength as coordinates for band dimension
     ds = ds.assign_coords(bands=[380, 412, 443, 490, 530, 565, 673, 674, 763, 868, 869])
     
     # Drop NVIS bands dimension
-    ds = ds.assign(Rtoa=(('bands','y','x'), ds[n.rtoa.name].data))
+    ds = ds.assign(Rtoa=(('bands','y','x'), ds[str(n.rtoa)].data))
     
     # Flags
     ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')

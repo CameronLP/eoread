@@ -110,16 +110,16 @@ def Level1_MSI(dirname : str|Path,
     # attributes
     log.debug('Add important attributes')
     sensing_time = xmlgranule['General_Info']['SENSING_TIME']['values']
-    ds.attrs[n.datetime.name] = sensing_time
-    ds.attrs[n.platform.name] = {
+    ds.attrs[str(n.datetime)] = sensing_time
+    ds.attrs[str(n.platform)] = {
         "S2A": "Sentinel-2A",
         "S2B": "Sentinel-2B",
         "S2C": "Sentinel-2C",
     }[platform]
-    ds.attrs[n.resolution.name] = int(resolution)
-    ds.attrs[n.sensor.name] = 'MSI'
-    ds.attrs[n.product_name.name] = dirname.name
-    ds.attrs[n.input_directory.name] = str(dirname.parent)
+    ds.attrs[str(n.resolution)] = int(resolution)
+    ds.attrs[str(n.sensor)] = 'MSI'
+    ds.attrs[str(n.product_name)] = dirname.name
+    ds.attrs[str(n.input_directory)] = str(dirname.parent)
     ds.attrs['user_guide'] = user_guide
 
     # lat-lon
@@ -138,13 +138,13 @@ def Level1_MSI(dirname : str|Path,
     # msi_read_toa and quality masks
     log.debug('Read top of atmosphere data')
     ds = _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, wvl_name)
-    ds = ds.assign({n.cwav.name: ((n.bands.name), cwvl), 
-                    n.bnames.name: ((n.bands.name), wvl_name)})
+    ds = ds.assign({str(n.cwav): ((str(n.bands)), cwvl), 
+                    str(n.bnames): ((str(n.bands)), wvl_name)})
     
     # msi assign new bands coordinates
     ds = ds.assign_coords({
-        n.bands_nvis.name: da.arange(1, len(ds[n.bands_nvis.name])+1),
-        n.bands.name: da.arange(1, len(ds[n.bands_nvis.name])+1)
+        str(n.bands_nvis): da.arange(1, len(ds[str(n.bands_nvis)])+1),
+        str(n.bands): da.arange(1, len(ds[str(n.bands_nvis)])+1)
     })
     
     # Filter metadata
@@ -159,15 +159,15 @@ def Level1_MSI(dirname : str|Path,
 
 def _msi_read_latlon(ds, chunks, xmlgranule):
 
-    dims = (n.rows.name,n.columns.name)
+    dims = (str(n.rows), str(n.columns))
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     
-    ds[n.lat.name] = DataArray_from_array(
+    ds[str(n.lat)] = DataArray_from_array(
         _LATLON(geocoding, 'lat', ds), dims,
         chunks=chunks,
     )
 
-    ds[n.lon.name] = DataArray_from_array(
+    ds[str(n.lon)] = DataArray_from_array(
         _LATLON(geocoding, 'lon', ds), dims,
         chunks=chunks,
     )
@@ -179,10 +179,10 @@ def _msi_read_qi(ds, granule_dir, chunks):
         arr = xr.open_dataarray(filename, engine='rasterio')
         arr = arr.chunk([1]+list(chunks))
         arr = arr.rename(x='x_red', y='y_red').astype('float32')
-        ds[filename.stem] = arr.rename({'band':n.detector.name})
+        ds[filename.stem] = arr.rename({'band': str(n.detector)})
     
     ds = ds.rename_vars({'MSK_CLASSI_B00':'MSK_CLASSI'})
-    ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
 
     return ds
 
@@ -209,16 +209,16 @@ def _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, 
         arr = ((arr+radio_offset[iband])/quantif).astype('float32')
         
         # Resample the array
-        ratio = {n.columns.name: ds.totalheight, n.rows.name: ds.totalwidth} 
+        ratio = {str(n.columns): ds.totalheight, str(n.rows): ds.totalwidth} 
         arr_resampled = spatial_resample(arr.squeeze(), ratio, chunks)
-        ds[n.rtoa.name+f'_{band}'] = arr_resampled
+        ds[str(n.rtoa)+f'_{band}'] = arr_resampled
 
-    ds = merge(ds, dim=n.bands_nvis.name, pattern=r'(.+)_B(.+)', dtype=str)
-    ds[n.rtoa.name].attrs.update(unit=None)
+    ds = merge(ds, dim=str(n.bands_nvis), pattern=r'(.+)_B(.+)', dtype=str)
+    ds[str(n.rtoa)].attrs.update(unit=None)
     
     # Reorder bands
     order = [indexes.index(i) for i in range(len(indexes))]    
-    return ds.isel({n.bands_nvis.name: order})
+    return ds.isel({str(n.bands_nvis): order})
 
 
 def _msi_read_geometry(ds, tileangles, chunks):
@@ -288,10 +288,10 @@ def _msi_read_geometry(ds, tileangles, chunks):
     x = xr.DataArray(da.arange(len(ds.x), chunks=chunks[0]), dims=('x'))
     y = xr.DataArray(da.arange(len(ds.y), chunks=chunks[1]), dims=('y'))
     for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza),(n.vaa, vaa)]:
-        ds[name.name+'_tie'] = xr.DataArray(tie, dims=dims)
-        interp_tie = interp(ds[name.name+'_tie'], tie_rows=Linear(x), tie_columns=Linear(y))
-        ds[name.name] = interp_tie
-        ds[name.name] = ds[name.name].chunk(chunks)
+        ds[str(name)+'_tie'] = xr.DataArray(tie, dims=dims)
+        interp_tie = interp(ds[str(name)+'_tie'], tie_rows=Linear(x), tie_columns=Linear(y))
+        ds[str(name)] = interp_tie
+        ds[str(name)] = ds[str(name)].chunk(chunks)
     
     return ds
 
@@ -378,23 +378,23 @@ def _v1_compat(ds):
     ds.attrs['metadata'] = filter_metadata(ds.attrs['metadata'], [])
     
     # rename bands variable
-    ds = ds.assign({n.rtoa.name: ((n.bands.name, n.rows.name, n.columns.name), ds[n.rtoa.name].data)})
-    ds = ds.drop_dims(n.bands_nvis.name)
+    ds = ds.assign({str(n.rtoa): ((str(n.bands), str(n.rows), str(n.columns)), ds[str(n.rtoa)].data)})
+    ds = ds.drop_dims(str(n.bands_nvis))
     
     # Apply previous rounded central wavelengths
     msi_band = [443, 490, 560, 665, 705, 740, 783, 842, 865, 945, 1375, 1610, 2190]
     ds = ds.assign_coords(bands=msi_band)
     
     # rename wavelength variable
-    ds = ds.rename({n.cwav.name:'wav'})
+    ds = ds.rename({str(n.cwav):'wav'})
     
     # add flags
     from core.tools import raiseflag
-    ds[n.flags.name] = xr.zeros_like(
+    ds[str(n.flags)] = xr.zeros_like(
         ds.vza,
         dtype=n.flags.dtype)
     raiseflag(
-        ds[n.flags.name],
+        ds[str(n.flags)],
         'L1_INVALID', 4,
         np.isnan(ds.vza)
         )

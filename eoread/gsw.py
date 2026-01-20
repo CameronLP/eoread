@@ -122,7 +122,7 @@ def _fetch_gsw_tile(tile_name):
 
         # read geotiff data
         data = xr.open_dataarray(p, engine='rasterio').squeeze().compute(scheduler='sync')
-        data = data.rename(x=n.columns.name, y=n.rows.name)
+        data = data.rename(x=str(n.columns), y=str(n.rows))
         data = drop_unused_dims(data)
     
     if _GSW_tile.convert_missing_data:
@@ -172,10 +172,10 @@ def GSW(directory=None, agg=1) -> xr.DataArray:
     return xr.DataArray(
         gsw,
         name='occurrence',
-        dims=(n.lat.name, n.lon.name),
+        dims=(str(n.lat), str(n.lon)),
         coords={
-            n.lat.name: bin_centers(gsw.shape[0], 80, -60),
-            n.lon.name: bin_centers(gsw.shape[1], -180, 180),
+            str(n.lat): bin_centers(gsw.shape[0], 80, -60),
+            str(n.lon): bin_centers(gsw.shape[1], -180, 180),
         }
     )
 

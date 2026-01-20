@@ -111,37 +111,37 @@ def Level1_NASA(filename, chunks=500):
     dstart = datetime.strptime(ds.attrs['time_coverage_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
     dstop = datetime.strptime(ds.attrs['time_coverage_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
     d = dstart + (dstop - dstart)//2
-    ds.attrs[n.datetime.name] = d.isoformat()
-    ds.attrs[n.sensor.name] = ds.attrs['instrument']
-    ds.attrs[n.input_directory.name] = str(Path(filename).parent)
+    ds.attrs[str(n.datetime)] = d.isoformat()
+    ds.attrs[str(n.sensor)] = ds.attrs['instrument']
+    ds.attrs[str(n.input_directory)] = str(Path(filename).parent)
 
     sensor_band = xr.open_dataset(filename, group='/sensor_band_parameters', chunks=chunks)
     bands = sensor_band['wavelength'].values[sensor_band.number_of_reflective_bands.values].astype('int32')
-    ds[n.wav.name] = np.array(bands, dtype='float32')
+    ds[str(n.wav)] = np.array(bands, dtype='float32')
 
     navi = xr.open_dataset(filename, group='navigation_data', chunks=chunks)
-    navi = navi.rename_dims({'number_of_lines':n.rows.name, 'pixel_control_points':n.columns.name})
-    ds[n.lat.name] = DataArray_from_array(navi.latitude.values.astype('float32'), naming.dim2, chunks=chunks)
-    ds[n.lon.name] = DataArray_from_array(navi.longitude.values.astype('float32'), naming.dim2, chunks=chunks)
+    navi = navi.rename_dims({'number_of_lines':str(n.rows), 'pixel_control_points':str(n.columns)})
+    ds[str(n.lat)] = DataArray_from_array(navi.latitude.values.astype('float32'), naming.dim2, chunks=chunks)
+    ds[str(n.lon)] = DataArray_from_array(navi.longitude.values.astype('float32'), naming.dim2, chunks=chunks)
     
     geo_data = xr.open_dataset(filename, group='/geophysical_data', chunks=chunks)
-    geo_data = geo_data.rename_dims({'number_of_lines':n.rows.name, 'pixels_per_line':n.columns.name})
-    for _n,r,p in [(n.rtoa.name+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
+    geo_data = geo_data.rename_dims({'number_of_lines':str(n.rows), 'pixels_per_line':str(n.columns)})
+    for _n,r,p in [(str(n.rtoa)+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
         try:
             ds[_n] = geo_data[r]/geo_data[p]
         except:
             pass
 
-    for (name, param) in [(n.sza.name, 'solz'),
-                          (n.vza.name, 'senz'),
-                          (n.saa.name, 'sola'),
-                          (n.vaa.name, 'sena'),
+    for (name, param) in [(str(n.sza), 'solz'),
+                          (str(n.vza), 'senz'),
+                          (str(n.saa), 'sola'),
+                          (str(n.vaa), 'sena'),
                           ]:
         ds[name] = geo_data[param]
 
     eo.init_geometry(ds)
 
-    ds[n.flags.name] = xr.zeros_like(ds[n.lat.name], dtype=naming.flags_dtype)
+    ds[str(n.flags)] = xr.zeros_like(ds[str(n.lat)], dtype=naming.flags_dtype)
     for (flag, flag_list) in [('LAND',['LAND']), ('L1_INVALID',['ATMFAIL','PRODFAIL'])]:
         flag_value = 0
         for f in flag_list:
@@ -149,5 +149,5 @@ def Level1_NASA(filename, chunks=500):
 
         eo.raiseflag(ds[naming.flags],flag, flags[flag], DataArray_from_array((geo_data.l2_flags&flag_value!=0), naming.dim2, chunks=chunks))
 
-    ds = eo.merge(ds, dim=n.bands.name)
+    ds = eo.merge(ds, dim=str(n.bands))
     return ds

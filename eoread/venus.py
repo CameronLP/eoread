@@ -83,37 +83,37 @@ def Level1_VENUS(dirname,
     
     # read cloud altitude
     log.debug('Open masks')
-    ratio = {n.columns.name: ds.totalwidth, n.rows.name: ds.totalheight} 
+    ratio = {str(n.columns): ds.totalwidth, str(n.rows): ds.totalheight} 
     cld = open_raster(dirname/'DATA', '*CLA_ALL.tif', engine='rasterio')
-    cld = cld.rename(x=n.columns.name, y=n.rows.name)
+    cld = cld.rename(x=str(n.columns), y=str(n.rows))
     ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat')
     
     if read_masks:
         
         # read cloud mask
         cld = open_raster(dirname/'MASKS','*CLD_XS.zip','.zip').chunk(chunks)
-        ds['CLD_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+        ds['CLD_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
         
         # read cloud mask
         usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
-        ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+        ds['USI_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
     
         # Read quality masks
-        for bn in ds[n.bnames.name]:
+        for bn in ds[str(n.bnames)]:
             
             pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
-            ds[f'PIX_{bn.values}'] = pix.rename(x=n.columns.name, y=n.rows.name)
+            ds[f'PIX_{bn.values}'] = pix.rename(x=str(n.columns), y=str(n.rows))
             
             sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
-            ds[f'SAT_{bn.values}'] = sat.rename(x=n.columns.name, y=n.rows.name)
+            ds[f'SAT_{bn.values}'] = sat.rename(x=str(n.columns), y=str(n.rows))
     
     else: 
         log.debug('Masks are not red due to uncompression time consuming. '
                   'Active option read_masks to read them')
         
-    ds = merge(ds, n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)    
-    ds = ds.assign_coords({n.bands.name: ds[n.bands.name].data.astype(int),
-                           n.bands_nvis.name: ds[n.bands.name].data.astype(int)})  
+    ds = merge(ds, str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)    
+    ds = ds.assign_coords({str(n.bands): ds[str(n.bands)].data.astype(int),
+                           str(n.bands_nvis): ds[str(n.bands)].data.astype(int)})  
     
     if v1_compat: return _v1_compat(ds, chunks)  
     return drop_unused_dims(ds).unify_chunks()
@@ -155,23 +155,23 @@ def Level2_VENUS(dirname,
     # read cloud mask
     log.debug('Open masks')
     cld = open_raster(dirname/'MASKS','*CLM_XS.tif', engine='rasterio').chunk(chunks)
-    ds['CLM_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    ds['CLM_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
     
     # read other masks
     usi = open_raster(dirname/'MASKS','*USI_XS.tif', engine='rasterio').chunk(chunks)
-    ds['USI_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    ds['USI_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
     
     cld = open_raster(dirname/'MASKS','*SAT_XS.tif', engine='rasterio').chunk(chunks)
-    ds['SAT_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    ds['SAT_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
     
     usi = open_raster(dirname/'MASKS','*PIX_XS.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['PIX_XS'] = usi.rename(x=n.columns.name, y=n.rows.name, band=n.bands.name)
+    ds['PIX_XS'] = usi.rename(x=str(n.columns), y=str(n.rows), band=str(n.bands))
     
     cld = open_raster(dirname/'MASKS','*IAB_XS.tif', engine='rasterio').chunk(chunks)
-    ds['IAB_XS'] = cld.rename(x=n.columns.name, y=n.rows.name)
+    ds['IAB_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
     
     usi = open_raster(dirname/'MASKS','*EDG_XS.tif', engine='rasterio').chunk(chunks)
-    ds['EDG_XS'] = usi.rename(x=n.columns.name, y=n.rows.name)
+    ds['EDG_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
     
     return drop_unused_dims(ds).unify_chunks()
 
@@ -199,8 +199,8 @@ def _venus_read_metadata(ds, dirname, metadata_template):
         else: resolution = r
         cwvl.append(band['Wavelength']['CENTRAL']['values'])
         bandnames.append(band['attributes']['band_id'])
-    ds = ds.assign({n.cwav.name: ((n.bands.name),cwvl),
-                    n.bnames.name: ((n.bands.name),bandnames)})
+    ds = ds.assign({str(n.cwav): ((str(n.bands)),cwvl),
+                    str(n.bnames): ((str(n.bands)),bandnames)})
     
     # read date
     date = xmlgranule['Product_Characteristics']['ACQUISITION_DATE']
@@ -217,12 +217,12 @@ def _venus_read_metadata(ds, dirname, metadata_template):
     # attributes
     log.debug('Add important attributes')
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
-    ds.attrs[n.datetime.name] = date
-    ds.attrs[n.platform.name] = platform
-    ds.attrs[n.resolution.name] = resolution
-    ds.attrs[n.sensor.name] = 'VENUS'
-    ds.attrs[n.product_name.name] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
-    ds.attrs[n.input_directory.name] = str(dirname.parent)
+    ds.attrs[str(n.datetime)] = date
+    ds.attrs[str(n.platform)] = platform
+    ds.attrs[str(n.resolution)] = resolution
+    ds.attrs[str(n.sensor)] = 'VENUS'
+    ds.attrs[str(n.product_name)] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
+    ds.attrs[str(n.input_directory)] = str(dirname.parent)
     ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
     
@@ -231,38 +231,38 @@ def _venus_read_metadata(ds, dirname, metadata_template):
 
 def _venus_read_latlon(ds, geocoding, chunks):
     
-    ds[n.lat.name] = DataArray_from_array(
+    ds[str(n.lat)] = DataArray_from_array(
         _LATLON(geocoding, 'lat', ds),
-        (n.rows.name, n.columns.name),
+        (str(n.rows), str(n.columns)),
         chunks=chunks,
     )
 
-    ds[n.lon.name] = DataArray_from_array(
+    ds[str(n.lon)] = DataArray_from_array(
         _LATLON(geocoding, 'lon', ds),
-        (n.rows.name, n.columns.name),
+        (str(n.rows), str(n.columns)),
         chunks=chunks,
     )
 
 def _venus_read_toa(ds, granule_dir, quantif, chunks):
     
-    for name in ds[n.bnames.name]:
+    for name in ds[str(n.bnames)]:
         
         arr = open_raster(granule_dir, f'*REF_{name.values}.tif', engine='rasterio').chunk(chunks)
         arr = (arr/quantif).astype('float32')
         
-        ratio = {n.rows.name: ds.totalheight, n.columns.name: ds.totalwidth}        
+        ratio = {str(n.rows): ds.totalheight, str(n.columns): ds.totalwidth}        
         arr_resampled = spatial_resample(arr, ratio, chunks)
-        ds[n.rtoa.name+f'_{name.values}'] = arr_resampled
+        ds[str(n.rtoa)+f'_{name.values}'] = arr_resampled
 
-    ds = merge(ds, dim=n.bands_nvis.name, pattern=r'(.+)_B(.+)', dtype=str)
-    ds[n.rtoa.name].attrs.update(unit=None)
+    ds = merge(ds, dim=str(n.bands_nvis), pattern=r'(.+)_B(.+)', dtype=str)
+    ds[str(n.rtoa)].attrs.update(unit=None)
     return ds
 
 
 def _venus_read_rho(ds, granule_dir, quantif, chunks):
 
     for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
-        for name in ds[n.bnames.name]:
+        for name in ds[str(n.bnames)]:
             
             arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif', engine='rasterio').chunk(chunks)
             arr = (arr/quantif).astype('float32')
@@ -271,7 +271,7 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
             arr_resampled = spatial_resample(arr, ratio, chunks)
             ds[var+f'_{name.values}'] = arr_resampled
 
-    ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
     
     # read Aerosol_Optical_Thickness of waper vapor content
     atb = open_raster(granule_dir, '*ATB_XS.tif', engine='rasterio').chunk([1]+list(chunks))
@@ -284,13 +284,13 @@ def _venus_read_geometry(ds, dirname, chunks):
 
     # read solar angles
     sa = open_raster(dirname/'DATA','*SOL_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['SOL_ALL'] = sa.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
+    ds['SOL_ALL'] = sa.rename(x=str(n.columns)+'_tie', y=str(n.rows)+'_tie')
     
     # read view angles
     va = open_raster(dirname/'DATA','*VIE_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['VIE_ALL'] = va.rename(x=n.columns.name+'_tie', y=n.rows.name+'_tie')
+    ds['VIE_ALL'] = va.rename(x=str(n.columns)+'_tie', y=str(n.rows)+'_tie')
     
-    return ds.rename(band=n.bands.name+'_angle')
+    return ds.rename(band=str(n.bands)+'_angle')
 
 class _LATLON:
     '''
@@ -448,11 +448,11 @@ def _v1_compat(ds, chunks):
 
     # initialize the dask arrays
     dims = ('tie_rows', 'tie_columns')
-    out = dict(zip(dims, ds[n.lat.name].shape))
-    for name, tie in [(n.sza.name, sza),
-                      (n.saa.name, saa),
-                      (n.vza.name, vza[k]),
-                      (n.vaa.name, vaa[k]),
+    out = dict(zip(dims, ds[str(n.lat)].shape))
+    for name, tie in [(str(n.sza), sza),
+                      (str(n.saa), saa),
+                      (str(n.vza), vza[k]),
+                      (str(n.vaa), vaa[k]),
                       ]:
         da_tie = xr.DataArray(
             tie,
@@ -467,13 +467,13 @@ def _v1_compat(ds, chunks):
     ds = ds.assign_coords(bands=venus_band_names)
     
     # Drop NVIS bands dimension
-    ds = ds.assign(Rtoa=(('bands','y','x'),ds[n.rtoa.name].data))
+    ds = ds.assign(Rtoa=(('bands','y','x'),ds[str(n.rtoa)].data))
     
     # Flags 
     ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')
     
     # Add CRS 
     crs = ds.attrs['metadata_granule']['Geoposition_Informations']['Coordinate_Reference_System']['Horizontal_Coordinate_System']['HORIZONTAL_CS_CODE']
-    ds.attrs[n.crs.name] = 'epsg:'+str(crs)
+    ds.attrs[str(n.crs)] = 'epsg:'+str(crs)
     
     return ds

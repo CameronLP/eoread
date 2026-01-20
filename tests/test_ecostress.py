@@ -43,15 +43,3 @@ def test_l1c_v1_compat(level1C_ecostress):
     
 def test_l1c_lazy_load(product_ecostress):
     generic.test_lazy_load(product_ecostress)
-
-
-################################################################################
-# Tests for Level-2
-################################################################################
-
-@pytest.fixture
-def level2_msi(): pass
-
-@pytest.mark.skip('test should be updated')
-def test_level2(level2_msi: Path):
-    assert level2_msi.exists()

@@ -13,7 +13,8 @@ dependencies = [
     "pyepr",
     "rioxarray",
     "cdsapi",
-    "shapely"
+    "shapely", 
+    "h5netcdf", "h5py"
 ]
 
 [project.optional-dependencies]

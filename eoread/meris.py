@@ -63,8 +63,8 @@ def Level1_MERIS(filepath: str|Path,
     log.debug('read metadata')
     metadata = _read_metadata(ds, prod, metadata_template)
     bands_names = [f'b{i+1}' for i in range(metadata['NUM_BANDS'])]
-    ds = ds.assign({n.bnames.name: ((n.bands.name), bands_names),
-                    n.cwav.name: ((n.bands.name), metadata['BAND_WAVELEN']/1e3)})
+    ds = ds.assign({str(n.bnames): ((str(n.bands)), bands_names),
+                    str(n.cwav): ((str(n.bands)), metadata['BAND_WAVELEN']/1e3)})
 
     # read all rasters
     log.debug('load raster')
@@ -72,7 +72,7 @@ def Level1_MERIS(filepath: str|Path,
         band = prod.get_band(name)
         ds[name] = DataArray_from_array(
             _READ_MERIS(band, lock),
-            (n.rows.name, n.columns.name),
+            (str(n.rows), str(n.columns)),
             chunks=chunks,
         )
         ds[name].attrs['unit'] = band.unit
@@ -81,8 +81,8 @@ def Level1_MERIS(filepath: str|Path,
     # Rename several variables and compile radiance rasters
     log.debug('concatenate ltoa rasters')
     ds = _rename_meris(ds)
-    ds = merge(ds, dim=n.bands.name)
-    ds = ds.chunk({n.bands.name:1})
+    ds = merge(ds, dim=str(n.bands))
+    ds = ds.chunk({str(n.bands):1})
     
     log.debug('read auxilary data')
     if dir_smile is None: dir_smile = Path(__file__).parent/'auxdata'/'meris'
@@ -98,50 +98,50 @@ def Level1_MERIS(filepath: str|Path,
     F0 = pd.read_csv(file_sun_spectral_flux, dtype='float32', delimiter='\t').to_xarray()
     detector_wavelength = pd.read_csv(file_detector_wavelength, delimiter='\t').to_xarray()
 
-    assert len(F0) == len(ds[n.bands.name]) + 1
-    assert len(detector_wavelength) == len(ds[n.bands.name]) + 1
+    assert len(F0) == len(ds[str(n.bands)]) + 1
+    assert len(detector_wavelength) == len(ds[str(n.bands)]) + 1
     
     if read_auxdata:
         
         # Compute solar Flux
         valid_mask = (ds.detector_index >= 0).load()
         F0 = F0.sel(index=ds.detector_index.where(valid_mask, 0))
-        F0 = merge(F0, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
-        ds[n.F0.name] = F0['E0'].where(valid_mask, np.nan)
+        F0 = merge(F0, dim=str(n.bands), pattern=r'(.+)_band(\d+)')
+        ds[str(n.F0)] = F0['E0'].where(valid_mask, np.nan)
         
         # Compute wavelengths
         wav = detector_wavelength.sel(index=ds.detector_index.where(valid_mask, 0))
-        wav = merge(wav, dim=n.bands.name, pattern=r'(.+)_band(\d+)')
-        ds[n.wav.name] = wav['lam'].where(valid_mask, np.nan)
+        wav = merge(wav, dim=str(n.bands), pattern=r'(.+)_band(\d+)')
+        ds[str(n.wav)] = wav['lam'].where(valid_mask, np.nan)
 
     # Read attributes
-    ds.attrs[n.platform.name] = 'ENVISAT'
-    ds.attrs[n.sensor.name] = 'MERIS'
-    ds.attrs[n.resolution.name] = 300
-    ds.attrs[n.product_name.name] = metadata['PRODUCT'].decode()
-    ds.attrs[n.input_directory.name] = str(filepath.parent)
+    ds.attrs[str(n.platform)] = 'ENVISAT'
+    ds.attrs[str(n.sensor)] = 'MERIS'
+    ds.attrs[str(n.resolution)] = 300
+    ds.attrs[str(n.product_name)] = metadata['PRODUCT'].decode()
+    ds.attrs[str(n.input_directory)] = str(filepath.parent)
     ds.attrs['user_guide'] = user_guide
 
     # Read date
     dstart = _read_date(metadata['SENSING_START'])
     dstop = _read_date(metadata['SENSING_STOP'])
     d = dstart + (dstop - dstart)//2
-    ds.attrs[n.datetime.name] = d.isoformat()
+    ds.attrs[str(n.datetime)] = d.isoformat()
     
     if v1_compat: return _v1_compat(ds, prod, lock, chunks)
     return drop_unused_dims(ds).unify_chunks()
 
 
 def _rename_meris(ds):
-    ds = ds.rename({v: v.replace('radiance', n.ltoa.name) 
+    ds = ds.rename({v: v.replace('radiance', str(n.ltoa)) 
                     for v in ds.variables if 'radiance' in v})
     return ds.rename({
-        'latitude'    : n.lat.name,
-        'longitude'   : n.lon.name,
-        'view_zenith' : n.vza.name, 
-        'view_azimuth': n.vaa.name,
-        'sun_zenith'  : n.sza.name,
-        'sun_azimuth' : n.saa.name, 
+        'latitude'    : str(n.lat),
+        'longitude'   : str(n.lon),
+        'view_zenith' : str(n.vza), 
+        'view_azimuth': str(n.vaa),
+        'sun_zenith'  : str(n.sza),
+        'sun_azimuth' : str(n.saa), 
     })
 
 def _read_metadata(ds, product, template):
@@ -281,7 +281,7 @@ def _v1_compat(ds, prod, lock, chunks):
     ds['sea_level_pressure'] = ds['atm_press']
 
     # Flags
-    ds['flags'] = xr.zeros_like(ds[n.lat.name], dtype='uint8')
+    ds['flags'] = xr.zeros_like(ds[str(n.lat)], dtype='uint8')
     for (flag, val, bmexpr) in [
             ('LAND', 1, 'l1_flags.LAND_OCEAN'),
             ('L1_INVALID', 4, '(l1_flags.INVALID) OR (l1_flags.SUSPECT) OR (l1_flags.COSMETIC)'),

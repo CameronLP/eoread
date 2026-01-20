@@ -157,10 +157,10 @@ def SRTM(directory=None, agg=1, missing=None, type_srtm=1, chunk=10000, verbose=
     return xr.DataArray(
         srtm,
         name='occurrence',
-        dims=(n.lat.name, n.lon.name),
+        dims=(str(n.lat), str(n.lon)),
         coords={
-            n.lat.name: bin_centers(srtm.shape[0], 60, -56),
-            n.lon.name: bin_centers(srtm.shape[1], -180, 180),
+            str(n.lat): bin_centers(srtm.shape[0], 60, -56),
+            str(n.lon): bin_centers(srtm.shape[1], -180, 180),
         }
     )
 

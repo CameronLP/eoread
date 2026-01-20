@@ -75,7 +75,7 @@ def Level1_OLI(dirname: str|Path,
     # get datetime
     d = metadata['IMAGE_ATTRIBUTES']['DATE_ACQUIRED']
     t = metadata['IMAGE_ATTRIBUTES']['SCENE_CENTER_TIME']
-    ds.attrs[n.datetime.name] = d+'T'+t
+    ds.attrs[str(n.datetime)] = d+'T'+t
     
     # Reading different rasters
     log.debug('read geometric angles')
@@ -88,23 +88,23 @@ def Level1_OLI(dirname: str|Path,
 
     # other attributes
     log.debug('add important attributes')
-    ds.attrs[n.platform.name] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
-    ds.attrs[n.sensor.name] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
-    ds.attrs[n.product_name.name] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
-    ds.attrs[n.input_directory.name] = str(dirname.parent)
-    ds.attrs[n.resolution.name] = 30
+    ds.attrs[str(n.platform)] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
+    ds.attrs[str(n.sensor)] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
+    ds.attrs[str(n.product_name)] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
+    ds.attrs[str(n.input_directory)] = str(dirname.parent)
+    ds.attrs[str(n.resolution)] = 30
     
     
     # Sort band dimension
-    ds = ds.assign({n.bnames.name: ((n.bands.name), ds[n.bands.name].data)})
+    ds = ds.assign({str(n.bnames): ((str(n.bands)), ds[str(n.bands)].data)})
     ds = ds.assign_coords({d: c.data.astype(int) 
-                           for d,c in ds.coords.items() if n.bands.name in d})
-    ds = ds.sortby([n.bands.name, n.bands_ir.name, 'bands_nvis'])
+                           for d,c in ds.coords.items() if str(n.bands) in d})
+    ds = ds.sortby([str(n.bands), str(n.bands_ir), 'bands_nvis'])
     
     # define bands
-    ds = ds.assign({n.cwav.name:((n.bands.name), cwvl)})
+    ds = ds.assign({str(n.cwav):((str(n.bands)), cwvl)})
     
-    ds = ds.rename({'y': n.rows.name, 'x': n.columns.name})   
+    ds = ds.rename({'y': str(n.rows), 'x': str(n.columns)})   
     ds = drop_unused_dims(ds).unify_chunks()
     
     if v1_compat: return _v1_compat(ds)
@@ -137,12 +137,12 @@ def _read_coordinates(ds, chunks):
     ])
     
     # Compute latlon arrays
-    y, x = convert_latlon_2D(da.linspace(0,1,len(ds[n.rows.name])),
-                          da.linspace(0,1,len(ds[n.columns.name])))
-    x = xr.DataArray(x, dims=(n.rows.name, n.columns.name)).chunk(chunks)
-    y = xr.DataArray(y, dims=(n.rows.name, n.columns.name)).chunk(chunks)
-    ds[n.lat.name] = interp(lat, dim_0=Linear(y), dim_1=Linear(x))
-    ds[n.lon.name] = interp(lon, dim_0=Linear(y), dim_1=Linear(x))
+    y, x = convert_latlon_2D(da.linspace(0,1,len(ds[str(n.rows)])),
+                          da.linspace(0,1,len(ds[str(n.columns)])))
+    x = xr.DataArray(x, dims=(str(n.rows), str(n.columns))).chunk(chunks)
+    y = xr.DataArray(y, dims=(str(n.rows), str(n.columns))).chunk(chunks)
+    ds[str(n.lat)] = interp(lat, dim_0=Linear(y), dim_1=Linear(x))
+    ds[str(n.lon)] = interp(lon, dim_0=Linear(y), dim_1=Linear(x))
 
     ds.attrs['totalheight'] = ds.y.size
     ds.attrs['totalwidth'] = ds.x.size
@@ -164,14 +164,14 @@ def _gen_l9_angles(dirname, l9_angles=None):
 def _read_geometry(ds, dirname, l9_angles, chunks):
     
     # read sensor and solar angles
-    for name, search in [(n.saa.name, 'LC*_SAA.TIF'),
-                         (n.sza.name, 'LC*_SZA.TIF'),
-                         (n.vaa.name, 'LC*_VAA.TIF'),
-                         (n.vza.name, 'LC*_VZA.TIF')]:
+    for name, search in [(str(n.saa), 'LC*_SAA.TIF'),
+                         (str(n.sza), 'LC*_SZA.TIF'),
+                         (str(n.vaa), 'LC*_VAA.TIF'),
+                         (str(n.vza), 'LC*_VZA.TIF')]:
         data = open_raster(dirname, search, engine='rasterio').chunk(chunks)
         ds[name] = (data/100).astype('float32')
     
-    if (n.saa.name not in ds) and (l9_angles is not None):
+    if (str(n.saa) not in ds) and (l9_angles is not None):
         _gen_l9_angles(dirname, l9_angles)
 
 
@@ -181,7 +181,7 @@ def _read_radiometry(ds, dirname, chunks):
     thermal = ds.metadata['LEVEL1_THERMAL_CONSTANTS']
     
     # Read Panchromatic band
-    dims = (n.columns.name+'_pan', n.rows.name+'_pan')
+    dims = (str(n.columns)+'_pan', str(n.rows)+'_pan')
     files = list(dirname.glob(f'LC*_B8.TIF'))
     assert len(files) == 1, 'None or several files have been found for panchromatic band'
     a, m = rescale[f'RADIANCE_ADD_BAND_8'], rescale[f'RADIANCE_MULT_BAND_8']
@@ -201,10 +201,10 @@ def _read_radiometry(ds, dirname, chunks):
         a = rescale[f'RADIANCE_ADD_BAND_{b[2:]}']
         m = rescale[f'RADIANCE_MULT_BAND_{b[2:]}']
         data = xr.open_dataarray(f, engine='rasterio').chunk([1]+list(chunks))
-        ds[n.ltoa.name+b] = (m*data.squeeze()+a).astype('float32')
+        ds[str(n.ltoa)+b] = (m*data.squeeze()+a).astype('float32')
     
-    ds = merge(ds, dim=n.bands.name, pattern=r'(.+)_B(.+)', dtype=str)
-    ds[n.ltoa.name].attrs['unit'] = 'W/sr/m^2'
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
+    ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
     
     for f in dirname.glob(f'LC*_B*.TIF'):
         
@@ -221,10 +221,10 @@ def _read_radiometry(ds, dirname, chunks):
         m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
         filenames = list(dirname.glob(f'LC*{b}.TIF'))
         data = xr.open_dataarray(filenames[0], engine='rasterio').chunk([1]+list(chunks))
-        ds[n.rtoa.name+b] = (m*data.squeeze()+a).astype('float32')
+        ds[str(n.rtoa)+b] = (m*data.squeeze()+a).astype('float32')
     
     ds = merge(ds, dim='bands_nvis', pattern=r'(.+)_B(.+)', dtype=str)
-    ds[n.rtoa.name].attrs['unit'] = None
+    ds[str(n.rtoa)].attrs['unit'] = None
     
     for f in dirname.glob(f'LC*_B*.TIF'):
         
@@ -236,11 +236,11 @@ def _read_radiometry(ds, dirname, chunks):
         # read brightness temperatures
         k1 = thermal[f'K1_CONSTANT_BAND_{b[2:]}']
         k2 = thermal[f'K2_CONSTANT_BAND_{b[2:]}']
-        rad = ds[n.ltoa.name].sel({n.bands.name:b[2:]})
-        ds[n.bt.name+b] = (k2/np.log(k1/rad + 1)).astype('float32')
+        rad = ds[str(n.ltoa)].sel({str(n.bands):b[2:]})
+        ds[str(n.bt)+b] = (k2/np.log(k1/rad + 1)).astype('float32')
 
-    ds = merge(ds, dim=n.bands_ir.name, pattern=r'(.+)_B(.+)', dtype=str)
-    ds[n.bt.name].attrs['unit'] = 'Kelvin'
+    ds = merge(ds, dim=str(n.bands_ir), pattern=r'(.+)_B(.+)', dtype=str)
+    ds[str(n.bt)].attrs['unit'] = 'Kelvin'
 
     return ds
 

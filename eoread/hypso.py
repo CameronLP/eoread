@@ -36,22 +36,22 @@ def Level1_HYPSO(filepath: str|Path,
 
     # get _indirect geographical coordinates and angles if available
     log.debug('Read and compute geometric angles')
-    ds[n.lat.name] = ds_nav["latitude"].chunk(chunks)
-    ds[n.lon.name] = ds_nav["longitude"].chunk(chunks)
-    ds[n.vza.name] = ds_nav["sensor_zenith"].chunk(chunks)
-    ds[n.sza.name] = ds_nav["solar_zenith"].chunk(chunks)
-    ds[n.vaa.name] = ds_nav["sensor_azimuth"].chunk(chunks)
-    ds[n.saa.name] = ds_nav["solar_azimuth"].chunk(chunks)
+    ds[str(n.lat)] = ds_nav["latitude"].chunk(chunks)
+    ds[str(n.lon)] = ds_nav["longitude"].chunk(chunks)
+    ds[str(n.vza)] = ds_nav["sensor_zenith"].chunk(chunks)
+    ds[str(n.sza)] = ds_nav["solar_zenith"].chunk(chunks)
+    ds[str(n.vaa)] = ds_nav["sensor_azimuth"].chunk(chunks)
+    ds[str(n.saa)] = ds_nav["solar_azimuth"].chunk(chunks)
 
     log.debug('Read top of atmosphere data')
-    ds[n.ltoa.name] = ds_products['Lt'].chunk(list(chunks)+[1])
-    ds = ds.rename(lines=n.rows.name, samples=n.columns.name, bands=n.bands.name)
-    ds[n.ltoa.name].attrs['unit'] = 'W/sr/m^2'
+    ds[str(n.ltoa)] = ds_products['Lt'].chunk(list(chunks)+[1])
+    ds = ds.rename(lines=str(n.rows), samples=str(n.columns), bands=str(n.bands))
+    ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
     
     log.debug('Extract central wavelength')
-    ds = ds.assign_coords({n.bands.name: da.arange(len(ds[n.bands.name]))+1})
-    ds = ds.assign({n.cwav.name: ((n.bands.name), ds_products['Lt'].wavelengths),
-         n.bnames.name: ((n.bands.name), ds[n.bands.name].data.astype(str))})
+    ds = ds.assign_coords({str(n.bands): da.arange(len(ds[str(n.bands)]))+1})
+    ds = ds.assign({str(n.cwav): ((str(n.bands)), ds_products['Lt'].wavelengths),
+         str(n.bnames): ((str(n.bands)), ds[str(n.bands)].data.astype(str))})
 
     # # read solar irradiance
     # F0 = solar_irradiance("LISIRD", variant="1nm")
@@ -64,12 +64,12 @@ def Level1_HYPSO(filepath: str|Path,
 
     # acquisition datetime
     log.debug('Add important attributes')
-    ds.attrs[n.sensor.name] = ds_root.attrs['instrument']
-    ds.attrs[n.platform.name] = 'HYPSO'
-    ds.attrs[n.resolution.name] = 40
-    ds.attrs[n.product_name.name] = filepath.name
-    ds.attrs[n.input_directory.name] = str(filepath.parent)
-    ds.attrs[n.datetime.name] = ds_root.attrs['date_aquired']
+    ds.attrs[str(n.sensor)] = ds_root.attrs['instrument']
+    ds.attrs[str(n.platform)] = 'HYPSO'
+    ds.attrs[str(n.resolution)] = 40
+    ds.attrs[str(n.product_name)] = filepath.name
+    ds.attrs[str(n.input_directory)] = str(filepath.parent)
+    ds.attrs[str(n.datetime)] = ds_root.attrs['date_aquired']
     
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     ds.attrs['metadata'] = filter_fn(ds_root.attrs, metadata_template)

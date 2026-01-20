@@ -95,8 +95,8 @@ def Level1_OLCI(dirname,
         if bn == 'attributes': continue
         bandnames.append(bn)
         cwvl.append(data['centralWavelength'])
-    ds = ds.assign({n.cwav.name: ((n.bands.name),cwvl)})
-    ds = ds.assign({n.bnames.name: ((n.bands.name),bandnames)})
+    ds = ds.assign({str(n.cwav): ((str(n.bands)),cwvl)})
+    ds = ds.assign({str(n.bnames): ((str(n.bands)),bandnames)})
     
     # Check if product level is 1
     text = manifest['informationPackageMap']['contentUnit']['attributes']
@@ -121,7 +121,7 @@ def Level1_OLCI(dirname,
     shape = ds.latitude.shape
     ac_factor = ds.latitude.ac_subsampling_factor
     al_factor = ds.latitude.al_subsampling_factor
-    ds = ds.rename({'rows':n.rows.name, 'columns':n.columns.name})
+    ds = ds.rename({'rows':str(n.rows), 'columns':str(n.columns)})
 
     # tie geometry interpolation
     log.debug('read geometric tie points')
@@ -131,10 +131,10 @@ def Level1_OLCI(dirname,
         tie_columns=da.arange(tie_ds.sizes['tie_columns'])*ac_factor,
         tie_rows=da.arange(tie_ds.sizes['tie_rows'])*al_factor,
     )
-    assert tie_ds.tie_columns[0] == ds[n.columns.name][0]
-    assert tie_ds.tie_columns[-1] == ds[n.columns.name][-1]
-    assert tie_ds.tie_rows[0] == ds[n.rows.name][0]
-    assert tie_ds.tie_rows[-1] == ds[n.rows.name][-1]
+    assert tie_ds.tie_columns[0] == ds[str(n.columns)][0]
+    assert tie_ds.tie_columns[-1] == ds[str(n.columns)][-1]
+    assert tie_ds.tie_rows[0] == ds[str(n.rows)][0]
+    assert tie_ds.tie_rows[-1] == ds[str(n.rows)][-1]
 
     if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
     elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
@@ -144,10 +144,10 @@ def Level1_OLCI(dirname,
     tie_chunks = tuple(chunks.values())
     shape = dict(tie_rows=shape[0], tie_columns=shape[1])
     for (ds_full, ds_tie, method) in [
-                (n.sza.name, 'SZA', interp_za),
-                (n.saa.name, 'SAA', interp_aa),
-                (n.vza.name, 'OZA', interp_za),
-                (n.vaa.name, 'OAA', interp_aa),
+                (str(n.sza), 'SZA', interp_za),
+                (str(n.saa), 'SAA', interp_aa),
+                (str(n.vza), 'OZA', interp_za),
+                (str(n.vaa), 'OAA', interp_aa),
             ]:
         if method == 'atan2':
             _cos = spatial_resample(da.cos(da.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
@@ -167,10 +167,10 @@ def Level1_OLCI(dirname,
                 tie_columns = da.arange(tie.sizes['tie_columns'])*ac_factor,
                 tie_rows = da.arange(tie.sizes['tie_rows'])*al_factor,
                 )
-    assert tie.tie_columns[0] == ds[n.columns.name][0]
-    assert tie.tie_columns[-1] == ds[n.columns.name][-1]
-    assert tie.tie_rows[0] == ds[n.rows.name][0]
-    assert tie.tie_rows[-1] == ds[n.rows.name][-1]
+    assert tie.tie_columns[0] == ds[str(n.columns)][0]
+    assert tie.tie_columns[-1] == ds[str(n.columns)][-1]
+    assert tie.tie_rows[0] == ds[str(n.rows)][0]
+    assert tie.tie_rows[-1] == ds[str(n.rows)][-1]
 
     wind0 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=0), shape, tie_chunks, 'linear')
     wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
@@ -188,8 +188,8 @@ def Level1_OLCI(dirname,
         if tie_param: ds[var_to+'_tie'] = tie[var_from]
 
     # check subsampling factors
-    assert ((ds.sizes[n.columns.name]-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
-    assert ((ds.sizes[n.rows.name]-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
+    assert ((ds.sizes[str(n.columns)]-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
+    assert ((ds.sizes[str(n.rows)]-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
 
     # instrument data
     instrument_data = xr.open_dataset(dirname/'instrument_data.nc',
@@ -212,17 +212,17 @@ def Level1_OLCI(dirname,
     date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
     start = datetime.fromisoformat(date['startTime'])
     stop  = datetime.fromisoformat(date['stopTime'])
-    ds.attrs[n.datetime.name] = (start + (stop - start)/2.).isoformat()
+    ds.attrs[str(n.datetime)] = (start + (stop - start)/2.).isoformat()
     
     platform = meta[1]['metadataWrap']['xmlData']['platform']
-    ds.attrs[n.platform.name] = platform['familyName'] + platform['number']
-    ds.attrs[n.resolution.name] = 500
-    ds.attrs[n.sensor.name] = platform['instrument']['familyName']['attributes']['abbreviation']
-    ds.attrs[n.product_name.name] = dirname.name
-    ds.attrs[n.input_directory.name] = str(dirname.parent)
+    ds.attrs[str(n.platform)] = platform['familyName'] + platform['number']
+    ds.attrs[str(n.resolution)] = 500
+    ds.attrs[str(n.sensor)] = platform['instrument']['familyName']['attributes']['abbreviation']
+    ds.attrs[str(n.product_name)] = dirname.name
+    ds.attrs[str(n.input_directory)] = str(dirname.parent)
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
-    ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
+    ds = ds.rename({'columns': str(n.columns), 'rows': str(n.rows)})
     
     log.debug('compute reflectances')
     _olci_init_spectral(ds, chunks)
@@ -268,8 +268,8 @@ def Level2_OLCI(dirname,
         if bn == 'attributes': continue
         bandnames.append(bn)
         cwvl.append(data['centralWavelength'])
-    ds = ds.assign({n.cwav.name: (('bands'),cwvl)})
-    ds = ds.assign({n.bnames.name: (('bands'),bandnames)})
+    ds = ds.assign({str(n.cwav): (('bands'),cwvl)})
+    ds = ds.assign({str(n.bnames): (('bands'),bandnames)})
     
     # Retrieve product level
     text = manifest['informationPackageMap']['contentUnit']['attributes']
@@ -444,15 +444,15 @@ def Level2_OLCI(dirname,
     
     # attributes
     # ds.attrs[naming.datetime] = (dstart + (dstop - dstart)/2.).isoformat()
-    ds.attrs[n.platform.name] = 'Sentinel-3'   # FIXME: A or B
-    ds.attrs[n.sensor.name] = 'OLCI'
-    ds.attrs[n.input_directory.name] = os.path.dirname(dirname)
+    ds.attrs[str(n.platform)] = 'Sentinel-3'   # FIXME: A or B
+    ds.attrs[str(n.sensor)] = 'OLCI'
+    ds.attrs[str(n.input_directory)] = os.path.dirname(dirname)
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
 
     if init_spectral: _olci_init_spectral(ds, chunks)
 
-    ds = ds.rename({'columns': n.columns.name, 'rows': n.rows.name})
+    ds = ds.rename({'columns': str(n.columns), 'rows': str(n.rows)})
 
     return ds.unify_chunks()
 
@@ -464,10 +464,10 @@ def _read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
         data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
         prod_list.append(data)
 
-    if level == 1: param_name, unit = n.ltoa.name, 'W/sr/m^2'
-    else: param_name, unit = n.rho_w.name, None
+    if level == 1: param_name, unit = str(n.ltoa), 'W/sr/m^2'
+    else: param_name, unit = str(n.rho_w), None
     
-    ds[param_name] = xr.concat(prod_list, dim=n.bands.name)
+    ds[param_name] = xr.concat(prod_list, dim=str(n.bands))
     ds[param_name].attrs.update(unit=unit)
     return ds
 
@@ -478,7 +478,7 @@ def _olci_init_spectral(ds, chunks):
     Adds the resulting datasets to `ds`: wav, F0 (in place)
     '''
     # wavelength
-    ds[n.wav.name] = xr.apply_ufunc(
+    ds[str(n.wav)] = xr.apply_ufunc(
         lambda l0, di: l0[:,0,0,di],
         ds.lambda0,  # (bands x detectors)
         ds.detector_index,   # (rows x columns)
@@ -486,10 +486,10 @@ def _olci_init_spectral(ds, chunks):
         input_core_dims=[['detectors'], []],
         output_dtypes=[ds.lambda0.dtype],
     )
-    ds[n.wav.name].attrs.update(ds.lambda0.attrs)
+    ds[str(n.wav)].attrs.update(ds.lambda0.attrs)
 
     # solar flux
-    ds[n.F0.name] = xr.apply_ufunc(
+    ds[str(n.F0)] = xr.apply_ufunc(
         lambda sf, di: sf[:,0,0,di],
         ds.solar_flux,  # (bands x detectors)
         ds.detector_index,   # (rows x columns)
@@ -497,7 +497,7 @@ def _olci_init_spectral(ds, chunks):
         input_core_dims=[['detectors'], []],
         output_dtypes=[ds.solar_flux.dtype],
     )
-    ds[n.F0.name].attrs.update(ds.solar_flux.attrs)
+    ds[str(n.F0)].attrs.update(ds.solar_flux.attrs)
 
 
 def _decompose_flags(value, flags):
@@ -531,10 +531,10 @@ def _v1_compat(ds):
     ds = ds.assign_coords(bands=[400, 412, 443, 490, 510, 560, 620, 665, 674, 681, 709, 754, 760, 764, 767, 779, 865, 885, 900, 940, 1020]) 
     
     # rename bands variable
-    ds = ds.assign({n.rtoa.name: ((n.bands.name, n.rows.name, n.columns.name), ds[n.rtoa.name].data)})
+    ds = ds.assign({str(n.rtoa): ((str(n.bands), str(n.rows), str(n.columns)), ds[str(n.rtoa)].data)})
     
     # Add flags
-    ds[n.flags.name] = xr.zeros_like(
+    ds[str(n.flags)] = xr.zeros_like(
         ds.vza,
         dtype=n.flags.dtype)
     qf = getflags(ds.quality_flags)
@@ -542,12 +542,12 @@ def _v1_compat(ds):
     # raise LAND mask when land is raised but not fresh_inland_water
     from .eo import raiseflag
     raiseflag(
-        ds[n.flags.name],
+        ds[str(n.flags)],
         "LAND", 1,
         ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
     )
     raiseflag(
-        ds[n.flags.name],
+        ds[str(n.flags)],
         "L1_INVALID", 4,
         ds.quality_flags & qf["invalid"],
     )

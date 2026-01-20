@@ -13,7 +13,8 @@ resolutions = ['10', '20', '60']
 
 
 @pytest.fixture(scope="session")
-def level1_msi() -> Path: return get_sample(1)
+def level1_msi() -> Path: 
+    return get_sample(1)
 
 @pytest.fixture(params=resolutions)
 def resolution(request):
@@ -66,14 +67,3 @@ def test_subset(level1_msi, resolution, chunks):
 
 def test_plot(request, S2_product):
     generic.test_plot(request, S2_product, 4)
-
-################################################################################
-# Tests for Level-2
-################################################################################
-
-@pytest.fixture
-def level2_msi(): pass
-
-@pytest.mark.skip('test should be updated')
-def test_level2(level2_msi: Path):
-    assert level2_msi.exists()

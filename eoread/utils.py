@@ -59,7 +59,7 @@ def spatial_resample(arr,
     ratio = [arr.sizes[d]/output_shape[d] for d in arr.dims]
     
     if ratio[0] == 1 and ratio[1] == 1: 
-        combi = zip(arr.dims, (n.rows.name, n.columns.name))
+        combi = zip(arr.dims, (str(n.rows), str(n.columns)))
         return arr.rename({d0:d1 for d0,d1 in combi}) 
     
     # downsample
@@ -81,8 +81,8 @@ def spatial_resample(arr,
         arr_resampled = interp(arr.compute(), **params)
 
     return arr_resampled.rename({
-        'd0': n.rows.name,
-        'd1': n.columns.name})
+        'd0': str(n.rows),
+        'd1': str(n.columns)})
 
 def open_raster(dirname, 
                 pattern: str, 
