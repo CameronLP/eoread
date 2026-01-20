@@ -16,7 +16,7 @@ import xarray as xr
 import numpy as np
 from core.dates import round_date
 from eoread.nasa import nasa_download
-from eoread.utils.naming import naming
+from core.geo.naming import names
 from dateutil.parser import parse
 
 from core import env
@@ -56,7 +56,7 @@ def open_NASA(target: Path) -> xr.Dataset:
     out.attrs.update(ds.attrs)
 
     ds = ds.rename(
-        lat=naming.lat,
+        lat=names.lat,
         lon=naming.lon)
     
     out[naming.horizontal_wind] = wrap_lon(np.sqrt(ds['U10M']**2 + ds['V10M']**2))
