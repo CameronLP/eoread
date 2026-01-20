@@ -272,6 +272,6 @@ def get_sample(level:int, use_cache:bool=True) -> Path:
         raise ImportError('To use get_sample function, you need to install SAND module')
     
     sensor = 'LANDSAT-8-OLI'
-    prod_id = products[sensor][f'l{level}_product']
     dl = DownloadUSGS()
+    prod_id = products[sensor][f'l{level}_product']
     return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))

@@ -388,17 +388,17 @@ def get_sample(level:int=1) -> Path:
     Args:
         level (int, optional): Level of the product. Defaults to 1.
     """
-    # return Path('/mnt/ceph/data/VENUS/VENUS-XS_20230116-112657-000_L1C_VILAINE_C_V3-1/')
     try: 
-        from sand.geodes import DownloadCNES
+        from sand.cnes import DownloadCNES
         from sand.sample_product import products
     except ImportError:
         raise ImportError('To use get_sample function, you need to install SAND module')
     
     sensor = 'VENUS'
-    prod_id = products[sensor][f'l{level}_product']
+    params = products[sensor]['constraint']
     dl = DownloadCNES()
-    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    query = dl.query(collection_sand=sensor, level=level, **params)
+    return dl.download(query[0], env.getdir('DIR_SAMPLES'))
 
 def _v1_compat(ds, chunks):
     
