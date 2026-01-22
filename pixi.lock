@@ -5,6 +5,8 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
+    options:
+      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -253,7 +255,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/0b/f7/85273299ab57117850cc0a936c64151171fac4da49bc6fba0dad984a7c5f/affine-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/8f/c42a98f933022c7de00142526c9b6b7429fdcd0fc66c952b4ebbf0ff3b7f/cf_xarray-0.10.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
-      - pypi: git+https://github.com/hygeos/core.git#04deff6275d75503d891468518fca6814deeb89a
+      - pypi: git+https://github.com/hygeos/core.git#d66e60695ea116ce46dfc54bb4b370347336001a
       - pypi: git+https://github.com/hygeos/eotools.git#0a06491cf87c7c17a915729dcfbc9e218d9eed0a
       - pypi: https://files.pythonhosted.org/packages/27/cd/c883e1a7c447479d6e13985565080e3fea88ab5a107c21684c813dba1875/flexcache-0.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
@@ -847,7 +849,7 @@ packages:
   - pkg:pypi/contourpy?source=hash-mapping
   size: 299226
   timestamp: 1762525516589
-- pypi: git+https://github.com/hygeos/core.git#04deff6275d75503d891468518fca6814deeb89a
+- pypi: git+https://github.com/hygeos/core.git#d66e60695ea116ce46dfc54bb4b370347336001a
   name: core
   version: 1.2.1
   requires_dist:
@@ -1028,7 +1030,6 @@ packages:
   - core @ git+https://github.com/hygeos/core.git ; extra == 'git'
   - sand @ git+https://github.com/hygeos/sand.git ; extra == 'git'
   requires_python: '>=3.11'
-  editable: true
 - pypi: git+https://github.com/hygeos/eotools.git#0a06491cf87c7c17a915729dcfbc9e218d9eed0a
   name: eotools
   version: 0.1.0
