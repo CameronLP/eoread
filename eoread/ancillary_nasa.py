@@ -57,18 +57,18 @@ def open_NASA(target: Path) -> xr.Dataset:
 
     ds = ds.rename(
         lat=names.lat,
-        lon=naming.lon)
+        lon=names.lon)
     
-    out[naming.horizontal_wind] = wrap_lon(np.sqrt(ds['U10M']**2 + ds['V10M']**2))
-    out[naming.horizontal_wind].attrs.update({
+    out['horizontal_wind'] = wrap_lon(np.sqrt(ds['U10M']**2 + ds['V10M']**2))
+    out['horizontal_wind'].attrs.update({
         'units': ds['U10M'].units,
     })
 
-    out[naming.sea_level_pressure] = wrap_lon(ds['SLP'])
+    out['sea_level_pressure'] = wrap_lon(ds['SLP'])
 
-    out[naming.total_column_ozone] = wrap_lon(ds['TO3'])
+    out['total_column_ozone'] = wrap_lon(ds['TO3'])
 
-    out[naming.total_column_water_vapour] = wrap_lon(ds['TQV'])
+    out['total_column_water_vapour'] = wrap_lon(ds['TQV'])
 
     dt = parse(out.attrs['time_coverage_start']).replace(tzinfo=None)
     dtend = parse(out.attrs['time_coverage_end']).replace(tzinfo=None)
@@ -164,7 +164,7 @@ class Ancillary_NASA:
         interpolated = concatenated.interp(time=dt)
 
         # download ozone
-        if naming.total_column_ozone not in interpolated:
+        if 'total_column_ozone' not in interpolated:
             # try oz resources (recursively)
             oz = self.get(dt, self.oz_resources).interp(
                 latitude=interpolated.latitude,
