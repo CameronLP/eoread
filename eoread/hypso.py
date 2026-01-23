@@ -88,7 +88,7 @@ def get_sample(level: int=1) -> Path:
         level (int, optional): Level of the product. Defaults to 1.
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
-    sample = Path('/mnt/ceph/user/francois/HYPSO/sample1/vancouver_2022-07-30_1825Z-l1b.nc')
+    sample = env.getdir('DIR_SAMPLE_HYPSO')
     assert sample.exists()
     return sample
 

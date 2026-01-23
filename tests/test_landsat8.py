@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from pathlib import Path
 import pytest
 import xarray as xr
 
 from eoread.landsat_oli import get_sample, Level1_OLI
 from . import generic
+from core.env import getdir
 
 
 product_l1 = pytest.fixture(lambda: get_sample(1), scope='session')
@@ -37,7 +37,7 @@ def test_l1c_subset(product_l8_oli):
 
 @pytest.mark.skip("No version 1 output file")
 def test_l1c_v1_compat(product_l1):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_OLI(product_l1, v1_compat=True)
     old = xr.open_dataset(v1_data/(product_l1.stem+'_res'))
     generic.compare_version(l1, old)

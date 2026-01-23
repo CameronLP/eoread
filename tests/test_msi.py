@@ -8,6 +8,7 @@ from . import generic
 from pathlib import Path
 from eoread.msi import get_sample, Level1_MSI
 from eoread import eo
+from core.env import getdir
 
 resolutions = ['10', '20', '60']
 
@@ -44,7 +45,7 @@ def test_time(level1_msi, resolution, chunks):
     generic.test_execution_time(Level1_MSI, params)
 
 def test_v1_compat(level1_msi):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_MSI(level1_msi, '60', v1_compat=True)
     old = xr.open_dataset(v1_data/(level1_msi.stem+'_60'))
     generic.compare_version(l1, old)

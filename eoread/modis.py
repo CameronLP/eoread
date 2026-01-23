@@ -315,7 +315,7 @@ def get_sample(level: int=1):
         level (int, optional): Level of the product. Defaults to 1.
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
-    sample = Path('/mnt/ceph/data/MODIS_AQUA/MYD021KM.A2016010.0150.006.2016012022653.hdf')
+    sample = env.getdir('DIR_SAMPLE_MODISA_MYD')
     assert sample.exists()
     return sample
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from pathlib import Path
 import pytest
 import xarray as xr 
 from eoread.olci import get_sample, Level1_OLCI, Level2_OLCI
 from eoread.olci import get_valid_l2_pixels
 from eoread import eo
+from core.env import getdir
 from . import generic
 
 
@@ -36,7 +36,7 @@ def test_l1c_subset(OLCI_product):
     generic.test_subset(OLCI_product)
     
 def test_l1c_v1_compat(olci_level1):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_OLCI(olci_level1, v1_compat=True)
     old = xr.open_dataset(v1_data/(olci_level1.stem))
     old = old.reset_coords(['altitude','latitude','longitude'])

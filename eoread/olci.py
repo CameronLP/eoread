@@ -33,7 +33,7 @@ def get_sample(level:int=1) -> Path:
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
     try: 
-        from sand.copernicus_dataspace import DownloadCDSE
+        from sand.eumdac import DownloadEumDAC
         from sand.sample_product import products
     except ImportError:
         raise ImportError('To use get_sample function, you need to install SAND module')

@@ -1,6 +1,7 @@
 from pathlib import Path
 from eoread.hypso import Level1_HYPSO, get_sample
 import xarray as xr
+from core.env import getdir
 
 from . import generic
 
@@ -33,7 +34,7 @@ def test_time(level1_hypso, chunks):
     generic.test_execution_time(Level1_HYPSO, params)
 
 def test_v1_compat(level1_hypso):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_HYPSO(level1_hypso, v1_compat=True)
     old = xr.open_dataset(v1_data/(level1_hypso.stem+'_res'))
     generic.compare_version(l1, old)

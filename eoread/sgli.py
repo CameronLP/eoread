@@ -25,8 +25,8 @@ def get_sample(level: int=1) -> Path:
         use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
     """
     # Assumes that sample file exists locally in dir_samples
-    # Downloaded from /standard/GCOM-C/GCOM-C.SGLI/L1B/2/2019/12/05
-    sample = Path('/archive2/data/EOREAD_TESTDATA/SGLI/GC1SG1_201912050159F05712_1BSG_VNRDQ_1007.h5')
+    # Downloaded from /standard/GCOM-C/GCOM-C.SGLI/L1B/2/2019/12/05/GC1SG1_201912050159F05712_1BSG_VNRDQ_1007.h5
+    sample = env.getdir('DIR_SAMPLE_SGLI')
     assert sample.exists()
     return sample
 
@@ -39,7 +39,7 @@ sgli_central_wavelengths = da.array([
 
 def Level1_SGLI(filepath: str|Path,
                 chunks: int|tuple = 500,
-                metadata_template: list = None,
+                metadata_template: list | None = None,
                 add_ancillary_data: bool = False, 
                 v1_compat: bool = False):
     """

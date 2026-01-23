@@ -3,6 +3,7 @@ import xarray as xr
 import pytest
 
 from eoread.modis import Level1_MODIS, get_sample
+from core.env import getdir
 from . import generic
 
 
@@ -32,7 +33,7 @@ def test_l1c_subset(product_modis):
     generic.test_subset(product_modis)
 
 def test_l1c_v1_compat(level1_modis):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_MODIS(level1_modis, v1_compat=True)
     old = xr.open_dataset(v1_data/(level1_modis.stem+'_res'))
     generic.compare_version(l1, old)

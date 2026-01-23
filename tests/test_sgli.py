@@ -6,6 +6,7 @@ import pytest
 import xarray as xr
 
 from eoread.sgli import get_sample, Level1_SGLI
+from core.env import getdir
 from . import generic
 
 
@@ -38,7 +39,7 @@ def test_time(level1_sgli, chunks):
     generic.test_execution_time(Level1_SGLI, params)
 
 def test_v1_compat(level1_sgli):
-    v1_data = Path('/mnt/ceph/data/eoread')
+    v1_data = getdir("DIR_V1_COMPAT_DATA")
     l1 = Level1_SGLI(level1_sgli, v1_compat=True)
     old = xr.open_dataset(v1_data/(level1_sgli.stem+'_res'))
     generic.compare_version(l1, old)
