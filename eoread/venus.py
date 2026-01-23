@@ -388,17 +388,23 @@ def get_sample(level:int=1) -> Path:
     Args:
         level (int, optional): Level of the product. Defaults to 1.
     """
-    try: 
-        from sand.cnes import DownloadCNES
-        from sand.sample_product import products
-    except ImportError:
-        raise ImportError('To use get_sample function, you need to install SAND module')
+    if level == 1:
+        return env.getdir('DIR_VENUS_L1C')
+    elif level == 2:
+        return env.getdir('DIR_VENUS_L2A')
+    else:
+        raise ValueError(level)
+    # try: 
+    #     from sand.cnes import DownloadCNES
+    #     from sand.sample_product import products
+    # except ImportError:
+    #     raise ImportError('To use get_sample function, you need to install SAND module')
     
-    sensor = 'VENUS'
-    params = products[sensor]['constraint']
-    dl = DownloadCNES()
-    query = dl.query(collection_sand=sensor, level=level, **params)
-    return dl.download(query[0], env.getdir('DIR_SAMPLES'))
+    # sensor = 'VENUS'
+    # params = products[sensor]['constraint']
+    # dl = DownloadCNES()
+    # query = dl.query(collection_sand=sensor, level=level, **params)
+    # return dl.download(query[0], env.getdir('DIR_SAMPLES'))
 
 def _v1_compat(ds, chunks):
     

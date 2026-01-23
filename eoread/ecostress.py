@@ -220,8 +220,13 @@ def get_sample(level: int=1) -> Path:
     
     sensor = 'ISS-ECOSTRESS'
     prod_id = products[sensor][f'l{level}_product']
-    dl = DownloadNASA()
-    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    target = env.getdir('DIR_SAMPLES')/(prod_id+'.h5')
+    if not target.exists():
+        # TODO: remove when SAND's download_file supports filegen
+        dl = DownloadNASA()
+        dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    assert target.exists()
+    return target
 
 class _parser:
     

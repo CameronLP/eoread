@@ -368,8 +368,13 @@ def get_sample(level:int=1) -> Path:
     
     sensor = 'SENTINEL-2-MSI'
     prod_id = products[sensor][f'l{level}_product']
-    dl = DownloadCDSE()
-    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    target = env.getdir("DIR_SAMPLES")/(prod_id+'.SAFE')
+    # TODO: remove when SAND's download_file supports filegen
+    if not target.exists():
+        dl = DownloadCDSE()
+        return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    assert target.exists()
+    return target
 
 def _v1_compat(ds):
     

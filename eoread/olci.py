@@ -40,8 +40,15 @@ def get_sample(level:int=1) -> Path:
     
     sensor = 'SENTINEL-3-OLCI-FR'
     prod_id = products[sensor][f'l{level}_product']
-    dl = DownloadCDSE()
-    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+
+    targetdir = env.getdir('DIR_SAMPLES')
+    target = targetdir/prod_id
+    if not target.exists():
+        # TODO: remove when SAND's download_file supports filegen
+        dl = DownloadEumDAC()
+        dl.download_file(prod_id, targetdir)
+    assert target.exists()
+    return target
 
 
 def Level1_OLCI(dirname, 
