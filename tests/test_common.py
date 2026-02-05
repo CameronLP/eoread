@@ -401,7 +401,7 @@ def test_xrcrop(idx, min_max, expected_len):
     assert len(cropped.x) == expected_len
 
 @pytest.fixture(scope="session")
-def level1_msi() -> Path: return msi.get_sample(1)
+def level1_msi(): return msi.get_sample(1)
 
 @pytest.mark.parametrize('method', ["nearest", "interp"])
 def test_xrcrop_gsw(request, method, level1_msi):

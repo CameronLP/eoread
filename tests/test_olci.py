@@ -37,8 +37,9 @@ def test_l1c_subset(OLCI_product):
     
 def test_l1c_v1_compat(olci_level1):
     v1_data = getdir("DIR_V1_COMPAT_DATA")
+    path = list(v1_data.glob('S3*'))[0]
     l1 = Level1_OLCI(olci_level1, v1_compat=True)
-    old = xr.open_dataset(v1_data/(olci_level1.stem))
+    old = xr.open_dataset(path)
     old = old.reset_coords(['altitude','latitude','longitude'])
     generic.compare_version(l1, old)
     

@@ -1,32 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''
-List of MSI bands:
------------------
-
-Band Use         Wavelength Resolution
-B1   Aerosols    443nm      60m
-B2   Blue        490nm      10m
-B3   Green       560nm      10m
-B4   Red         665nm      10m
-B5   Red Edge 1  705nm      20m
-B6   Red Edge 2  740nm      20m
-B7   Red Edge 3  783nm      20m
-B8   NIR         842nm      10m
-B8a  Red Edge 4  865nm      20m
-B9   Water vapor 940nm      60m
-B10  Cirrus      1375nm     60m
-B11  SWIR 1      1610nm     20m
-B12  SWIR 2      2190nm     20m
-'''
-
-
 # Update processing baseline 4.00
 # https://sentinels.copernicus.eu/web/sentinel/-/copernicus-sentinel-2-major-products-upgrade-upcoming
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Union
 
 import dask.array as da
 import numpy as np
@@ -45,26 +24,33 @@ from eoread.common import DataArray_from_array
 
 user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2_User_Handbook.pdf/8869acdf-fd84-43ec-ae8c-3e80a436a16c?t=1438278087000'
 
-def Level1_MSI(dirname : str|Path,
-               resolution: Literal['10','20','60'] = '60',
-               chunks: int|tuple = 500,
-               metadata_template: list = None, 
-               v1_compat: bool = False):
-    '''
-    Read an MSI Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, reflectances,
-    the angles on the full grid, etc.
+def Level1_MSI(
+        dirname: Union[str, Path],
+        chunks: Union[int, tuple] = 500,
+        concat: bool = True,
+        metadata_template: Union[list, None] = None, 
+        v1_compat: bool = False
+    ) -> xr.Dataset:
+    """
+    Read a Sentinel-2 MSI Level1C product as an xarray.Dataset.
+    
+    MSI (MultiSpectral Instrument) provides 13 spectral bands from visible to SWIR
+    with spatial resolutions of 10m, 20m, and 60m.
 
-    Arguments:
-        dirname: Path of the MSI folder
-        resolution: '60', '20' or '10' (in m)
-        chunks: Size of chunks for spatial axis
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-    '''
+    Args:
+        dirname: Path to the Sentinel-2 .SAFE directory
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+                If tuple, should be (rows_chunk, columns_chunk)
+        concat: If True, resample all bands to 10m resolution and concatenate.
+                If False, keep original resolutions (10m, 20m, 60m) separate.
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+        v1_compat: If True, formats output to match version 1 structure
+    
+    Example:
+        >>> ds = Level1_MSI('S2A_MSIL1C_*.SAFE', chunks=1000)
+    """
     ds = xr.Dataset()
     dirname = Path(dirname).resolve()
-    assert isinstance(resolution, str)
     if isinstance(chunks, int): chunks = [chunks]*2
 
     if list(dirname.glob('GRANULE')):
@@ -84,15 +70,15 @@ def Level1_MSI(dirname : str|Path,
 
     # load main xml file
     product_image = xmlroot['General_Info']['Product_Image_Characteristics']
-    quantif = product_image['QUANTIFICATION_VALUE']['values']
     processing_baseline = xmlroot['General_Info']['Product_Info']['PROCESSING_BASELINE']
     
     # Extract bands wavelength
-    cwvl, wvl_name = [],[]
+    metadata = dict(cwvl=[], resolution=[], name=[])
     log.debug('Extract central wavelength')
     for spec in product_image['Spectral_Information_List']['Spectral_Information']:
-        cwvl.append(spec['Wavelength']['CENTRAL']['values'])
-        wvl_name.append(spec['attributes']['physicalBand'])
+        metadata['cwvl'].append(spec['Wavelength']['CENTRAL']['values'])
+        metadata['name'].append(spec['attributes']['physicalBand'])
+        metadata['resolution'].append(spec['RESOLUTION'])
 
     # get platform
     tile_id = xmlgranule['General_Info']['TILE_ID']['values']
@@ -102,7 +88,7 @@ def Level1_MSI(dirname : str|Path,
     # read image size for current resolution
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     for e in geocoding.get('Size'):
-        if e['attributes']['resolution'] == str(resolution):
+        if e['attributes']['resolution'] == '10':
             ds.attrs['totalheight'] = e.get('NROWS')
             ds.attrs['totalwidth'] = e.get('NCOLS')
             break
@@ -116,7 +102,7 @@ def Level1_MSI(dirname : str|Path,
         "S2B": "Sentinel-2B",
         "S2C": "Sentinel-2C",
     }[platform]
-    ds.attrs[str(n.resolution)] = int(resolution)
+    ds.attrs[str(n.resolution)] = 10
     ds.attrs[str(n.sensor)] = 'MSI'
     ds.attrs[str(n.product_name)] = dirname.name
     ds.attrs[str(n.input_directory)] = str(dirname.parent)
@@ -137,15 +123,9 @@ def Level1_MSI(dirname : str|Path,
 
     # msi_read_toa and quality masks
     log.debug('Read top of atmosphere data')
-    ds = _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, wvl_name)
-    ds = ds.assign({str(n.cwav): ((str(n.bands)), cwvl), 
-                    str(n.bnames): ((str(n.bands)), wvl_name)})
-    
-    # msi assign new bands coordinates
-    ds = ds.assign_coords({
-        str(n.bands_nvis): da.arange(1, len(ds[str(n.bands_nvis)])+1),
-        str(n.bands): da.arange(1, len(ds[str(n.bands_nvis)])+1)
-    })
+    ds = _msi_read_toa(ds, granule_dir, processing_baseline, product_image, chunks, metadata, concat)
+    ds = ds.assign({str(n.cwav): ((str(n.bands)), metadata['cwvl'])})
+    ds = ds.assign_coords({str(n.bands): metadata['name']})
     
     # Filter metadata
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
@@ -153,12 +133,15 @@ def Level1_MSI(dirname : str|Path,
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
 
     ds = drop_unused_dims(ds)
+    if concat:
+        ds = ds.set_coords(str(n.bgroup))
+    
     if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
     
 
-def _msi_read_latlon(ds, chunks, xmlgranule):
-
+def _msi_read_latlon(ds: xr.Dataset, chunks: list, xmlgranule: dict) -> None:
+    """Add latitude and longitude arrays from UTM projection."""
     dims = (str(n.rows), str(n.columns))
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     
@@ -172,7 +155,8 @@ def _msi_read_latlon(ds, chunks, xmlgranule):
         chunks=chunks,
     )
 
-def _msi_read_qi(ds, granule_dir, chunks):
+def _msi_read_qi(ds: xr.Dataset, granule_dir: Path, chunks: list) -> xr.Dataset:
+    """Read quality indicator masks from QI_DATA directory."""
     for filename in (granule_dir/'QI_DATA').glob(f'*.jp2'):
         
         if '_PVI' in filename.stem: continue
@@ -186,52 +170,84 @@ def _msi_read_qi(ds, granule_dir, chunks):
 
     return ds
 
-def _msi_read_toa(ds, granule_dir, quantif, processing_baseline, product_image, chunks, bnames):
+def _msi_read_toa(
+        ds: xr.Dataset, 
+        granule_dir: Path, 
+        processing_baseline: str, 
+        product_image: dict, 
+        chunks: list, 
+        metadata: dict, 
+        concat: bool
+    ) -> xr.Dataset:
+    """Read and calibrate TOA reflectance from JP2 files.
     
+    Applies radiometric offset correction (baseline >= 4.0) and quantification.
+    Optionally resamples all bands to 10m resolution if concat=True.
+    """
     # Retrieve radiometric offset
     if float(processing_baseline) >= 4:
         radio_offset = [
             int(x['values'])
             for x in product_image['Radiometric_Offset_List']['RADIO_ADD_OFFSET']]
-    else: radio_offset = [0]*len(bnames)
+    else: 
+        radio_offset = [0]*len(metadata['name'])
     
     # Open deserved bands
     indexes = []
+    quantif = product_image['QUANTIFICATION_VALUE']['values']
     for filename in (granule_dir/'IMG_DATA').glob(f'*.jp2'):
         
         # Add band to dataset
         band = filename.stem.split('_')[-1]
         if 'TCI' == band: continue
-        iband = list(bnames).index(band.replace('B0','B'))
+        iband = list(metadata['name']).index(band.replace('B0','B'))
         indexes.append(iband)
         
         arr = xr.open_dataarray(filename, engine='rasterio').chunk([1]+list(chunks))
         arr = ((arr+radio_offset[iband])/quantif).astype('float32')
         
         # Resample the array
-        ratio = {str(n.columns): ds.totalheight, str(n.rows): ds.totalwidth} 
-        arr_resampled = spatial_resample(arr.squeeze(), ratio, chunks)
-        ds[str(n.rtoa)+f'_{band}'] = arr_resampled
-
-    ds = merge(ds, dim=str(n.bands_nvis), pattern=r'(.+)_B(.+)', dtype=str)
-    ds[str(n.rtoa)].attrs.update(unit=None)
+        if concat:
+            ratio = {str(n.columns): ds.totalheight, str(n.rows): ds.totalwidth} 
+            arr_resampled = spatial_resample(arr.squeeze(), ratio, chunks)
+            ds[str(n.rtoa)+f'_{band}'] = arr_resampled
+        else:
+            res = str(metadata['resolution'][iband]) + 'm'
+            name = str(n.rtoa)+f'_{res}_{band}'
+            arr = arr.squeeze().rename({'y': f'y_{res}', 'x': f'x_{res}'})
+            ds[name] = arr.chunk(chunks)
     
-    # Reorder bands
-    order = [indexes.index(i) for i in range(len(indexes))]    
-    return ds.isel({str(n.bands_nvis): order})
+    if concat:
+        res = [n.bands+f'_{r}m' for r in metadata['resolution']]
+        ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
+        ds[str(n.rtoa)].attrs.update(unit=None)
+        ds = ds.assign({str(n.bgroup): (str(n.bands), res)})
+    else:
+        ds = merge(ds, dim=str(n.bands+'_10m'), pattern=r'(.+_10m)_B(.+)', dtype=str)
+        ds = merge(ds, dim=str(n.bands+'_20m'), pattern=r'(.+_20m)_B(.+)', dtype=str)
+        ds = merge(ds, dim=str(n.bands+'_60m'), pattern=r'(.+_60m)_B(.+)', dtype=str)
+        ds[str(n.rtoa)+'_10m'].attrs.update(unit=None)
+        ds[str(n.rtoa)+'_20m'].attrs.update(unit=None)
+        ds[str(n.rtoa)+'_60m'].attrs.update(unit=None)
+    
+    return ds
 
 
-def _msi_read_geometry(ds, tileangles, chunks):
+def _msi_read_geometry(
+        ds: xr.Dataset, 
+        tileangles: dict, 
+        chunks: tuple
+    ) -> xr.Dataset:
     """
-    Reads and processes geometric data from MSI tiles.
+    Read and interpolate geometric angles from tie points to full resolution.
 
-    Parameters:
-        ds (xarray Dataset): Input dataset containing MSI data
-        tileangles (dict): Dictionary containing XML blocks for solar and view angles
-        chunks (tuple): Chunk sizes for dask arrays
+    Args:
+        ds: Input dataset with product dimensions
+        tileangles: Dictionary containing XML blocks for solar and view angles
+        chunks: Chunk sizes for dask arrays
 
     Returns:
-        xarray Dataset: Output dataset with updated coordinates and geometry variables
+        Dataset with added angle variables (sza, saa, vza, vaa) and their tie-point versions
     """
     
     # read solar angles at tiepoints
@@ -296,19 +312,21 @@ def _msi_read_geometry(ds, tileangles, chunks):
     return ds
 
 
-def _read_xml_block(item, dims):
-    '''
-    read a block of xml data and returns it as a xarray float32 DataArray
-    '''
+def _read_xml_block(item: dict, dims: tuple) -> xr.DataArray:
+    """Parse XML values block into a float32 DataArray."""
     return xr.DataArray([i.split() for i in item['Values_List']['VALUES']], 
                         dims=dims).astype('float32')
 
 
 class _LATLON:
-    '''
-    An array-like to calculate the MSI lat-lon
-    '''
-    def __init__(self, geocoding, kind, ds):
+    """
+    Array-like object for lazy computation of MSI latitude/longitude arrays.
+    
+    Computes geographic coordinates from UTM projection parameters stored in metadata.
+    Supports dask-based lazy evaluation for memory efficiency.
+    """
+    def __init__(self, geocoding: dict, kind: Literal['lat', 'lon'], ds: xr.Dataset):
+        """Initialize coordinate calculator from geocoding metadata."""
         self.kind = kind
 
         code = geocoding.get('HORIZONTAL_CS_CODE')
@@ -345,20 +363,39 @@ class _LATLON:
         else: return lon.astype(self.dtype)
 
 
-def Level2_MSI(dirname):
+def Level2_MSI(dirname: Union[str, Path]) -> xr.Dataset:
     """
-    Read an MSI level2 product as xarray.Dataset
+    Read a Sentinel-2 MSI Level2A product as an xarray.Dataset.
+    
+    Note: This function is not yet implemented.
+    
+    Args:
+        dirname: Path to the Sentinel-2 Level2A .SAFE directory
+        
+    Raises:
+        NotImplementedError: Always raised as Level2A reading is not yet supported
     """
     raise NotImplementedError
 
 
-def get_sample(level:int=1) -> Path:
+def get_sample(level: int = 1) -> Path:
     """
-    Bring a MSI directory path to test reading function
+    Download or retrieve a sample Sentinel-2 MSI product for testing.
+    
+    Requires the 'sand' module for Copernicus Data Space access.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+        level: Processing level (1 for Level1C, 2 for Level2A)
+
+    Returns:
+        Path to the downloaded .SAFE directory
+        
+    Raises:
+        ImportError: If the 'sand' module is not installed
+        
+    Example:
+        >>> safe_dir = get_sample(level=1)
+        >>> ds = Level1_MSI(safe_dir)
     """
     try: 
         from sand.copernicus_dataspace import DownloadCDSE
@@ -368,23 +405,16 @@ def get_sample(level:int=1) -> Path:
     
     sensor = 'SENTINEL-2-MSI'
     prod_id = products[sensor][f'l{level}_product']
-    target = env.getdir("DIR_SAMPLES")/(prod_id+'.SAFE')
-    # TODO: remove when SAND's download_file supports filegen
-    if not target.exists():
-        dl = DownloadCDSE()
-        return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    dl = DownloadCDSE()
+    target = dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
     assert target.exists()
     return target
 
-def _v1_compat(ds):
-    
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
     # Remove metadata
     ds.attrs['metadata_granule'] = filter_metadata(ds.attrs['metadata_granule'], [])
     ds.attrs['metadata'] = filter_metadata(ds.attrs['metadata'], [])
-    
-    # rename bands variable
-    ds = ds.assign({str(n.rtoa): ((str(n.bands), str(n.rows), str(n.columns)), ds[str(n.rtoa)].data)})
-    ds = ds.drop_dims(str(n.bands_nvis))
     
     # Apply previous rounded central wavelengths
     msi_band = [443, 490, 560, 665, 705, 740, 783, 842, 865, 945, 1375, 1610, 2190]

@@ -10,17 +10,18 @@ from eoread.landsat_oli import Level1_OLI
 
 
 @pytest.fixture
-def l1_path() -> Path:
-    return env.getdir('DIR_SAMPLE_LANDSAT9')
+def l1_path():
+    return env.getdir('DIR_L9_L1C')
 
-def test_srtm(l1_path: Path):
+@pytest.mark.skip('Provider of SRTM data has stopped')
+def test_srtm(l1_path):
     with TemporaryDirectory() as tmpdir:
         l1 = Level1_OLI(l1_path)
         srtm = SRTM(directory=tmpdir, missing=0)
         sub = xrcrop(srtm, latitude=l1.latitude, longitude=l1.longitude)
         sub.compute(scheduler='sync')
 
-def test_gtopo(l1_path: Path):
+def test_gtopo(l1_path):
     with TemporaryDirectory() as tmpdir:
         l1 = Level1_OLI(l1_path)
         gtopo = GTOPO30(directory=tmpdir, missing=0)

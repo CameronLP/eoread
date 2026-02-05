@@ -1,28 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''
-List of VENµs bands:
------------------
-
-Band Use         Wavelength Bandwidth Resolution
-B1   Atmo Correc 420nm      40nm      5m
-B2   Aerosol     443nm      40nm      5m
-B3   Water       490nm      40nm      5m
-B4   Land        555nm      40nm      5m
-B5   Vege Index  620nm      40nm      5m
-B6   Image quali 620nm      40nm      5m
-B7   Red Edge 1  667nm      30nm      5m
-B8   Red Edge 2  702nm      24nm      5m
-B9   Red Edge 3  742nm      16nm      5m
-B10  Red Edge 4  782nm      16nm      5m
-B11  Vege Index  865nm      40nm      5m
-B12  Water vapor 910nm      20nm      5m
-'''
-
 # https://www.eoportal.org/satellite-missions/venus#vssc-ven%C2%B5s-superspectral-camera
 
 from pathlib import Path
+from typing import Union, Literal
+
 import dask.array as da
 import pandas as pd
 import xarray as xr
@@ -35,27 +18,55 @@ from core.files import mdir
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
-from eoread.utils import open_raster, spatial_resample
+from eoread.utils import open_raster, spatial_resample, filter_metadata
 from eoread.common import DataArray_from_array
 
 
-def Level1_VENUS(dirname, 
-                 chunks: int|tuple = 500,
-                 read_masks: bool = False, 
-                 metadata_template: list|None = None,
-                 v1_compat: bool = False):
-    '''
-    Read an Venµs Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA reflectances,
-    the angles on the full grid, etc.
+user_guide = 'https://www.cesbio.cnrs.fr/multitemp/ven%c2%b5s-product-format/'
 
-    Arguments:
-        dirname: Path of the VENµS directory
-        chunks: Size of chunks for spatial axis
-        read_masks: Option to read compressed masks
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-    '''
+def Level1_VENUS(
+        dirname: Union[str, Path], 
+        chunks: Union[int, tuple] = 500,
+        read_masks: bool = False, 
+        metadata_template: Union[list, None] = None,
+        v1_compat: bool = False
+    ) -> xr.Dataset:
+    """
+    Read a VENµS Level1C product as an xarray.Dataset.
+    
+    Formats the Dataset to contain TOA reflectances, viewing/solar angles
+    on the full grid, and geolocation information.
+    
+    VENµS (Vegetation and Environment monitoring on a New Micro-Satellite) provides
+    12 superspectral bands from 420nm to 910nm with 5m spatial resolution.
+
+    Args:
+        dirname: Path to the VENµS product directory
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+                If tuple, should be (rows_chunk, columns_chunk)
+        read_masks: If True, reads compressed quality masks (PIX, SAT, CLD, USI).
+                   Warning: Uncompressing masks is time-consuming.
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+        v1_compat: If True, formats output to match version 1 structure
+
+    Returns:
+        xarray.Dataset containing:
+            - Rtoa: Top of atmosphere reflectance (dimensionless)
+            - SOL_ALL, VIE_ALL: Solar and viewing angle grids
+            - lat, lon: Geolocation arrays
+            - CLA_ALL: Cloud altitude
+            - Optional masks: CLD_XS, USI_XS, PIX_*, SAT_* (if read_masks=True)
+            - bands: Spectral band names (B1-B12)
+            - central_wavelength: Band wavelengths (nm)
+            - Metadata attributes with product information
+    
+    Raises:
+        AssertionError: If the directory does not exist
+        
+    Example:
+        >>> ds = Level1_VENUS('VENUS-XS_*_L1C_*', chunks=1000)
+        >>> print(ds.Rtoa.sel(bands='B8'))  # Red edge band
+    """
     
     ds = xr.Dataset()
     dirname = Path(dirname)
@@ -111,24 +122,40 @@ def Level1_VENUS(dirname,
         log.debug('Masks are not red due to uncompression time consuming. '
                   'Active option read_masks to read them')
         
+    ds = drop_unused_dims(ds)
+    groups = ['bands_vnir']*len(ds[str(n.bands)])
     ds = merge(ds, str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)    
-    ds = ds.assign_coords({str(n.bands): ds[str(n.bands)].data.astype(int),
-                           str(n.bands_nvis): ds[str(n.bands)].data.astype(int)})  
+    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), groups)})
     
     if v1_compat: return _v1_compat(ds, chunks)  
-    return drop_unused_dims(ds).unify_chunks()
+    return ds.unify_chunks()
 
 
-def Level2_VENUS(dirname, 
-                 chunks: int|tuple = 500,
-                 metadata_template: list = None):
-    '''
-    Read an Venµs Level2 product as an xarray.Dataset
+def Level2_VENUS(
+        dirname: Union[str, Path], 
+        chunks: Union[int, tuple] = 500,
+        metadata_template: Union[list, None] = None
+    ) -> xr.Dataset:
+    """
+    Read a VENµS Level2A product as an xarray.Dataset.
+    
+    Processes Level2A surface reflectance products with atmospheric correction.
 
-    Arguments:
-        chunk: size of a single chunk
-        split: whether the wavelength dependent variables should be split in multiple 2D variables
-    '''
+    Args:
+        dirname: Path to the VENµS Level2A product directory
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+
+    Returns:
+        xarray.Dataset containing:
+            - rho_surface: Surface reflectance (SRE)
+            - rho_flat: Flat surface reflectance (FRE)
+            - water_vapor: Column water vapor content
+            - aod: Aerosol optical depth
+            - Quality masks: CLM_XS, USI_XS, SAT_XS, PIX_XS, IAB_XS, EDG_XS
+            - Geometric angles and geolocation
+            - Metadata attributes
+    """
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Folder does not exists'
@@ -173,11 +200,19 @@ def Level2_VENUS(dirname,
     usi = open_raster(dirname/'MASKS','*EDG_XS.tif', engine='rasterio').chunk(chunks)
     ds['EDG_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
     
-    return drop_unused_dims(ds).unify_chunks()
+    ds = drop_unused_dims(ds)
+    groups = ['bands_vnir']*len(ds[str(n.bands)])
+    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), groups)})
+    
+    return ds.unify_chunks()
 
 
-def _venus_read_metadata(ds, dirname, metadata_template):
-
+def _venus_read_metadata(
+        ds: xr.Dataset, 
+        dirname: Path, 
+        metadata_template: Union[list, None]
+    ) -> tuple[xr.Dataset, dict]:
+    """Extract metadata from XML files and populate dataset attributes."""
     # load xml file
     xmlfiles = list((dirname/'DATA').glob('*UII_ALL.xml'))
     assert len(xmlfiles) == 1
@@ -199,8 +234,8 @@ def _venus_read_metadata(ds, dirname, metadata_template):
         else: resolution = r
         cwvl.append(band['Wavelength']['CENTRAL']['values'])
         bandnames.append(band['attributes']['band_id'])
-    ds = ds.assign({str(n.cwav): ((str(n.bands)),cwvl),
-                    str(n.bnames): ((str(n.bands)),bandnames)})
+    ds = ds.assign({str(n.cwav): ((str(n.bands)), cwvl)})
+    ds = ds.assign_coords({str(n.bands): bandnames})
     
     # read date
     date = xmlgranule['Product_Characteristics']['ACQUISITION_DATE']
@@ -225,12 +260,13 @@ def _venus_read_metadata(ds, dirname, metadata_template):
     ds.attrs[str(n.input_directory)] = str(dirname.parent)
     ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
+    ds.attrs['user_guide'] = user_guide
     
     return ds, xmlgranule
 
 
-def _venus_read_latlon(ds, geocoding, chunks):
-    
+def _venus_read_latlon(ds: xr.Dataset, geocoding: dict, chunks: list) -> None:
+    """Add latitude and longitude arrays from UTM projection."""
     ds[str(n.lat)] = DataArray_from_array(
         _LATLON(geocoding, 'lat', ds),
         (str(n.rows), str(n.columns)),
@@ -243,9 +279,14 @@ def _venus_read_latlon(ds, geocoding, chunks):
         chunks=chunks,
     )
 
-def _venus_read_toa(ds, granule_dir, quantif, chunks):
-    
-    for name in ds[str(n.bnames)]:
+def _venus_read_toa(
+        ds: xr.Dataset, 
+        granule_dir: Path, 
+        quantif: float, 
+        chunks: list
+    ) -> xr.Dataset:
+    """Read and calibrate TOA reflectance from TIFF files."""
+    for name in ds[str(n.bands)]:
         
         arr = open_raster(granule_dir, f'*REF_{name.values}.tif', engine='rasterio').chunk(chunks)
         arr = (arr/quantif).astype('float32')
@@ -254,15 +295,20 @@ def _venus_read_toa(ds, granule_dir, quantif, chunks):
         arr_resampled = spatial_resample(arr, ratio, chunks)
         ds[str(n.rtoa)+f'_{name.values}'] = arr_resampled
 
-    ds = merge(ds, dim=str(n.bands_nvis), pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_(B.+)', dtype=str)
     ds[str(n.rtoa)].attrs.update(unit=None)
     return ds
 
 
-def _venus_read_rho(ds, granule_dir, quantif, chunks):
-
+def _venus_read_rho(
+        ds: xr.Dataset, 
+        granule_dir: Path, 
+        quantif: float, 
+        chunks: list
+    ) -> xr.Dataset:
+    """Read surface and flat reflectances, plus aerosol and water vapor data."""
     for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
-        for name in ds[str(n.bnames)]:
+        for name in ds[str(n.bands)]:
             
             arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif', engine='rasterio').chunk(chunks)
             arr = (arr/quantif).astype('float32')
@@ -271,7 +317,7 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
             arr_resampled = spatial_resample(arr, ratio, chunks)
             ds[var+f'_{name.values}'] = arr_resampled
 
-    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_(B.+)', dtype=str)
     
     # read Aerosol_Optical_Thickness of waper vapor content
     atb = open_raster(granule_dir, '*ATB_XS.tif', engine='rasterio').chunk([1]+list(chunks))
@@ -280,8 +326,8 @@ def _venus_read_rho(ds, granule_dir, quantif, chunks):
 
     return ds
 
-def _venus_read_geometry(ds, dirname, chunks):
-
+def _venus_read_geometry(ds: xr.Dataset, dirname: Path, chunks: list) -> xr.Dataset:
+    """Read solar and viewing angle grids from TIFF files."""
     # read solar angles
     sa = open_raster(dirname/'DATA','*SOL_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
     ds['SOL_ALL'] = sa.rename(x=str(n.columns)+'_tie', y=str(n.rows)+'_tie')
@@ -293,10 +339,14 @@ def _venus_read_geometry(ds, dirname, chunks):
     return ds.rename(band=str(n.bands)+'_angle')
 
 class _LATLON:
-    '''
-    An array-like to calculate the VENUS lat-lon
-    '''
-    def __init__(self, geocoding, kind, ds):
+    """
+    Array-like object for lazy computation of VENµS latitude/longitude arrays.
+    
+    Computes geographic coordinates from UTM projection parameters stored in metadata.
+    Supports dask-based lazy evaluation for memory efficiency.
+    """
+    def __init__(self, geocoding: dict, kind: Literal['lat', 'lon'], ds: xr.Dataset):
+        """Initialize coordinate calculator from geocoding metadata."""
         self.kind = kind
 
         code = geocoding['Coordinate_Reference_System']['Horizontal_Coordinate_System']['HORIZONTAL_CS_CODE']
@@ -342,12 +392,28 @@ class _LATLON:
 
 
 def get_SRF(
-    ds_in: xr.Dataset = None, dir_data: Path = None
+    ds_in: Union[xr.Dataset, None] = None, 
+    dir_data: Union[Path, None] = None
 ) -> xr.Dataset:
     """
-    Load Venµs spectral response functions (SRF)
+    Load VENµS spectral response functions (SRF) for radiometric calculations.
+    
+    Downloads SRF data from the official repository if not already cached.
 
-    If ds_in is provided, the output bands are references by ds_in.bands
+    Args:
+        ds_in: Optional dataset with band names. If provided, output bands
+               are referenced by ds_in.bands. Otherwise uses band IDs 1-12.
+        dir_data: Directory to cache SRF data. If None, uses default static directory.
+
+    Returns:
+        xarray.Dataset containing:
+            - SRF curves for each VENµS band
+            - wav: Wavelength coordinate in nanometers
+            - Band variables named by band ID or from ds_in.bands
+    
+    Example:
+        >>> srf = get_SRF()
+        >>> print(srf.sel(wav=550, method='nearest'))  # SRF at 550nm
     """
     if dir_data is None:
         dir_data = mdir(env.getdir('DIR_STATIC')/'venus')
@@ -381,12 +447,24 @@ def get_SRF(
 
     return ds
 
-def get_sample(level:int=1) -> Path:
+def get_sample(level: int = 1) -> Path:
     """
-    Bring a VENµS directory path to test reading function
+    Retrieve a sample VENµS product directory for testing.
+    
+    Returns paths to pre-configured sample products from environment variables.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
+        level: Processing level (1 for Level1C, 2 for Level2A)
+
+    Returns:
+        Path to the VENµS product directory
+        
+    Raises:
+        ValueError: If level is not 1 or 2
+        
+    Example:
+        >>> venus_dir = get_sample(level=1)
+        >>> ds = Level1_VENUS(venus_dir)
     """
     if level == 1:
         return env.getdir('DIR_VENUS_L1C')
@@ -406,8 +484,8 @@ def get_sample(level:int=1) -> Path:
     # query = dl.query(collection_sand=sensor, level=level, **params)
     # return dl.download(query[0], env.getdir('DIR_SAMPLES'))
 
-def _v1_compat(ds, chunks):
-    
+def _v1_compat(ds: xr.Dataset, chunks: list) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
     import numpy as np
     
     def read_xml_block(item):

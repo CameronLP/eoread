@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-'''
-Landsat-9 OLI reader
-
-Example:
-    l1 = Level1_L9_OLI('LC09_L1TP_014034_20220618_20230411_02_T1/')
-
-Data access:
-    * https://earthexplorer.usgs.gov/
-    * https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1
-'''
-
 import re
 import numpy as np
 import xarray as xr
@@ -20,6 +9,7 @@ import dask.array as da
 from os import system
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Union
 from eoread.utils import filter_metadata, open_raster
 
 from core import log, env
@@ -32,36 +22,44 @@ from core.geo import n, convert_latlon_2D
 # Central wavelengths aren't described in metadata. Thus, they are hard-coded
 cwvl = [442.96,482.04,561.41,654.59,864.67,1608.86,2200.73,1373.43,10895,12050,]
 
+user_guide = 'https://greenpolicy360.net/images/Landsat8DataUsersHandbook.pdf'
 
-def Level1_OLI(dirname: str|Path,
-               l9_angles = None,
-               chunks: int|tuple = 500,
-               metadata_template: list|None = None,
-               v1_compat: bool = False):
-    '''
-    Read an Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, reflectances, 
-    brightness temperatures, the angles on the full grid, etc.
+def Level1_OLI(
+        dirname: Union[str, Path],
+        l9_angles: Union[str, Path, None] = None,
+        chunks: Union[int, tuple] = 500,
+        metadata_template: Union[list, None] = None,
+        v1_compat: bool = False
+    ) -> xr.Dataset:
+    """
+    Read a Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset.
+    
+    OLI (Operational Land Imager) provides 9 spectral bands from coastal aerosol
+    to SWIR with 30m resolution, plus a 15m panchromatic band.
 
-    Arguments:
-        dirname: Path of the OLI directory path (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
-        l9_angles: executable name of l9_angles program (ex: 'l9_angles/l9_angles'), used to generate the angles
-                files automatically when missing, with the following command:
-            l9_angles LC08_..._ANG.txt BOTH 1 -b 1
-            l9_angles is available at:
-            https://www.usgs.gov/land-resources/nli/landsat/solar-illumination-and-sensor-viewing-angle-coefficient-files
-
-            It can be compiled with the following commands:
-                wget https://landsat.usgs.gov/sites/default/files/documents/L9_ANGLES_2_7_0.tgz
-                tar xzf L9_ANGLES_2_7_0.tgz
-                rm -fv L9_ANGLES_2_7_0.tgz
-                cd l9_angles
-                make
-                cd ..
-        chunks: Size of chunks for spatial axis
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-    '''
+    Args:
+        dirname: Path to the Landsat OLI directory
+                (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
+        l9_angles: Path to l9_angles executable for generating angle files when missing.
+                  The program generates sensor and solar angles with:
+                  `l9_angles LC0*_ANG.txt BOTH 1 -b 1`
+                  
+                  Available at: https://www.usgs.gov/land-resources/nli/landsat/
+                  solar-illumination-and-sensor-viewing-angle-coefficient-files
+                  
+                  Can be compiled with:
+                  ```
+                  wget https://landsat.usgs.gov/sites/default/files/documents/L9_ANGLES_2_7_0.tgz
+                  tar xzf L9_ANGLES_2_7_0.tgz && cd l9_angles && make
+                  ```
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+                          Use empty list [] for minimal metadata.
+        v1_compat: If True, formats output to match version 1 structure
+        
+    Example:
+        >>> ds = Level1_OLI('LC09_L1TP_014034_20220618_20230411_02_T1/')
+    """
     
     ds = xr.Dataset()
     dirname = Path(dirname)
@@ -93,25 +91,20 @@ def Level1_OLI(dirname: str|Path,
     ds.attrs[str(n.product_name)] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
     ds.attrs[str(n.input_directory)] = str(dirname.parent)
     ds.attrs[str(n.resolution)] = 30
+    ds.attrs['user_guide'] = user_guide
     
-    
-    # Sort band dimension
-    ds = ds.assign({str(n.bnames): ((str(n.bands)), ds[str(n.bands)].data)})
-    ds = ds.assign_coords({d: c.data.astype(int) 
-                           for d,c in ds.coords.items() if str(n.bands) in d})
-    ds = ds.sortby([str(n.bands), str(n.bands_ir), 'bands_nvis'])
-    
-    # define bands
-    ds = ds.assign({str(n.cwav):((str(n.bands)), cwvl)})
-    
+    # Manage dimensions
+    ds = ds.assign({str(n.cwav):((str(n.bands)), cwvl)})    
     ds = ds.rename({'y': str(n.rows), 'x': str(n.columns)})   
     ds = drop_unused_dims(ds).unify_chunks()
+    ds = ds.set_coords(n.bgroup)
     
     if v1_compat: return _v1_compat(ds)
     else: return ds
 
 
-def _read_metadata(ds, dirname, template):
+def _read_metadata(ds: xr.Dataset, dirname: Path, template: Union[list, None]) -> dict:
+    """Read and parse MTL XML metadata file."""
     filter_fn = (lambda x,y: x) if template is None else filter_metadata
     files_mtl = list(dirname.glob('LC*_MTL.xml'))
     assert len(files_mtl) == 1, 'XML file not found'
@@ -120,11 +113,8 @@ def _read_metadata(ds, dirname, template):
     return data_mtl
 
 
-def _read_coordinates(ds, chunks):
-    '''
-    read lat/lon
-    '''
-    
+def _read_coordinates(ds: xr.Dataset, chunks: list) -> None:
+    """Compute latitude and longitude arrays from corner coordinates."""
     # Compute tie points
     points = ds.metadata['PROJECTION_ATTRIBUTES']
     lat = xr.DataArray([
@@ -148,7 +138,8 @@ def _read_coordinates(ds, chunks):
     ds.attrs['totalwidth'] = ds.x.size
 
 
-def _gen_l9_angles(dirname, l9_angles=None):
+def _gen_l9_angles(dirname: Path, l9_angles: Union[str, Path, None] = None) -> None:
+    """Generate angle files using the l9_angles executable."""
     log.debug(f'Geometry file is missing in {dirname}, generating it with {l9_angles}...')
     angles_txt_file = list(dirname.glob('LC*_ANG.txt'))
     assert len(angles_txt_file) == 1, 'angle file is missing'
@@ -161,8 +152,8 @@ def _gen_l9_angles(dirname, l9_angles=None):
         system(f"cp -v {tmpdir/'*'} {dirname}")
 
 
-def _read_geometry(ds, dirname, l9_angles, chunks):
-    
+def _read_geometry(ds: xr.Dataset, dirname: Path, l9_angles: Union[str, Path, None], chunks: list) -> None:
+    """Read or generate sensor and solar angle rasters."""
     # read sensor and solar angles
     for name, search in [(str(n.saa), 'LC*_SAA.TIF'),
                          (str(n.sza), 'LC*_SZA.TIF'),
@@ -175,8 +166,8 @@ def _read_geometry(ds, dirname, l9_angles, chunks):
         _gen_l9_angles(dirname, l9_angles)
 
 
-def _read_radiometry(ds, dirname, chunks):
-    
+def _read_radiometry(ds: xr.Dataset, dirname: Path, chunks: list) -> xr.Dataset:
+    """Read and calibrate radiance, reflectance, and brightness temperature."""
     rescale = ds.metadata['LEVEL1_RADIOMETRIC_RESCALING']
     thermal = ds.metadata['LEVEL1_THERMAL_CONSTANTS']
     
@@ -203,75 +194,81 @@ def _read_radiometry(ds, dirname, chunks):
         data = xr.open_dataarray(f, engine='rasterio').chunk([1]+list(chunks))
         ds[str(n.ltoa)+b] = (m*data.squeeze()+a).astype('float32')
     
-    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
-    ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
-    
-    for f in dirname.glob(f'LC*_B*.TIF'):
-        
-        # Retrieve band name
-        search = re.search(r'_B[0-9]*', f.name)
-        b = f.name[search.start():search.end()]
-        if f'REFLECTANCE_ADD_BAND_{b[2:]}' not in rescale: continue
-        
-        # Drop Panchromatic band
-        if 'B8' in b: continue
-        
         # read reflectances
-        a = rescale[f'REFLECTANCE_ADD_BAND_{b[2:]}']
-        m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
-        filenames = list(dirname.glob(f'LC*{b}.TIF'))
-        data = xr.open_dataarray(filenames[0], engine='rasterio').chunk([1]+list(chunks))
-        ds[str(n.rtoa)+b] = (m*data.squeeze()+a).astype('float32')
-    
-    ds = merge(ds, dim='bands_nvis', pattern=r'(.+)_B(.+)', dtype=str)
-    ds[str(n.rtoa)].attrs['unit'] = None
-    
-    for f in dirname.glob(f'LC*_B*.TIF'):
-        
-        # Retrieve band name
-        search = re.search(r'_B[0-9]*', f.name)
-        b = f.name[search.start():search.end()]
-        if f'K1_CONSTANT_BAND_{b[2:]}' not in thermal: continue
+        if f'REFLECTANCE_ADD_BAND_{b[2:]}' not in rescale:
+            ds[str(n.rtoa)+b] = xr.full_like(ds[str(n.ltoa)+b], np.nan, dtype='float32')
+        else:        
+            a = rescale[f'REFLECTANCE_ADD_BAND_{b[2:]}']
+            m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
+            ds[str(n.rtoa)+b] = (m*data.squeeze()+a).astype('float32')
+            ds[n.bgroup+b] = 'bands_vnir'      
         
         # read brightness temperatures
-        k1 = thermal[f'K1_CONSTANT_BAND_{b[2:]}']
-        k2 = thermal[f'K2_CONSTANT_BAND_{b[2:]}']
-        rad = ds[str(n.ltoa)].sel({str(n.bands):b[2:]})
-        ds[str(n.bt)+b] = (k2/np.log(k1/rad + 1)).astype('float32')
-
-    ds = merge(ds, dim=str(n.bands_ir), pattern=r'(.+)_B(.+)', dtype=str)
+        if f'K1_CONSTANT_BAND_{b[2:]}' not in thermal:
+            ds[str(n.bt)+b] = xr.full_like(ds[str(n.ltoa)+b], np.nan, dtype='float32')
+        else:        
+            k1 = thermal[f'K1_CONSTANT_BAND_{b[2:]}']
+            k2 = thermal[f'K2_CONSTANT_BAND_{b[2:]}']
+            rad = ds[str(n.ltoa)+b]
+            ds[str(n.bt)+b] = (k2/np.log(k1/rad + 1)).astype('float32')
+            ds[n.bgroup+b] = 'bands_ir'    
+        
+    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
+    ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
+    ds[str(n.rtoa)].attrs['unit'] = None
     ds[str(n.bt)].attrs['unit'] = 'Kelvin'
 
     return ds
 
-def _read_masks(ds, dirname, chunks):
+def _read_masks(ds: xr.Dataset, dirname: Path, chunks: list) -> None:
+    """Read quality assurance (QA) mask files."""
     for t in dirname.glob('*_QA_*'):
         search = re.search(r'QA_[A-Z]*', t.name)
         name = t.name[search.start():search.end()]
         ds[name] = xr.open_dataarray(t, engine='rasterio').chunk([1]+list(chunks)).squeeze()
 
 
-def _v1_compat(ds):
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
     return ds
 
 
-def get_sample(level:int, use_cache:bool=True) -> Path:
+def get_sample(level: int, mission: int = 8, use_cache: bool = True) -> Path:
     """
-    Bring a Landsat-8 OLI directory path to test reading function
+    Retrieve a sample Landsat OLI product directory for testing.
+    
+    Returns paths to pre-configured sample products from environment variables.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+        level: Processing level (1 for Level1, 2 for Level2)
+        mission: Landsat mission number (8 for Landsat-8, 9 for Landsat-9)
+        use_cache: Legacy parameter, not currently used
+
+    Returns:
+        Path to the Landsat OLI product directory
+        
+    Raises:
+        ValueError: If level is not 1 or 2
+        
+    Example:
+        >>> oli_dir = get_sample(level=1, mission=9)
+        >>> ds = Level1_OLI(oli_dir)
     """
-    # # FIXME
     # return Path('data/sample_products/LC08_L1TP_180054_20250104_20250111_02_T1')
-    try: 
-        from sand.usgs import DownloadUSGS
-        from sand.sample_product import products
-    except ImportError:
-        raise ImportError('To use get_sample function, you need to install SAND module')
+    if level == 1:
+        return env.getdir(f'DIR_L{mission}_L1C')
+    elif level == 2:
+        return env.getdir(f'DIR_L{mission}_L2A')
+    else:
+        raise ValueError(level)
     
-    sensor = 'LANDSAT-8-OLI'
-    dl = DownloadUSGS()
-    prod_id = products[sensor][f'l{level}_product']
-    return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    # try: 
+    #     from sand.usgs import DownloadUSGS
+    #     from sand.sample_product import products
+    # except ImportError:
+    #     raise ImportError('To use get_sample function, you need to install SAND module')
+    
+    # sensor = f'LANDSAT-{mission}-OLI'
+    # dl = DownloadUSGS()
+    # prod_id = products[sensor][f'l{level}_product']
+    # return dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))

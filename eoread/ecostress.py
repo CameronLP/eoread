@@ -4,6 +4,7 @@ from core import env, log
 from core.geo import n
 from pathlib import Path
 from shapely import wkt
+from typing import Union
 
 import numpy as np
 import xarray as xr 
@@ -13,22 +14,28 @@ import dask.array as da
 user_guide = 'https://ecostress.jpl.nasa.gov/downloads/userguides/1_ECOSTRESS_L1_UserGuide_20190619.pdf'
 
 def Level1_ECOSTRESS(
-        filepath: Path | str, 
-        chunks: int|list = 500, 
-        metadata_template: list|None = None,
+        filepath: Union[Path, str], 
+        chunks: Union[int, list] = 500, 
+        metadata_template: Union[list, None] = None,
         v1_compat: bool = False
-    ):
-    '''
-    Read an ECOSTRESS Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
-    the angles on the full grid, etc.
+    ) -> xr.Dataset:
+    """
+    Read an ECOSTRESS Level1 product as an xarray.Dataset.
+    
+    ECOSTRESS (Ecosystem Spaceborne Thermal Radiometer Experiment on Space Station)
+    provides high-resolution thermal infrared measurements across 5 spectral bands.
 
-    Arguments:
-        filepath: Path of the ECOSTRESS H5file
-        chunks: Size of chunks for spatial axis
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-    '''
+    Args:
+        filepath: Path to the ECOSTRESS HDF5 file (.h5)
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+                If list, should be [rows_chunk, columns_chunk]
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+                          Use empty list [] for minimal metadata.
+        v1_compat: If True, formats output to match version 1 structure for backward compatibility
+        
+    Example:
+        >>> ds = Level1_ECOSTRESS('ECOv002_L1CG_RAD_*.h5', chunks=1000)
+    """
     
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
@@ -74,9 +81,9 @@ def Level1_ECOSTRESS(
     new_dims = (str(n.rows),str(n.columns))    
     revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
     l1 = l1.rename_dims(revize_dims)
-    l1 = l1.assign({
-        str(n.cwav): ((str(n.bands)), granule_mtd.BandSpecification.values[1:]*1e3),
-        str(n.bnames): ((str(n.bands)), l1[str(n.bands)].values.astype(str))
+    l1 = l1.assign_coords({
+        str(n.bands): l1[str(n.bands)].values.astype(str),
+        str(n.bgroup): (str(n.bands), ['bands_ir']*5)
     })
     
     # Add latlon variables
@@ -87,9 +94,27 @@ def Level1_ECOSTRESS(
     else: return l1
 
 
-def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
+def Level2_ECOSTRESS(
+        filepath: Union[Path, str], 
+        chunks: int = 500
+    ) -> xr.Dataset:
+    """
+    Read an ECOSTRESS Level2 product as an xarray.Dataset.
     
-    # Revize variables
+    Processes Level2 Land Surface Temperature and Emissivity (LSTE) data.
+
+    Args:
+        filepath: Path to the ECOSTRESS Level2 HDF5 file (.h5)
+        chunks: Size of chunks for spatial dimensions
+
+    Returns:
+        xarray.Dataset containing:
+            - Surface temperature and emissivity products
+            - Quality masks and flags
+            - Geolocation arrays (lat, lon)
+            - Metadata attributes
+    """
+    # Revise variables
     filepath = Path(filepath)
     data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
     raw = data['HDFEOS/GRIDS/ECO_L2G_LSTE_70m/Data Fields']
@@ -113,20 +138,17 @@ def Level2_ECOSTRESS(filepath: Path | str, chunks: int = 500):
     l2.attrs['user guide'] = user_guide
     
     # Change dimensions name and update coordinates
-    new_dims = [str(n.rows),str(n.columns),str(n.bands_ir)]
-    coords = {str(n.bands_ir): granule_mtd.BandSpecification.values[1:]}
-    
+    new_dims = [str(n.rows),str(n.columns)]    
     revize_dims = dict(zip(list(l2.dims), new_dims))
     l2 = l2.rename_dims(revize_dims)
-    l2 = l2.assign_coords(coords)
     
     # Add latlon variables
     l2 = _supplement_latlon(l2, chunks)
     return l2
 
 
-def _transform_radiometry(raw_data, granule_mtd):
-    
+def _transform_radiometry(raw_data: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
+    """Convert raw radiances to calibrated units and compute brightness temperature."""
     # Combine band radiances into a single variable 
     level1 = merge(raw_data, dim=str(n.bands), pattern=r'(.+)_(\d+)')
     
@@ -135,14 +157,10 @@ def _transform_radiometry(raw_data, granule_mtd):
     level1[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
     
     # Compute brightness temperature for Emissive bands 
-    level1[str(n.bt)] = _compute_bt(level1, granule_mtd)
-    level1[str(n.bt)].attrs = {}
-    level1[str(n.bt)].attrs['unit'] = 'Kelvin'
-    
-    return level1
+    return _compute_bt(level1, granule_mtd)
 
-def _supplement_latlon(l1, chunks): 
-        
+def _supplement_latlon(l1: xr.Dataset, chunks: list) -> xr.Dataset:
+    """Add latitude and longitude coordinates based on scene boundary."""
     # Compute LatLon variables
     size = l1['cloud'].shape
     poly = wkt.loads(l1.metadata['SceneBoundaryLatLonWKT'])
@@ -152,6 +170,7 @@ def _supplement_latlon(l1, chunks):
     east   = coords[:,0].max()
     west   = coords[:,0].min()
     
+    # Build the lat and lon arrays
     dims = [str(n.rows),str(n.columns)]
     lat = da.linspace(north,south,size[0]).reshape((size[0],1))
     lon = da.linspace(west,east,size[1]).reshape((1,size[1]))
@@ -161,8 +180,8 @@ def _supplement_latlon(l1, chunks):
                                   dims=dims).chunk(chunks=chunks)
     return l1
 
-def _compute_bt(l1, granule_mtd) -> xr.DataArray:
-    """Calibration for the emissive channels."""
+def _compute_bt(l1: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
+    """Compute brightness temperature from radiance using Planck's law."""
     # Initialized constants
     K1 = 1.191042 * 1e8
     K2 = 1.4387752 * 1e4
@@ -171,23 +190,22 @@ def _compute_bt(l1, granule_mtd) -> xr.DataArray:
     cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0=str(n.bands)) # convert into µm
     gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1=str(n.bands))
     offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1=str(n.bands))
-    l1 = l1.assign({str(n.cwav): ((str(n.bands_ir)),cwvl.data)})
+    l1 = l1.assign({str(n.cwav): ((str(n.bands)), cwvl.data*1e3)})
     
     # Some versions of the modis files do not contain all the bands.
     valid = ~l1[str(n.ltoa)].isnull()
     array = K2 / (cwvl * np.log(K1 / (l1[str(n.ltoa)].where(valid) * cwvl ** 5) + 1))
-    bt = gain * array.where(valid) + offset
-    return bt.rename({str(n.bands): str(n.bands_ir)})
-
-def _v1_compat(ds):
-    """Ensure back-compatibility"""
+    l1[str(n.bt)] = gain * array.where(valid) + offset
+    l1[str(n.bt)].attrs = {'unit': 'Kelvin'}
     
-    # Rename IR bands into bands_tir
-    ds = ds.rename({str(n.bands_ir): 'bands_tir'})
+    return l1
+
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
     
     # Assign central wavelengths as bands coordinates
-    ds = ds.assign_coords({'bands_tir': [8290,8780,9200,10490,12090],
-                           str(n.bands): [8290,8780,9200,10490,12090]})
+    ds = ds.assign_coords({str(n.bands): [8290,8780,9200,10490,12090]})
+    ds = ds.rename({str(n.bands): 'bands_tir'})
     
     # Add a new variables called flags
     flags = ds.data_quality[0] != 0
@@ -205,12 +223,21 @@ def _v1_compat(ds):
     return ds
 
 
-def get_sample(level: int=1) -> Path:
+def get_sample(level: int = 1) -> Path:
     """
-    Bring a ECOSTRESS file path to test reading function
+    Download or retrieve a sample ECOSTRESS product for testing.
+    
+    Requires the 'sand' module for NASA data access.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
+        level: Processing level of the product (1 or 2). Level 1 provides
+               radiance/brightness temperature, Level 2 provides surface temperature.
+
+    Returns:
+        Path to the downloaded ECOSTRESS HDF5 file
+        
+    Raises:
+        ImportError: If the 'sand' module is not installed
     """
     try: 
         from sand.nasa import DownloadNASA
@@ -220,23 +247,26 @@ def get_sample(level: int=1) -> Path:
     
     sensor = 'ISS-ECOSTRESS'
     prod_id = products[sensor][f'l{level}_product']
-    target = env.getdir('DIR_SAMPLES')/(prod_id+'.h5')
-    if not target.exists():
-        # TODO: remove when SAND's download_file supports filegen
-        dl = DownloadNASA()
-        dl.download_file(prod_id, env.getdir('DIR_SAMPLES'))
+    target = env.getdir('DIR_SAMPLES')/prod_id
+    dl = DownloadNASA()
+    dl.download_file(target.name, target.parent)
     assert target.exists()
     return target
 
 class _parser:
+    """Parser for HDFEOS metadata structure."""
     
     def __init__(self, text: list):
+        """Initialize parser with metadata text lines."""
         self.data = {}
         self.text = text.copy()
     
-    def empty(self): return len(self.text) == 0
+    def empty(self) -> bool:
+        """Check if there are remaining lines to parse."""
+        return len(self.text) == 0
     
-    def consume(self):
+    def consume(self) -> str:
+        """Remove and return the next non-empty line."""
         
         line = self.text[0]
         if len(self.text) == 1: # case for last line
@@ -251,17 +281,19 @@ class _parser:
         
         return line.strip()
     
-    def peek(self):
+    def peek(self) -> str:
+        """Return the next line without consuming it."""
         return self.text[0].strip()
     
-    def parse(self):
+    def parse(self) -> None:
+        """Parse all remaining lines into structured metadata."""
         
         while not self.empty():
             end = self._parse_recu(self.data)
             if end: break
             
-    def _parse_recu(self, data: dict=None): 
-        
+    def _parse_recu(self, data: dict = None) -> bool:
+        """Recursively parse metadata groups and objects."""
         line = self.consume()
         if line == "END":
             return True

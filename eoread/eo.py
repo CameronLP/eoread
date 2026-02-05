@@ -28,7 +28,7 @@ def init_Rtoa(ds: xr.Dataset):
 
     # TOA reflectance
     if str(n.rtoa) not in ds:
-        ds = ds.assign({str(n.rtoa): ((str(n.bands_nvis),str(n.rows),str(n.columns)), 
+        ds = ds.assign({str(n.rtoa): ((str(n.bands),str(n.rows),str(n.columns)), 
                        (da.pi*ds[str(n.ltoa)]/(ds.mus*ds[str(n.F0)])).data)})
         ds[str(n.rtoa)].attrs.update(unit=None)
 

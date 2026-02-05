@@ -5,7 +5,7 @@ import xarray as xr
 import dask.array as da
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Union
 from datetime import datetime
 from warnings import filterwarnings
 from re import findall
@@ -24,13 +24,24 @@ from eoread.utils import spatial_resample, filter_metadata
 filterwarnings('ignore', message=".*Duplicate dimension.*")
 
 
-def get_sample(level:int=1) -> Path:
+def get_sample(level: int = 1) -> Path:
     """
-    Bring a OLCI file path to test reading function
+    Download or retrieve a sample OLCI product for testing.
+    
+    Requires the 'sand' module for EUMETSAT Data Store access.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+        level: Processing level (1 for Level1, 2 for Level2)
+
+    Returns:
+        Path to the downloaded .SEN3 directory
+        
+    Raises:
+        ImportError: If the 'sand' module is not installed
+        
+    Example:
+        >>> sen3_dir = get_sample(level=1)
+        >>> ds = Level1_OLCI(sen3_dir)
     """
     try: 
         from sand.eumdac import DownloadEumDAC
@@ -42,37 +53,41 @@ def get_sample(level:int=1) -> Path:
     prod_id = products[sensor][f'l{level}_product']
 
     targetdir = env.getdir('DIR_SAMPLES')
-    target = targetdir/prod_id
-    if not target.exists():
-        # TODO: remove when SAND's download_file supports filegen
-        dl = DownloadEumDAC()
-        dl.download_file(prod_id, targetdir)
+    dl = DownloadEumDAC()
+    target = dl.download_file(prod_id, targetdir)
     assert target.exists()
     return target
 
 
-def Level1_OLCI(dirname, 
-                chunks: int|tuple = 500,
-                tie_param: bool = False,
-                interp_angles: Literal['atan2','linear','legacy'] = 'linear',
-                metadata_template: list = None, 
-                v1_compat: bool = False):
-    '''
-    Read an OLCI Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, reflectances, 
-    the angles on the full grid, etc.
+def Level1_OLCI(
+        dirname: Union[str, Path], 
+        chunks: Union[int, tuple] = 500,
+        tie_param: bool = False,
+        interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
+        metadata_template: Union[list, None] = None, 
+        v1_compat: bool = False
+    ) -> xr.Dataset:
+    """
+    Read a Sentinel-3 OLCI Level1 product as an xarray.Dataset.
     
-    Arguments:
-        filepath: Path of the ECOSTRESS H5file
-        chunks: Size of chunks for spatial axis
-        tie_params: option to keep tie points in the output dataset
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-        interp_angles:
-            'linear': linear interpolation
-            'atan2': interpolate sin(x) and cos(x), then x = atan2(sin, cos)
-            'legacy': for backward compatibility (nearest for azimuth angles, linear for zenith angles)
-    '''
+    OLCI (Ocean and Land Colour Instrument) provides 21 spectral bands from
+    400nm to 1020nm with 300m spatial resolution.
+
+    Args:
+        dirname: Path to the OLCI .SEN3 directory
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+        tie_param: If True, keeps tie-point data in the output dataset
+        interp_angles: Interpolation method for angles:
+                      - 'linear': Linear interpolation for all angles
+                      - 'atan2': Trigonometric interpolation (sin/cos then atan2)
+                      - 'legacy': Backward compatible (nearest for azimuth, linear for zenith)
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+                          Use empty list [] for minimal metadata.
+        v1_compat: If True, formats output to match version 1 structure
+        
+    Example:
+        >>> ds = Level1_OLCI('S3A_OL_1_EFR____*.SEN3/', chunks=1000)
+    """
     ds = xr.Dataset()
     dirname = Path(dirname)
     if (dirname/dirname.name).exists(): dirname = (dirname/dirname.name)
@@ -102,8 +117,9 @@ def Level1_OLCI(dirname,
         if bn == 'attributes': continue
         bandnames.append(bn)
         cwvl.append(data['centralWavelength'])
+    ds = ds.assign_coords({str(n.bands): bandnames})
     ds = ds.assign({str(n.cwav): ((str(n.bands)),cwvl)})
-    ds = ds.assign({str(n.bnames): ((str(n.bands)),bandnames)})
+    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), ['bands_vnir']*len(cwvl))})
     
     # Check if product level is 1
     text = manifest['informationPackageMap']['contentUnit']['attributes']
@@ -199,12 +215,13 @@ def Level1_OLCI(dirname,
     assert ((ds.sizes[str(n.rows)]-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
 
     # instrument data
-    instrument_data = xr.open_dataset(dirname/'instrument_data.nc',
-                                      engine='h5netcdf',
-                                      mask_and_scale=False,
-                                      # this variable has duplicate dimensions, drop it
-                                      drop_variables='relative_spectral_covariance'
-                                      ).chunk(chunks=chunks)
+    instrument_data = xr.open_dataset(
+        dirname/'instrument_data.nc',
+        engine='h5netcdf',
+        mask_and_scale=False,
+        # this variable has duplicate dimensions, drop it
+        drop_variables='relative_spectral_covariance'
+    ).chunk(chunks=chunks)
     ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # quality flags
@@ -239,15 +256,26 @@ def Level1_OLCI(dirname,
     return ds.unify_chunks()
 
 
-def Level2_OLCI(dirname,
-                chunks=500,
-                tie_param=False,
-                init_spectral=True,
-                interp_angles='linear',
-                ):
-    '''
-    Read an OLCI Level2 product as an xarray.Dataset
-    '''
+def Level2_OLCI(
+        dirname: Union[str, Path],
+        chunks: Union[int, tuple] = 500,
+        tie_param: bool = False,
+        init_spectral: bool = True,
+        interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
+    ) -> xr.Dataset:
+    """
+    Read a Sentinel-3 OLCI Level2 product as an xarray.Dataset.
+    
+    Processes Level2 water products including water-leaving reflectances,
+    chlorophyll concentration, aerosol properties, and quality flags.
+
+    Args:
+        dirname: Path to the OLCI Level2 .SEN3 directory
+        chunks: Size of chunks for spatial dimensions
+        tie_param: If True, keeps tie-point data in the output dataset
+        init_spectral: If True, initializes spectral variables (wavelength, solar flux)
+        interp_angles: Interpolation method for angles ('atan2', 'linear', or 'legacy')
+    """
     ds = xr.Dataset()
 
     dirname = Path(dirname)
@@ -464,26 +492,34 @@ def Level2_OLCI(dirname,
     return ds.unify_chunks()
 
 
-def _read_bands(ds: xr.Dataset, dirname: Path, chunks, level):
-    
+def _read_bands(ds: xr.Dataset, dirname: Path, chunks: dict, level: int) -> xr.Dataset:
+    """Read spectral band radiance or reflectance data from NetCDF files."""
     prod_list = []
-    for filename in dirname.glob('O*radiance.nc'):
+    for band in ds[str(n.bands)].values:
+        filename = dirname/f'{band}_radiance.nc'
         data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
         prod_list.append(data)
 
-    if level == 1: param_name, unit = str(n.ltoa), 'W/sr/m^2'
-    else: param_name, unit = str(n.rho_w), None
+    if level == 1: 
+        param_name, unit = str(n.ltoa), 'W/sr/m^2'
+    else: 
+        param_name, unit = str(n.rho_w), None
     
     ds[param_name] = xr.concat(prod_list, dim=str(n.bands))
     ds[param_name].attrs.update(unit=unit)
     return ds
 
-def _olci_init_spectral(ds, chunks):
-    '''
-    Broadcast all spectral (detector-wise) dataset to the whole image
-
-    Adds the resulting datasets to `ds`: wav, F0 (in place)
-    '''
+def _olci_init_spectral(ds: xr.Dataset, chunks: dict) -> None:
+    """
+    Broadcast spectral (detector-wise) data to the full image grid.
+    
+    Extracts detector-specific wavelengths and solar fluxes and maps them
+    to each pixel based on the detector_index variable.
+    
+    Adds the following variables to ds (in place):
+        - wav: Wavelength for each pixel and band (nm)
+        - F0: Solar flux for each pixel and band
+    """
     # wavelength
     ds[str(n.wav)] = xr.apply_ufunc(
         lambda l0, di: l0[:,0,0,di],
@@ -507,23 +543,31 @@ def _olci_init_spectral(ds, chunks):
     ds[str(n.F0)].attrs.update(ds.solar_flux.attrs)
 
 
-def _decompose_flags(value, flags):
-    '''
-    return list of flag meanings for a given binary value
-    flags: dictionary of meaning: value
-    '''
+def _decompose_flags(value: int, flags: dict) -> list:
+    """Return list of flag meanings for a given binary flag value."""
     return [m for (m, v) in flags.items() if (v & value != 0)]
 
 
-def get_valid_l2_pixels(wqsf, flags=[
-        'INVALID', 'LAND', 'CLOUD', 'CLOUD_AMBIGUOUS', 'CLOUD_MARGIN',
-        'SNOW_ICE', 'SUSPECT', 'HISOLZEN', 'SATURATED', 'HIGHGLINT', 'WHITECAPS',
-        'AC_FAIL', 'OC4ME_FAIL', 'ANNOT_TAU06', 'RWNEG_O2', 'RWNEG_O3', 'RWNEG_O4',
-        'RWNEG_O5', 'RWNEG_O6', 'RWNEG_O7', 'RWNEG_O8', 'ANNOT_ABSO_D',
-        'ANNOT_DROUT', 'ANNOT_MIXR1']):
-    '''
-    Get valid standard level2 pixels with a given flag set
-    '''
+def get_valid_l2_pixels(
+        wqsf: xr.DataArray, 
+        flags: list = [
+            'INVALID', 'LAND', 'CLOUD', 'CLOUD_AMBIGUOUS', 'CLOUD_MARGIN',
+            'SNOW_ICE', 'SUSPECT', 'HISOLZEN', 'SATURATED', 'HIGHGLINT', 'WHITECAPS',
+            'AC_FAIL', 'OC4ME_FAIL', 'ANNOT_TAU06', 'RWNEG_O2', 'RWNEG_O3', 'RWNEG_O4',
+            'RWNEG_O5', 'RWNEG_O6', 'RWNEG_O7', 'RWNEG_O8', 'ANNOT_ABSO_D',
+            'ANNOT_DROUT', 'ANNOT_MIXR1']
+    ) -> xr.DataArray:
+    """
+    Get valid Level2 water pixels by masking specified quality flags.
+    
+    Args:
+        wqsf: Water Quality and Science Flags array
+        flags: List of flag names to mask out. Pixels with any of these flags
+              raised will be marked as invalid.
+    
+    Returns:
+        Boolean array where True indicates valid pixels
+    """
     bval = 0
     L2_FLAGS = getflags(wqsf)
     for flag in flags:
@@ -532,8 +576,8 @@ def get_valid_l2_pixels(wqsf, flags=[
     return wqsf & bval == 0
 
 
-def _v1_compat(ds):
-    
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
     # Reset band coordinates
     ds = ds.assign_coords(bands=[400, 412, 443, 490, 510, 560, 620, 665, 674, 681, 709, 754, 760, 764, 767, 779, 865, 885, 900, 940, 1020]) 
     

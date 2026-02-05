@@ -16,6 +16,7 @@ import dask
 import pytest
 
 from core import log
+from core.tools import drop_unused_dims
 from core.files import to_netcdf
 from core.monitor import Chrono
 from core.geo import n
@@ -45,41 +46,43 @@ def test_main(ds, angle_data):
     ds.chunks
 
     # check spatial dimensions
-    log.check(str(n.rows) in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
-    log.check(str(n.columns) in ds.dims, f'Strange dimensions, got {list(ds.dims)}')
+    if str(n.rows) not in ds.dims:
+        raise ValueError(f'Strange dimensions, got {list(ds.dims)}')
+    if str(n.columns) not in ds.dims:
+        raise ValueError(f'Strange dimensions, got {list(ds.dims)}')
     
     # Check variables
     check_vars(ds)
     
     # Check band dimensions have correct coordinates
-    for bands in [str(n.bands), str(n.bands_nvis), str(n.bands_ir)]:
-        if bands not in ds.dims: continue
-        log.check(ds[bands].dtype == int, f'Coordinates of {bands} should be integers')
-        if bands == str(n.bands): continue
-        log.check(all(b.data in ds[str(n.bands)] for b in ds[bands]))
+    str_types = [str] + [f'<U{i}' for i in range(1,33)]
+    if ds[str(n.bands)].dtype not in str_types:
+        raise ValueError(f'Coordinates of {n.bands} should be bands names')
+    if str(n.bgroup) not in ds: 
+        raise ValueError(f'Coordinate {n.bgroup} is missing')
+    if ds[str(n.bgroup)].dtype not in str_types:
+        raise ValueError(f'Coordinates of {n.bands} should be band groups')
+    if len(ds[str(n.bgroup)].dims) != 1 or ds[str(n.bgroup)].dims[0] != str(n.bands):
+        raise ValueError(f'{n.bgroup} should be indexed by {n.bands}')
     
     # check spectral dimensions
-    if str(n.ltoa) in ds:
-        log.check(str(n.bands) in ds[str(n.ltoa)].dims, 
-        f'{str(n.ltoa)} variable should have a dimension called {str(n.bands)}')
+    if str(n.ltoa) in ds and str(n.bands) not in ds[str(n.ltoa)].dims:
+        raise ValueError(f'{str(n.ltoa)} variable should have a dimension called {str(n.bands)}')
         
-    if str(n.rtoa) in ds:
-        log.check(str(n.bands_nvis) in ds[str(n.rtoa)].dims, 
-        f'{str(n.rtoa)} variable should have a dimension called {str(n.bands_nvis)}')
+    if str(n.rtoa) in ds and str(n.bands) not in ds[str(n.rtoa)].dims:
+        raise ValueError(f'{str(n.rtoa)} variable should have a dimension called {str(n.bands)}')
         
-    if str(n.bt) in ds:
-        log.check(str(n.bands_ir) in ds[str(n.bt)].dims, 
-        f'{str(n.bt)} variable should have a dimension called {str(n.bands_ir)}')
+    if str(n.bt) in ds and str(n.bands) not in ds[str(n.bt)].dims:
+        raise ValueError(f'{str(n.bt)} variable should have a dimension called {str(n.bands)}')
     
     # Check that following variables exist
     for name, longname in [
             (str(n.cwav), n.cwav.desc),
-            (str(n.bnames), n.bnames.desc),
             (str(n.lat), n.lat.desc),
             (str(n.lon), n.lon.desc),
         ]:
-        log.check(name in ds, 
-        f'Dataset should contain a variable for {longname} named {name}')
+        if name not in ds: 
+            raise ValueError(f'Dataset should contain a variable for {longname} named {name}')
 
     # check that attributes exist and its type
     for name, longname, types in [
@@ -90,18 +93,24 @@ def test_main(ds, angle_data):
             (str(n.product_name), n.product_name.desc, str), 
             (str(n.input_directory), n.input_directory.desc, str),
         ]:
-        log.check(name in ds.attrs, f'Dataset should contain a attribute named {name}')
-        log.check(isinstance(ds.attrs[name], types), f'Wrong type for attribute {name}')
+        if name not in ds.attrs:
+            raise ValueError(f'Dataset should contain a attribute named {name}')
+        if not isinstance(ds.attrs[name], types):
+            raise ValueError(f'Wrong type for attribute {name}')
     
     # Check that datetime is in isoformat
-    try: datetime.fromisoformat(ds.attrs[str(n.datetime)])
-    except: log.error('Issue to read the format of datetime. '
-                      f'Should be isoformat, got {ds.attrs[str(n.datetime)]}')
+    try: 
+        datetime.fromisoformat(ds.attrs[str(n.datetime)])
+    except: 
+        log.error('Issue to read the format of datetime. '
+                  f'Should be isoformat, got {ds.attrs[str(n.datetime)]}')
 
     # Check that footprints are 2-dimensional 
     dims2 = (str(n.rows), str(n.columns))
-    log.check(ds[str(n.lat)].dims == dims2, 'Latitude should be 2-dimensional')
-    log.check(ds[str(n.lon)].dims == dims2, 'Longitude should be 2-dimensional')
+    if ds[str(n.lat)].dims != dims2:
+        raise ValueError('Latitude should be 2-dimensional')
+    if ds[str(n.lon)].dims != dims2:
+        raise ValueError('Longitude should be 2-dimensional')
     
     # test angle data
     if angle_data:
@@ -112,13 +121,16 @@ def test_main(ds, angle_data):
                 (str(n.saa), n.saa.desc),
                 (str(n.sza), n.sza.desc),
             ]:
-            log.check(name in ds, 
-            f'Dataset should contain a variable for {longname} named {name}')
+            if name not in ds: 
+                raise ValueError(f'Dataset should contain a variable for {longname} named {name}')
 
 def test_plot(request, ds, index_band):
-    if str(n.ltoa) in ds: bands, var = str(n.bands), str(n.ltoa)
-    else: bands, var = str(n.bands_nvis), str(n.rtoa)
-    ds[var].isel({bands:index_band}).plot.imshow()
+    if str(n.ltoa) in ds: var = str(n.ltoa)
+    elif str(n.rtoa) in ds: var = str(n.rtoa)
+    elif str(n.bt) in ds: var = str(n.bt)
+    else: raise ValueError
+    
+    ds[var].isel({str(n.bands): index_band}).plot.imshow()
     savefig(request)
 
 def test_execution_time(reader_fn, params: dict):
@@ -126,8 +138,9 @@ def test_execution_time(reader_fn, params: dict):
 
 def test_subset(ds):
     sub = ds.isel({
-        str(n.rows):slice(300, 400),
-        str(n.columns):slice(500, 570)})
+        str(n.rows): slice(300, 400),
+        str(n.columns): slice(500, 570)}
+    )
 
     with TemporaryDirectory() as tmpdir,\
             dask.config.set(scheduler='single-threaded'):
@@ -135,6 +148,8 @@ def test_subset(ds):
         to_netcdf(sub, target, clean_attrs=True)
 
 def compare_version(v2, v1):
+    
+    v1 = drop_unused_dims(v1)
     
     # Check dimensions
     for d in v1.dims:
@@ -177,13 +192,17 @@ def test_lazy_load(ds):
 def check_vars(ds):
     
     # Check that at least one spectral variable is present
-    log.check((str(n.ltoa) in ds) or (str(n.rtoa) in ds) or (str(n.bt) in ds), 
-    'No acquisitions stored in Dataset. Output Dataset should contain at least '
-    f'{str(n.ltoa)} or {str(n.rtoa)}  or {str(n.bt)}')
+    if str(n.ltoa) not in ds and str(n.rtoa) not in ds and str(n.bt) not in ds: 
+        raise ValueError(
+            'No acquisitions stored in Dataset. Output Dataset should '
+            f'contain at least {str(n.ltoa)} or {str(n.rtoa)} or {str(n.bt)}'
+        )
     
     # Check that each variable has a unit attribute
     for name in [str(n.ltoa), str(n.rtoa), str(n.bt)]:
-        if name not in ds: continue
-        log.check(hasattr(ds[name],'unit'), f'{name} does not have a unit field')
+        if name not in ds: 
+            continue
+        if not hasattr(ds[name],'unit'):
+            raise ValueError(f'{name} does not have a unit field')
     
     # Check spectral variables values

@@ -9,8 +9,8 @@ from . import generic
 from core.env import getdir
 
 
-product_l1 = pytest.fixture(lambda: get_sample(1), scope='session')
-product_l2 = pytest.fixture(lambda: get_sample(2), scope='session')
+product_l1 = pytest.fixture(lambda: get_sample(1, 8), scope='session')
+product_l2 = pytest.fixture(lambda: get_sample(2, 8), scope='session')
 
 
 @pytest.fixture(params=[500, (400, 600)])

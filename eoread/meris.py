@@ -22,7 +22,6 @@ from core import env, log
 from core.tools import merge, drop_unused_dims
 from eoread.common import AtIndex, DataArray_from_array
 from eoread.utils import filter_metadata
-from core.monitor import Chrono
 
 
 user_guide = 'https://archive.org/details/manualzilla-id-5933919/page/n13/mode/2up'
@@ -62,9 +61,12 @@ def Level1_MERIS(filepath: str|Path,
     # Read metadata
     log.debug('read metadata')
     metadata = _read_metadata(ds, prod, metadata_template)
-    bands_names = [f'b{i+1}' for i in range(metadata['NUM_BANDS'])]
-    ds = ds.assign({str(n.bnames): ((str(n.bands)), bands_names),
-                    str(n.cwav): ((str(n.bands)), metadata['BAND_WAVELEN']/1e3)})
+    nb_bands = metadata['NUM_BANDS']
+    
+    # Assign band names and wavelengths
+    ds = ds.assign({str(n.cwav): ((str(n.bands)), metadata['BAND_WAVELEN']/1e3)})
+    ds = ds.assign_coords({str(n.bands): list(range(1, nb_bands+1))})
+    ds[str(n.bands)] = ds[str(n.bands)].astype(str)
 
     # read all rasters
     log.debug('load raster')
@@ -81,7 +83,7 @@ def Level1_MERIS(filepath: str|Path,
     # Rename several variables and compile radiance rasters
     log.debug('concatenate ltoa rasters')
     ds = _rename_meris(ds)
-    ds = merge(ds, dim=str(n.bands))
+    ds = merge(ds, dim=str(n.bands), dtype=str)
     ds = ds.chunk({str(n.bands):1})
     
     log.debug('read auxilary data')
@@ -128,8 +130,12 @@ def Level1_MERIS(filepath: str|Path,
     d = dstart + (dstop - dstart)//2
     ds.attrs[str(n.datetime)] = d.isoformat()
     
+    # Add band groups 
+    ds = drop_unused_dims(ds)
+    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), ['bands_vnir']*nb_bands)})
+    
     if v1_compat: return _v1_compat(ds, prod, lock, chunks)
-    return drop_unused_dims(ds).unify_chunks()
+    return ds.unify_chunks()
 
 
 def _rename_meris(ds):
