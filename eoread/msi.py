@@ -20,6 +20,7 @@ from core.interpolate import interp, Linear
 
 from eoread.utils import filter_metadata, spatial_resample
 from eoread.common import DataArray_from_array
+from eoread.flags import FlagsReaderBase, GenericFlags, FlagsInit
 
 
 user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2_User_Handbook.pdf/8869acdf-fd84-43ec-ae8c-3e80a436a16c?t=1438278087000'
@@ -134,6 +135,7 @@ def Level1_MSI(
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
+    ds.attrs['_flag_reader'] = 'eoread.msi.MSI_FlagsReader'
 
     ds = drop_unused_dims(ds)
     if resolution:
@@ -418,6 +420,40 @@ def get_sample(level: int = 1) -> Path:
     assert target.exists()
     return target
 
+
+class MSI_FlagsReader(FlagsReaderBase):
+    """
+    Flags reader for MSI (Sentinel-2) data.
+    
+    Since MSI L1C products don't currently read quality masks in eoread,
+    this flags reader determines flags based on data validity.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['vza']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'vza'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """Get a flag using the standard flag name."""
+        if flag_name == GenericFlags.L1_INVALID:
+            # L1_INVALID is True where vza is NaN (invalid data)
+            return xr.DataArray(
+                np.isnan(ds['vza']),
+                dims=ds['vza'].dims,
+                coords=ds['vza'].coords
+            )
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+    
+    def getflag_raw(self, ds: xr.Dataset, flag_name: str) -> xr.DataArray:
+        """Get a raw flag (not implemented for MSI since no quality masks are read)."""
+        raise NotImplementedError("MSI does not currently read raw quality flags")
+
+
 def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
     """Transform dataset to version 1 format for backward compatibility."""
     # Remove metadata
@@ -431,15 +467,18 @@ def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
     # rename wavelength variable
     ds = ds.rename({str(n.cwav):'wav'})
     
-    # add flags
-    from core.tools import raiseflag
-    ds[str(n.flags)] = xr.zeros_like(
-        ds.vza,
-        dtype=n.flags.dtype)
-    raiseflag(
-        ds[str(n.flags)],
-        'L1_INVALID', 4,
-        np.isnan(ds.vza)
+    # add flags using the MSI flags reader
+    flags_init = FlagsInit(
+        flags={
+            GenericFlags.L1_INVALID: 4,  # bit 2 (value 4)
+        },
+        dtype='uint16',
+        flag_reader='eoread.msi.MSI_FlagsReader',
+        flag_reader_kwargs={},
+        flags_varname=str(n.flags)
     )
+    
+    # Apply the flags initialization
+    flags_init.process_block(ds)
     
     return drop_unused_dims(ds)
