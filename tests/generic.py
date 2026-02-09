@@ -89,7 +89,7 @@ def test_main(ds, angle_data):
             (str(n.datetime), n.datetime.desc, str),
             (str(n.platform), n.platform.desc, str),
             (str(n.sensor), n.sensor.desc, str),            
-            (str(n.resolution), n.resolution.desc, int),
+            (str(n.resolution), n.resolution.desc, int|None),
             (str(n.product_name), n.product_name.desc, str), 
             (str(n.input_directory), n.input_directory.desc, str),
         ]:

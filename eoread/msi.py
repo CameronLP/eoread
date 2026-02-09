@@ -27,7 +27,7 @@ user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2
 def Level1_MSI(
         dirname: Union[str, Path],
         chunks: Union[int, tuple] = 500,
-        concat: bool = True,
+        concat: Literal[10,20,60,None] = 10,
         metadata_template: Union[list, None] = None, 
         v1_compat: bool = False
     ) -> xr.Dataset:
@@ -86,9 +86,10 @@ def Level1_MSI(
     assert platform in ['S2A', 'S2B', 'S2C']
 
     # read image size for current resolution
+    resolution = str(concat) if concat else '10'
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     for e in geocoding.get('Size'):
-        if e['attributes']['resolution'] == '10':
+        if e['attributes']['resolution'] == resolution:
             ds.attrs['totalheight'] = e.get('NROWS')
             ds.attrs['totalwidth'] = e.get('NCOLS')
             break
@@ -102,7 +103,7 @@ def Level1_MSI(
         "S2B": "Sentinel-2B",
         "S2C": "Sentinel-2C",
     }[platform]
-    ds.attrs[str(n.resolution)] = 10
+    ds.attrs[str(n.resolution)] = concat
     ds.attrs[str(n.sensor)] = 'MSI'
     ds.attrs[str(n.product_name)] = dirname.name
     ds.attrs[str(n.input_directory)] = str(dirname.parent)
@@ -333,8 +334,9 @@ class _LATLON:
         self.proj = pyproj.Proj(code)
 
         # lookup position in the UTM grid
+        resolution = str(ds.resolution) if ds.resolution else '10'
         for e in geocoding.get('Geoposition'):
-            if e['attributes']['resolution'] == str(ds.resolution):
+            if e['attributes']['resolution'] == resolution:
                 ULX = e.get('ULX')
                 ULY = e.get('ULY')
                 XDIM = e.get('XDIM')
