@@ -29,7 +29,8 @@ def Level1_OLI(
         l9_angles: Union[str, Path, None] = None,
         chunks: Union[int, tuple] = 500,
         metadata_template: Union[list, None] = None,
-        v1_compat: bool = False
+        v1_compat: bool = False,
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset.
@@ -66,7 +67,7 @@ def Level1_OLI(
     assert dirname.exists(), 'Directory does not exists'
 
     # Read metadata
-    log.debug('read metadata')
+    if verbose: log.debug('read metadata')
     metadata = _read_metadata(ds, dirname, metadata_template)
     if isinstance(chunks, int): chunks = [chunks]*2
 
@@ -76,16 +77,16 @@ def Level1_OLI(
     ds.attrs[str(n.datetime)] = d+'T'+t
     
     # Reading different rasters
-    log.debug('read geometric angles')
+    if verbose: log.debug('read geometric angles')
     _read_geometry(ds, dirname, l9_angles, chunks)
-    log.debug('read TOA rasters')
+    if verbose: log.debug('read TOA rasters')
     ds = _read_radiometry(ds, dirname, chunks)
-    log.debug('read masks')
+    if verbose: log.debug('read masks')
     _read_masks(ds, dirname, chunks)
     _read_coordinates(ds, chunks)
 
     # other attributes
-    log.debug('add important attributes')
+    if verbose: log.debug('add important attributes')
     ds.attrs[str(n.platform)] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
     ds.attrs[str(n.sensor)] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
     ds.attrs[str(n.product_name)] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']

@@ -29,7 +29,8 @@ def Level1_MSI(
         chunks: Union[int, tuple] = 500,
         concat: Literal[10,20,60,None] = 10,
         metadata_template: Union[list, None] = None, 
-        v1_compat: bool = False
+        v1_compat: bool = False,
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a Sentinel-2 MSI Level1C product as an xarray.Dataset.
@@ -64,7 +65,8 @@ def Level1_MSI(
     xmlroot = dirname/'MTD_MSIL1C.xml'
     assert xmlgranule.exists()
     assert xmlroot.exists()
-    log.debug('Reading metadata files')
+    
+    if verbose: log.debug('Reading metadata files')
     xmlgranule = read_xml(xmlgranule)
     xmlroot = read_xml(xmlroot)
 
@@ -74,7 +76,7 @@ def Level1_MSI(
     
     # Extract bands wavelength
     metadata = dict(cwvl=[], resolution=[], name=[])
-    log.debug('Extract central wavelength')
+    if verbose: log.debug('Extract central wavelength')
     for spec in product_image['Spectral_Information_List']['Spectral_Information']:
         metadata['cwvl'].append(spec['Wavelength']['CENTRAL']['values'])
         metadata['name'].append(spec['attributes']['physicalBand'])
@@ -95,7 +97,7 @@ def Level1_MSI(
             break
 
     # attributes
-    log.debug('Add important attributes')
+    if verbose: log.debug('Add important attributes')
     sensing_time = xmlgranule['General_Info']['SENSING_TIME']['values']
     ds.attrs[str(n.datetime)] = sensing_time
     ds.attrs[str(n.platform)] = {
@@ -110,20 +112,20 @@ def Level1_MSI(
     ds.attrs['user_guide'] = user_guide
 
     # lat-lon
-    log.debug('Extract central wavelength')
+    if verbose: log.debug('Extract central wavelength')
     _msi_read_latlon(ds, chunks, xmlgranule)
 
     # msi_read_geometry
-    log.debug('Read and compute geometric angles')
+    if verbose: log.debug('Read and compute geometric angles')
     tileangles = xmlgranule['Geometric_Info']['Tile_Angles']
     ds = _msi_read_geometry(ds, tileangles, chunks)
     
     # msi read quality mask
-    log.debug('WARNING: SKIPPING >> Read quality masks')
+    if verbose: log.debug('WARNING: SKIPPING >> Read quality masks')
     # ds = _msi_read_qi(ds, granule_dir, chunks)
 
     # msi_read_toa and quality masks
-    log.debug('Read top of atmosphere data')
+    if verbose: log.debug('Read top of atmosphere data')
     ds = _msi_read_toa(ds, granule_dir, processing_baseline, product_image, chunks, metadata, concat)
     ds = ds.assign({str(n.cwav): ((str(n.bands)), metadata['cwvl'])})
     ds = ds.assign_coords({str(n.bands): metadata['name']})

@@ -29,7 +29,8 @@ def Level1_VENUS(
         chunks: Union[int, tuple] = 500,
         read_masks: bool = False, 
         metadata_template: Union[list, None] = None,
-        v1_compat: bool = False
+        v1_compat: bool = False, 
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a VENµS Level1C product as an xarray.Dataset.
@@ -74,26 +75,26 @@ def Level1_VENUS(
     if isinstance(chunks, int): chunks = [chunks]*2    
     
     # read metadata
-    log.debug('Reading metadata')
+    if verbose: log.debug('Reading metadata')
     ds, metadata_granule = _venus_read_metadata(ds, dirname, metadata_template)
 
     # read geaometry
-    log.debug('Read and compute geometric angles')
+    if verbose: log.debug('Read and compute geometric angles')
     ds = _venus_read_geometry(ds, dirname, chunks)
 
     # read TOA
-    log.debug('Read top of atmosphere data')
+    if verbose: log.debug('Read top of atmosphere data')
     radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
     ds = _venus_read_toa(ds, dirname, quantif, chunks)
 
     # lat-lon
-    log.debug('Compute LatLon raster')
+    if verbose: log.debug('Compute LatLon raster')
     geocoding = metadata_granule['Geoposition_Informations']
     _venus_read_latlon(ds, geocoding, chunks)
     
     # read cloud altitude
-    log.debug('Open masks')
+    if verbose: log.debug('Open masks')
     ratio = {str(n.columns): ds.totalwidth, str(n.rows): ds.totalheight} 
     cld = open_raster(dirname/'DATA', '*CLA_ALL.tif', engine='rasterio')
     cld = cld.rename(x=str(n.columns), y=str(n.rows))
@@ -118,7 +119,7 @@ def Level1_VENUS(
             sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
             ds[f'SAT_{bn.values}'] = sat.rename(x=str(n.columns), y=str(n.rows))
     
-    else: 
+    elif verbose:
         log.debug('Masks are not red due to uncompression time consuming. '
                   'Active option read_masks to read them')
         

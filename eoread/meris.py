@@ -26,12 +26,15 @@ from eoread.utils import filter_metadata
 
 user_guide = 'https://archive.org/details/manualzilla-id-5933919/page/n13/mode/2up'
 
-def Level1_MERIS(filepath: str|Path,
-                 dir_smile: str|Path = None,
-                 read_auxdata: bool = False, 
-                 chunks: int|tuple = 500,
-                 metadata_template: list = None,
-                 v1_compat: bool = False):
+def Level1_MERIS(
+        filepath: str|Path,
+        dir_smile: str|Path = None,
+        read_auxdata: bool = False, 
+        chunks: int|tuple = 500,
+        metadata_template: list = None,
+        v1_compat: bool = False,
+        verbose: bool = True
+    ):
     '''
     Read an MERIS Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA radiances,
@@ -59,7 +62,7 @@ def Level1_MERIS(filepath: str|Path,
     ds.attrs['totalheight'] = prod.get_scene_height()
     
     # Read metadata
-    log.debug('read metadata')
+    if verbose: log.debug('read metadata')
     metadata = _read_metadata(ds, prod, metadata_template)
     nb_bands = metadata['NUM_BANDS']
     
@@ -69,7 +72,7 @@ def Level1_MERIS(filepath: str|Path,
     ds[str(n.bands)] = ds[str(n.bands)].astype(str)
 
     # read all rasters
-    log.debug('load raster')
+    if verbose: log.debug('load raster')
     for name in prod.get_band_names():
         band = prod.get_band(name)
         ds[name] = DataArray_from_array(
@@ -81,12 +84,12 @@ def Level1_MERIS(filepath: str|Path,
         ds[name].attrs['description'] = band.description
         
     # Rename several variables and compile radiance rasters
-    log.debug('concatenate ltoa rasters')
+    if verbose: log.debug('concatenate ltoa rasters')
     ds = _rename_meris(ds)
     ds = merge(ds, dim=str(n.bands), dtype=str)
     ds = ds.chunk({str(n.bands):1})
     
-    log.debug('read auxilary data')
+    if verbose: log.debug('read auxilary data')
     if dir_smile is None: dir_smile = Path(__file__).parent/'auxdata'/'meris'
     else: dir_smile = Path(dir_smile)
     assert dir_smile.exists(), f'{dir_smile} does not exists'

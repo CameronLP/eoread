@@ -9,10 +9,13 @@ from core.tools import  drop_unused_dims
 from core import env, log
 
 
-def Level1_HYPSO(filepath: str|Path,
-                 chunks: int|tuple = 500,
-                 metadata_template: list = None,
-                 v1_compat: bool = False) -> xr.Dataset:
+def Level1_HYPSO(
+        filepath: str|Path,
+        chunks: int|tuple = 500,
+        metadata_template: list = None,
+        v1_compat: bool = False,
+        verbose: bool = True,
+    ) -> xr.Dataset:
     '''
     Read an NTNU HYPSO Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA radiances, 
@@ -35,7 +38,7 @@ def Level1_HYPSO(filepath: str|Path,
     ds_nav = ds_root["navigation"].to_dataset()
 
     # get _indirect geographical coordinates and angles if available
-    log.debug('Read and compute geometric angles')
+    if verbose: log.debug('Read and compute geometric angles')
     ds[str(n.lat)] = ds_nav["latitude"].chunk(chunks)
     ds[str(n.lon)] = ds_nav["longitude"].chunk(chunks)
     ds[str(n.vza)] = ds_nav["sensor_zenith"].chunk(chunks)
@@ -43,12 +46,12 @@ def Level1_HYPSO(filepath: str|Path,
     ds[str(n.vaa)] = ds_nav["sensor_azimuth"].chunk(chunks)
     ds[str(n.saa)] = ds_nav["solar_azimuth"].chunk(chunks)
 
-    log.debug('Read top of atmosphere data')
+    if verbose: log.debug('Read top of atmosphere data')
     ds[str(n.ltoa)] = ds_products['Lt'].chunk(list(chunks)+[1])
     ds = ds.rename(lines=str(n.rows), samples=str(n.columns), bands=str(n.bands))
     ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
     
-    log.debug('Extract central wavelength')
+    if verbose: log.debug('Extract central wavelength')
     ds = ds.assign_coords({str(n.bands): da.arange(len(ds[str(n.bands)]))+1})
     ds = ds.assign({str(n.cwav): ((str(n.bands)), ds_products['Lt'].wavelengths),
          str(n.bnames): ((str(n.bands)), ds[str(n.bands)].data.astype(str))})
@@ -63,7 +66,7 @@ def Level1_HYPSO(filepath: str|Path,
     # ds = ds.rename(lines="y", samples="x")
 
     # acquisition datetime
-    log.debug('Add important attributes')
+    if verbose: log.debug('Add important attributes')
     ds.attrs[str(n.sensor)] = ds_root.attrs['instrument']
     ds.attrs[str(n.platform)] = 'HYPSO'
     ds.attrs[str(n.resolution)] = 40

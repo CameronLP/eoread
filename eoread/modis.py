@@ -36,7 +36,8 @@ def Level1_MODIS(
         chunks: int = 100,
         concat: bool = False, 
         metadata_template: Union[list, None] = None,
-        v1_compat: bool = False
+        v1_compat: bool = False,
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a MODIS Level1B product as an xarray.Dataset.
@@ -63,7 +64,7 @@ def Level1_MODIS(
     if isinstance(chunks, int): chunks = [chunks]*2   
     
     # Revize variables
-    log.debug('Reading h4file')
+    if verbose: log.debug('Reading h4file')
     l1 = load_hdf4(filepath, trim_dims=True)
     l1 = l1.rename_vars({
         'Latitude': str(n.lat), 'Longitude': str(n.lon),
@@ -73,30 +74,30 @@ def Level1_MODIS(
  
     # Read metadata
     metadata = {}
-    log.debug('parsing metadata text')
+    if verbose: log.debug('parsing metadata text')
     for name in ['CoreMetadata.0','ArchiveMetadata.0','StructMetadata.0']:
         p = _parser_attrs(l1.attrs[name].split('\n'))
         p.parse()
         metadata.update(p.data)
     
     # Add band information
-    log.debug('Add central wavelength')
+    if verbose: log.debug('Add central wavelength')
     l1 = l1.assign_coords({str(n.bands): da.array(bnames).astype(str)})
     l1 = l1.assign({str(n.cwav): ((str(n.bands)), cwvl)})
     
     # Rescale angles data
-    log.debug('Read and compute geometric angles')
+    if verbose: log.debug('Read and compute geometric angles')
     for varname in [str(n.vza), str(n.vaa), str(n.sza), str(n.saa)]:
         l1[varname] = l1[varname].scale_factor * l1[varname]
 
     # Change radiometry of input data   
-    log.debug('Read top of atmosphere data')
+    if verbose: log.debug('Read top of atmosphere data')
     l1 = _transform_radiometry(l1, chunks, concat)
     l1 = _aggregate_vars(l1, chunks, concat)
     l1 = _compute_bt(l1, concat)
     
     # Upscale latlon variables
-    log.debug('upscale latlon variables')
+    if verbose: log.debug('upscale latlon variables')
     shape = {k:v for k,v in zip(l1[str(n.lat)].dims, l1[str(n.bt)].shape[1:])}
     l1[str(n.lat)] = spatial_resample(l1[str(n.lat)], shape, chunks)
     l1[str(n.lon)] = spatial_resample(l1[str(n.lon)], shape, chunks)
@@ -105,7 +106,7 @@ def Level1_MODIS(
     l1 = _rename_dims(l1)
 
     # Summarize Attributes
-    log.debug('Add important attributes')
+    if verbose: log.debug('Add important attributes')
     attributes = l1.attrs
     
     l1.attrs = {}

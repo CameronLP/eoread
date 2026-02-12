@@ -65,7 +65,8 @@ def Level1_OLCI(
         tie_param: bool = False,
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
         metadata_template: Union[list, None] = None, 
-        v1_compat: bool = False
+        v1_compat: bool = False,
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a Sentinel-3 OLCI Level1 product as an xarray.Dataset.
@@ -95,7 +96,7 @@ def Level1_OLCI(
     chunks = dict(rows=chunks[0], columns=chunks[1])
 
     # read manifest file for file names and footprint
-    log.debug('Read metadata')
+    if verbose: log.debug('Read metadata')
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     manifest = read_xml(dirname/'xfdumanifest.xml')
     ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
@@ -130,7 +131,7 @@ def Level1_OLCI(
         f'expected level1 encountered {level_from_manifest}'
 
     # Read main product
-    log.debug('Read radiances')
+    if verbose: log.debug('Read radiances')
     ds = _read_bands(ds, dirname, chunks, 1)
 
     # Geo coordinates
@@ -147,7 +148,7 @@ def Level1_OLCI(
     ds = ds.rename({'rows':str(n.rows), 'columns':str(n.columns)})
 
     # tie geometry interpolation
-    log.debug('read geometric tie points')
+    if verbose: log.debug('read geometric tie points')
     tie_geom_file = dirname/'tie_geometries.nc'
     tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
@@ -183,7 +184,7 @@ def Level1_OLCI(
         if tie_param: ds[ds_full+'_tie'] = tie_ds[ds_tie]
 
     # tie meteo interpolation
-    log.debug('read meteorological tie points')
+    if verbose: log.debug('read meteorological tie points')
     tie_meteo_file = dirname/'tie_meteo.nc'
     tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
     tie = tie.assign_coords(
@@ -225,13 +226,13 @@ def Level1_OLCI(
     ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # quality flags
-    log.debug('read quality masks')
+    if verbose: log.debug('read quality masks')
     qf_file = dirname/'qualityFlags.nc'
     qf = xr.open_dataset(qf_file, engine='h5netcdf').chunk(chunks)
     for var in qf.variables: ds[var] = qf[var]
     
     # attributes
-    log.debug('add important attributes')
+    if verbose: log.debug('add important attributes')
     meta = manifest['metadataSection']['metadataObject']
     date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
     start = datetime.fromisoformat(date['startTime'])
@@ -248,7 +249,7 @@ def Level1_OLCI(
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
     ds = ds.rename({'columns': str(n.columns), 'rows': str(n.rows)})
     
-    log.debug('compute reflectances')
+    if verbose: log.debug('compute reflectances')
     _olci_init_spectral(ds, chunks)
     ds = init_Rtoa(ds)
 

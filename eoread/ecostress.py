@@ -17,7 +17,8 @@ def Level1_ECOSTRESS(
         filepath: Union[Path, str], 
         chunks: Union[int, list] = 500, 
         metadata_template: Union[list, None] = None,
-        v1_compat: bool = False
+        v1_compat: bool = False,
+        verbose: bool = True,
     ) -> xr.Dataset:
     """
     Read an ECOSTRESS Level1 product as an xarray.Dataset.
@@ -42,8 +43,8 @@ def Level1_ECOSTRESS(
     if isinstance(chunks, int):
         chunks = [chunks]*2    
     
-    # Revize variables    
-    log.debug('Reading h5file')
+    # Revize variables
+    if verbose: log.debug('Reading h5file')
     data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
     raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
     raw = raw.to_dataset().chunk(chunks=dict(zip(list(raw.dims), chunks)))
@@ -52,18 +53,18 @@ def Level1_ECOSTRESS(
     granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
     attributes = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
     
-    log.debug('parsing metadata text')
+    if verbose: log.debug('parsing metadata text')
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
     p = _parser(info.split('\n'))
     p.parse()
     
     # Change radiometry of input data 
-    log.debug('compute brightness temperature')
+    if verbose: log.debug('compute brightness temperature')
     l1 = _transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
-    log.debug('add important attributes')
+    if verbose: log.debug('add important attributes')
     l1.attrs['metadata'] = {k: v.item() for k,v in attributes.items()}
     l1.attrs['metadata'] = filter_fn(l1.attrs['metadata'], metadata_template)
     l1.attrs['hdfeos_info'] = filter_fn(p.data, metadata_template)
@@ -87,7 +88,7 @@ def Level1_ECOSTRESS(
     })
     
     # Add latlon variables
-    log.debug('add latlon variables')
+    if verbose: log.debug('add latlon variables')
     l1 = _supplement_latlon(l1, list(chunks))
     
     if v1_compat: return _v1_compat(l1)
