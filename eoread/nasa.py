@@ -107,6 +107,7 @@ def nasa_search(**kwargs):
 
 def Level1_NASA(filename, chunks=500):
     ds = xr.open_dataset(filename, chunks=chunks)
+    # TODO: use xr.open_datatree instead of several xr.open_dataset
 
     dstart = datetime.strptime(ds.attrs['time_coverage_start'], "%Y-%m-%dT%H:%M:%S.%fZ")
     dstop = datetime.strptime(ds.attrs['time_coverage_end'], "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -120,9 +121,9 @@ def Level1_NASA(filename, chunks=500):
     ds[str(n.wav)] = np.array(bands, dtype='float32')
 
     navi = xr.open_dataset(filename, group='navigation_data', chunks=chunks)
-    navi = navi.rename_dims({'number_of_lines':str(n.rows), 'pixel_control_points':str(n.columns)})
-    ds[str(n.lat)] = DataArray_from_array(navi.latitude.values.astype('float32'), naming.dim2, chunks=chunks)
-    ds[str(n.lon)] = DataArray_from_array(navi.longitude.values.astype('float32'), naming.dim2, chunks=chunks)
+    navi = navi.rename_dims({'number_of_lines':str(n.rows), 'pixels_per_line':str(n.columns)})
+    ds[str(n.lat)] = navi.latitude
+    ds[str(n.lon)] = navi.longitude
     
     geo_data = xr.open_dataset(filename, group='/geophysical_data', chunks=chunks)
     geo_data = geo_data.rename_dims({'number_of_lines':str(n.rows), 'pixels_per_line':str(n.columns)})
@@ -141,13 +142,23 @@ def Level1_NASA(filename, chunks=500):
 
     eo.init_geometry(ds)
 
-    ds[str(n.flags)] = xr.zeros_like(ds[str(n.lat)], dtype=naming.flags_dtype)
-    for (flag, flag_list) in [('LAND',['LAND']), ('L1_INVALID',['ATMFAIL','PRODFAIL'])]:
+    ds[str(n.flags)] = xr.zeros_like(ds[str(n.lat)], dtype=n.flags.dtype)
+    for flag, flag_list, flag_value in [
+        ("LAND", ["LAND"], 1),
+        ("L1_INVALID", ["ATMFAIL", "PRODFAIL"], 4),
+    ]:
         flag_value = 0
         for f in flag_list:
             flag_value += geo_data.l2_flags.flag_masks[geo_data.l2_flags.flag_meanings.split().index(f)]
 
-        eo.raiseflag(ds[naming.flags],flag, flags[flag], DataArray_from_array((geo_data.l2_flags&flag_value!=0), naming.dim2, chunks=chunks))
+        eo.raiseflag(
+            ds[n.flags],
+            flag,
+            flag_value,
+            DataArray_from_array(
+                (geo_data.l2_flags & flag_value != 0), ds.sza.dims, chunks=chunks
+            ),
+        )
 
     ds = eo.merge(ds, dim=str(n.bands))
     return ds

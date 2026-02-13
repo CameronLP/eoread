@@ -7,6 +7,8 @@ Generic tests implementation
 """
 
 from tempfile import TemporaryDirectory
+
+from matplotlib import pyplot as plt
 from .conftest import savefig
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import dask
 import pytest
+import xarray as xr
 
 from core import log
 from core.tools import drop_unused_dims
@@ -132,6 +135,27 @@ def test_plot(request, ds, index_band):
     
     ds[var].isel({str(n.bands): index_band}).plot.imshow()
     savefig(request)
+
+def plot(request, l1: xr.Dataset, band_nir):
+    """
+    Plot multiple parameters to give an overview of the product
+    """
+    # TODO: plot other variables
+    # TODO: plot spectra
+    for da in [
+        l1[n.rtoa].sel(bands=band_nir),
+        l1[n.sza],
+        l1[n.vza],
+        l1[n.lat],
+        l1[n.lon],
+    ]:
+        data = da.compute()
+        print(data.name, data.attrs)
+        vmin = float(np.nanpercentile(data, 5))
+        vmax = float(np.nanpercentile(data, 95))
+        data.plot.imshow(vmin=vmin, vmax=vmax)
+        plt.title(str(data.name))
+        savefig(request)
 
 def test_execution_time(reader_fn, params: dict):
     with Chrono('Reading operation', unit='s'): reader_fn(**params)
