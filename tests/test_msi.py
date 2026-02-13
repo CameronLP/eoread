@@ -22,23 +22,23 @@ def chunks(request):
     return request.param
 
 @pytest.fixture(params=[None, 10])
-def concat(request):
+def resolution(request):
     return request.param
 
 @pytest.fixture
-def S2_product(level1_msi, chunks, concat):
-    return Level1_MSI(level1_msi, chunks=chunks, concat=concat)
+def S2_product(level1_msi, chunks, resolution):
+    return Level1_MSI(level1_msi, chunks=chunks, resolution=resolution)
 
 
 ################################################################################
 # Tests for Level-1
 ################################################################################
 
-def test_instantiation(level1_msi, concat, chunks):
-    Level1_MSI(level1_msi, chunks=chunks, concat=concat)
+def test_instantiation(level1_msi, resolution, chunks):
+    Level1_MSI(level1_msi, chunks=chunks, resolution=resolution)
 
 def test_main(level1_msi, chunks):
-    l1 = Level1_MSI(level1_msi, chunks=chunks, concat=10)
+    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=10)
     generic.test_main(l1, angle_data=True)
     
 def test_time(level1_msi, chunks): 
@@ -47,7 +47,7 @@ def test_time(level1_msi, chunks):
 
 def test_v1_compat(level1_msi):
     v1_data = getdir("DIR_V1_COMPAT_DATA")
-    l1 = Level1_MSI(level1_msi, concat=10, v1_compat=True)
+    l1 = Level1_MSI(level1_msi, resolution=10, v1_compat=True)
     old = xr.open_dataset(list(v1_data.glob('S2*_60'))[0])
     generic.compare_version(l1, old)
     
@@ -68,5 +68,5 @@ def test_subset(level1_msi, chunks):
     generic.test_subset(l1)
 
 def test_plot(request, level1_msi, chunks):
-    l1 = Level1_MSI(level1_msi, chunks=chunks, concat=10)
+    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=10)
     generic.test_plot(request, l1, 4)

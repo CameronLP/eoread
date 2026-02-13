@@ -1,7 +1,7 @@
 from eoread.utils import filter_metadata, spatial_resample
 from eoread.hdf4 import load_hdf4
+from typing import Union, Literal
 from pathlib import Path
-from typing import Union
 
 from core.geo import n
 from core import env, log
@@ -34,7 +34,7 @@ K2 = h * c / k
 def Level1_MODIS(
         filepath: Union[Path, str], 
         chunks: int = 100,
-        concat: bool = False, 
+        resolution: Literal[250,500,1000,None] = 250,
         metadata_template: Union[list, None] = None,
         v1_compat: bool = False,
         verbose: bool = True
@@ -49,8 +49,8 @@ def Level1_MODIS(
     Args:
         filepath: Path to the MODIS HDF4 file (.hdf)
         chunks: Size of chunks for spatial dimensions
-        concat: If True, concatenates all bands into single variables.
-                If False, keeps bands at their native resolutions separate.
+        resolution: Resample all bands to provided resolution and concatenate.
+                If None, keep original resolutions (250m, 500m, 1km) separate.
         metadata_template: List of metadata keys to include. If None, includes all metadata.
                           Use empty list [] for minimal metadata.
         v1_compat: If True, formats output to match version 1 structure
@@ -92,9 +92,9 @@ def Level1_MODIS(
 
     # Change radiometry of input data   
     if verbose: log.debug('Read top of atmosphere data')
-    l1 = _transform_radiometry(l1, chunks, concat)
-    l1 = _aggregate_vars(l1, chunks, concat)
-    l1 = _compute_bt(l1, concat)
+    l1 = _transform_radiometry(l1, chunks, resolution)
+    l1 = _aggregate_vars(l1, chunks, resolution)
+    l1 = _compute_bt(l1, resolution)
     
     # Upscale latlon variables
     if verbose: log.debug('upscale latlon variables')
@@ -111,7 +111,7 @@ def Level1_MODIS(
     
     l1.attrs = {}
     l1.attrs[str(n.input_directory)] = str(filepath.parent)
-    l1.attrs[str(n.resolution)]   = 1000
+    l1.attrs[str(n.resolution)]   = resolution
     l1.attrs[str(n.datetime)]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
     l1.attrs['night']             = str(metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['DAYNIGHTFLAG']['VALUE'] != '"Day"')
     l1.attrs[str(n.product_name)] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
@@ -137,7 +137,7 @@ def Level1_MODIS(
     return l1.unify_chunks()
 
 
-def _transform_radiometry(level1: xr.Dataset, chunks: list, concat: bool) -> xr.Dataset:
+def _transform_radiometry(level1: xr.Dataset, chunks: list, resolution: int) -> xr.Dataset:
     """Convert raw DN values to calibrated radiance and reflectance."""
     dim = 'dim'
     bandnames = [
@@ -170,11 +170,11 @@ def _transform_radiometry(level1: xr.Dataset, chunks: list, concat: bool) -> xr.
         nd = scale * rad + offset
         nd.attrs['desc'] = n.ltoa.desc
         nd.attrs['unit'] = n.ltoa.unit
-        if concat:
+        if resolution:
             nd = nd.rename({str(names['old'].values): str(n.bands)})
         # nd = nd.assign_coords({band_dim: bands})
         
-        if concat:
+        if resolution:
             data_arrays['ltoa'].append(nd)
         else:
             level1 = level1.assign({str(names['var'].values): nd})
@@ -192,17 +192,17 @@ def _transform_radiometry(level1: xr.Dataset, chunks: list, concat: bool) -> xr.
             nd.attrs['desc'] = n.rtoa.desc
             nd.attrs['unit'] = n.rtoa.unit
             
-        band_dim = str(n.bands) if concat else str(names['old'].values)
+        band_dim = str(n.bands) if resolution else str(names['old'].values)
         nd = nd.rename({str(names['old'].values): band_dim})
         nd = nd.assign_coords({band_dim: bands})
         
-        if concat:
+        if resolution:
             data_arrays['rtoa'].append(nd)
         else:
             level1 = level1.assign({str(names['var'].values): nd})
 
     # Combine into one dimension
-    if concat:
+    if resolution:
         level1[str(n.ltoa)] = xr.concat(data_arrays['ltoa'], dim=str(n.bands))
         level1[str(n.ltoa)] = level1[str(n.ltoa)].chunk([1]+list(chunks))
         level1[str(n.rtoa)] = xr.concat(data_arrays['rtoa'], dim=str(n.bands))
@@ -212,14 +212,14 @@ def _transform_radiometry(level1: xr.Dataset, chunks: list, concat: bool) -> xr.
     return level1
 
 
-def _aggregate_vars(l1: xr.Dataset, chunks: list, concat: bool) -> xr.Dataset:
+def _aggregate_vars(l1: xr.Dataset, chunks: list, resolution: int) -> xr.Dataset:
     """Combine uncertainty indices into a single variable."""
     # Combine uncertainty in a single variable
     uncert_label = 'Uncert_Indexes'
     uncert_names = [d for d in l1.variables if uncert_label in d][:4]
     uncert_vars = [l1[v].rename({l1[v].dims[0] : str(n.bands)}) for v in uncert_names]
     
-    if concat:
+    if resolution:
         l1[uncert_label] = xr.concat(uncert_vars, dim=str(n.bands)).chunk([1]+list(chunks))
         l1 = l1.drop_vars(uncert_names)
     else:
@@ -251,7 +251,7 @@ def _rename_dims(l1: xr.Dataset) -> xr.Dataset:
     
     return l1
 
-def _compute_bt(ds: xr.Dataset, concat: bool) -> xr.Dataset:
+def _compute_bt(ds: xr.Dataset, resolution: int) -> xr.Dataset:
     """Compute brightness temperature from radiance using Planck's law with temperature corrections."""
     # Planck's law constants 
     h = 6.6260755e-34
@@ -292,7 +292,7 @@ def _compute_bt(ds: xr.Dataset, concat: bool) -> xr.Dataset:
     offset = xr.Dataset({'cwvl': cwvl, 'tcs': tcs, 'tci': tci})
     offset = offset.assign_coords({str(n.bands): bands_emis})
     
-    if concat:
+    if resolution:
         bands, var = str(n.bands), str(n.ltoa)
     else :
         bands, var = 'new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B', 'EV_1KM_Emissive'

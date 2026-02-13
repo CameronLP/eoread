@@ -13,17 +13,17 @@ def level1_modis(): return get_sample(1)
 def chunks(request):
     return request.param
 
-@pytest.fixture(params=[True, False])
-def concat(request):
+@pytest.fixture(params=[500, None])
+def resolution(request):
     return request.param
 
 @pytest.fixture()
 def product_modis(level1_modis):
-    return Level1_MODIS(level1_modis, concat=True)
+    return Level1_MODIS(level1_modis, resolution=True)
 
 
-def test_l1c_instantiation(chunks, level1_modis, concat):
-    Level1_MODIS(level1_modis, chunks=chunks, concat=concat)
+def test_l1c_instantiation(chunks, level1_modis, resolution):
+    Level1_MODIS(level1_modis, chunks=chunks, resolution=resolution)
     
 def test_l1c_main(product_modis):
     generic.test_main(product_modis, angle_data=False)
@@ -37,7 +37,7 @@ def test_l1c_subset(product_modis):
 
 def test_l1c_v1_compat(level1_modis):
     v1_data = getdir("DIR_V1_COMPAT_DATA")
-    l1 = Level1_MODIS(level1_modis, v1_compat=True, concat=True)
+    l1 = Level1_MODIS(level1_modis, v1_compat=True, resolution=True)
     old = xr.open_dataset(v1_data/(level1_modis.stem+'_res'))
     generic.compare_version(l1, old)
     

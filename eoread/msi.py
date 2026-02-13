@@ -27,7 +27,7 @@ user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2
 def Level1_MSI(
         dirname: Union[str, Path],
         chunks: Union[int, tuple] = 500,
-        concat: Literal[10,20,60,None] = 10,
+        resolution: Literal[10,20,60,None] = 10,
         metadata_template: Union[list, None] = None, 
         v1_compat: bool = False,
         verbose: bool = True
@@ -42,8 +42,8 @@ def Level1_MSI(
         dirname: Path to the Sentinel-2 .SAFE directory
         chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
                 If tuple, should be (rows_chunk, columns_chunk)
-        concat: If True, resample all bands to 10m resolution and concatenate.
-                If False, keep original resolutions (10m, 20m, 60m) separate.
+        resolution: Resample all bands to provided resolution and concatenate.
+                If None, keep original resolutions (10m, 20m, 60m) separate.
         metadata_template: List of metadata keys to include. If None, includes all metadata.
         v1_compat: If True, formats output to match version 1 structure
     
@@ -88,10 +88,10 @@ def Level1_MSI(
     assert platform in ['S2A', 'S2B', 'S2C']
 
     # read image size for current resolution
-    resolution = str(concat) if concat else '10'
+    res = str(resolution) if resolution else '10'
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     for e in geocoding.get('Size'):
-        if e['attributes']['resolution'] == resolution:
+        if e['attributes']['resolution'] == res:
             ds.attrs['totalheight'] = e.get('NROWS')
             ds.attrs['totalwidth'] = e.get('NCOLS')
             break
@@ -105,7 +105,7 @@ def Level1_MSI(
         "S2B": "Sentinel-2B",
         "S2C": "Sentinel-2C",
     }[platform]
-    ds.attrs[str(n.resolution)] = concat
+    ds.attrs[str(n.resolution)] = resolution
     ds.attrs[str(n.sensor)] = 'MSI'
     ds.attrs[str(n.product_name)] = dirname.name
     ds.attrs[str(n.input_directory)] = str(dirname.parent)
@@ -126,7 +126,7 @@ def Level1_MSI(
 
     # msi_read_toa and quality masks
     if verbose: log.debug('Read top of atmosphere data')
-    ds = _msi_read_toa(ds, granule_dir, processing_baseline, product_image, chunks, metadata, concat)
+    ds = _msi_read_toa(ds, granule_dir, processing_baseline, product_image, chunks, metadata, resolution)
     ds = ds.assign({str(n.cwav): ((str(n.bands)), metadata['cwvl'])})
     ds = ds.assign_coords({str(n.bands): metadata['name']})
     
@@ -136,7 +136,7 @@ def Level1_MSI(
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
 
     ds = drop_unused_dims(ds)
-    if concat:
+    if resolution:
         ds = ds.set_coords(str(n.bgroup))
     
     if v1_compat: return _v1_compat(ds)
@@ -180,7 +180,7 @@ def _msi_read_toa(
         product_image: dict, 
         chunks: list, 
         metadata: dict, 
-        concat: bool
+        resolution: int
     ) -> xr.Dataset:
     """Read and calibrate TOA reflectance from JP2 files.
     
@@ -210,7 +210,7 @@ def _msi_read_toa(
         arr = ((arr+radio_offset[iband])/quantif).astype('float32')
         
         # Resample the array
-        if concat:
+        if resolution:
             ratio = {str(n.columns): ds.totalheight, str(n.rows): ds.totalwidth} 
             arr_resampled = spatial_resample(arr.squeeze(), ratio, chunks)
             ds[str(n.rtoa)+f'_{band}'] = arr_resampled
@@ -220,7 +220,7 @@ def _msi_read_toa(
             arr = arr.squeeze().rename({'y': f'y_{res}', 'x': f'x_{res}'})
             ds[name] = arr.chunk(chunks)
     
-    if concat:
+    if resolution:
         res = [n.bands+f'_{r}m' for r in metadata['resolution']]
         ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)
         ds[str(n.rtoa)].attrs.update(unit=None)
