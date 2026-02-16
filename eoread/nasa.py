@@ -118,7 +118,6 @@ def Level1_NASA(filename, chunks=500):
 
     sensor_band = xr.open_dataset(filename, group='/sensor_band_parameters', chunks=chunks)
     bands = sensor_band['wavelength'].values[sensor_band.number_of_reflective_bands.values].astype('int32')
-    ds[str(n.wav)] = np.array(bands, dtype='float32')
 
     navi = xr.open_dataset(filename, group='navigation_data', chunks=chunks)
     navi = navi.rename_dims({'number_of_lines':str(n.rows), 'pixels_per_line':str(n.columns)})
@@ -147,16 +146,16 @@ def Level1_NASA(filename, chunks=500):
         ("LAND", ["LAND"], 1),
         ("L1_INVALID", ["ATMFAIL", "PRODFAIL"], 4),
     ]:
-        flag_value = 0
+        flag_mask = 0
         for f in flag_list:
-            flag_value += geo_data.l2_flags.flag_masks[geo_data.l2_flags.flag_meanings.split().index(f)]
+            flag_mask += geo_data.l2_flags.flag_masks[geo_data.l2_flags.flag_meanings.split().index(f)]
 
         eo.raiseflag(
             ds[n.flags],
             flag,
             flag_value,
             DataArray_from_array(
-                (geo_data.l2_flags & flag_value != 0), ds.sza.dims, chunks=chunks
+                (geo_data.l2_flags & flag_mask != 0), ds.sza.dims, chunks=chunks
             ),
         )
 
