@@ -13,8 +13,18 @@ from eoread.nasa import Level1_NASA
 from tests import generic
 
 nasa_products_L1A = [
-    {"path": Path(getvar("LEVEL1A_SAMPLE_HAWKEYE")), "band_nir": 867},
-    {"path": Path(getvar("LEVEL1A_SAMPLE_SEAWIFS")), "band_nir": 865},
+    {
+        # SEAHAWK1_HAWKEYE.20230701T160442.L1A.nc
+        "path": Path(getvar("LEVEL1A_SAMPLE_HAWKEYE")),
+        "band_nir": 867,
+        "poi": {"x": 100, "y": 5000},
+    },
+    {
+        # SEASTAR_SEAWIFS_GAC.20000312T030717.L1A.nc
+        "path": Path(getvar("LEVEL1A_SAMPLE_SEAWIFS")),
+        "band_nir": 865,
+        "poi": {"x": 50, "y": 750},
+    },
     # TODO: MODIS and VIIRS
 ]
 
@@ -48,4 +58,4 @@ def test_instantiate(product_L1A: dict):
 def test_plot(request, product_L1A: dict):
     product_L1C = makeL1C(product_L1A["path"])
     l1 = Level1_NASA(product_L1C)
-    generic.plot(request, l1, product_L1A["band_nir"])
+    generic.plot(request, l1, product_L1A["band_nir"], product_L1A.get("poi", None))
