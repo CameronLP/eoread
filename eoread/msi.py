@@ -299,18 +299,17 @@ def _msi_read_geometry(
     vaa = vaa[0]
 
     ntie_rows, ntie_columns = sza.shape
-    tie_rows    = np.int32(da.linspace(0, shp[0]-1, ntie_rows))              # tie resolution, with target values
-    tie_columns = np.int32(da.linspace(0, shp[1]-1, ntie_columns))           # tie resolution, with target values
+    tie_rows    = np.int32(np.linspace(0, shp[0]-1, ntie_rows))              # tie resolution, with target values
+    tie_columns = np.int32(np.linspace(0, shp[1]-1, ntie_columns))           # tie resolution, with target values
     ds = ds.assign_coords(tie_rows = tie_rows, tie_columns = tie_columns)
 
     # initialize the dask arrays
-    x = xr.DataArray(da.arange(len(ds.x), chunks=chunks[0]), dims=('x'))
-    y = xr.DataArray(da.arange(len(ds.y), chunks=chunks[1]), dims=('y'))
+    x = xr.DataArray(np.arange(len(ds.x)), dims=('x'))
+    y = xr.DataArray(np.arange(len(ds.y)), dims=('y'))
     for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza),(n.vaa, vaa)]:
-        ds[str(name)+'_tie'] = xr.DataArray(tie, dims=dims)
+        ds[str(name)+'_tie'] = xr.DataArray(tie.copy(), dims=dims)
         interp_tie = interp(ds[str(name)+'_tie'], tie_rows=Linear(x), tie_columns=Linear(y))
-        ds[str(name)] = interp_tie
-        ds[str(name)] = ds[str(name)].chunk(chunks)
+        ds[str(name)] = interp_tie.chunk(chunks)
     
     return ds
 

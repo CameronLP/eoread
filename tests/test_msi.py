@@ -47,7 +47,7 @@ def test_time(level1_msi, chunks):
 
 def test_v1_compat(level1_msi):
     v1_data = getdir("DIR_V1_COMPAT_DATA")
-    l1 = Level1_MSI(level1_msi, resolution=10, v1_compat=True)
+    l1 = Level1_MSI(level1_msi, resolution=60, v1_compat=True)
     old = xr.open_dataset(list(v1_data.glob('S2*_60'))[0])
     generic.compare_version(l1, old)
     
