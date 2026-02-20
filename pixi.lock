@@ -5,8 +5,6 @@ environments:
     - url: https://conda.anaconda.org/conda-forge/
     indexes:
     - https://pypi.org/simple
-    options:
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -254,8 +252,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/0b/f7/85273299ab57117850cc0a936c64151171fac4da49bc6fba0dad984a7c5f/affine-2.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a3/8f/c42a98f933022c7de00142526c9b6b7429fdcd0fc66c952b4ebbf0ff3b7f/cf_xarray-0.10.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
-      - pypi: git+https://github.com/hygeos/core.git#e5f5174912cee57b0a55fd93527cfae7e48825d6
-      - pypi: git+https://github.com/hygeos/eotools.git#7bf94d85a99211900ff658a07bbb60a4e24c4296
+      - pypi: git+https://github.com/hygeos/core.git#71527c54f49955dd5aa6d604efb917d2e554d0b5
+      - pypi: git+https://github.com/hygeos/eotools.git#94705f41f5e0d5cbb2a3e0864d0ee8ad5fa150ad
       - pypi: https://files.pythonhosted.org/packages/27/cd/c883e1a7c447479d6e13985565080e3fea88ab5a107c21684c813dba1875/flexcache-0.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b1/8b/88f16936a8e8070a83d36239555227ecd91728f9ef222c5382cda07e0fd6/h5netcdf-1.8.1-py3-none-any.whl
@@ -269,7 +267,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/48/4a/1af9aa9810fb30668568f2c4dd3eec2412c8e9762b69201d971c509b295e/rasterio-1.5.0-cp313-cp313-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/d6/e5/4f4fc949e7eb8415a57091767969e1d314dcf06b74b85bbbf29991395af4/rioxarray-0.20.0-py3-none-any.whl
-      - pypi: git+https://github.com/hygeos/sand.git#a80db0e104457f49f42a62ecb17ae38e8fe6a20c
+      - pypi: git+https://github.com/hygeos/sand.git#c5f4c80be2400fb505b985d6c6323ffaa4861c2e
       - pypi: https://files.pythonhosted.org/packages/f2/a2/83fc37e2a58090e3d2ff79175a95493c664bcd0b653dd75cb9134645a4e5/shapely-2.1.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl
@@ -852,7 +850,7 @@ packages:
   - pkg:pypi/contourpy?source=compressed-mapping
   size: 321850
   timestamp: 1769155964333
-- pypi: git+https://github.com/hygeos/core.git#e5f5174912cee57b0a55fd93527cfae7e48825d6
+- pypi: git+https://github.com/hygeos/core.git#71527c54f49955dd5aa6d604efb917d2e554d0b5
   name: core
   version: 1.2.1
   requires_dist:
@@ -1032,7 +1030,8 @@ packages:
   - core @ git+https://github.com/hygeos/core.git ; extra == 'git'
   - sand @ git+https://github.com/hygeos/sand.git ; extra == 'git'
   requires_python: <3.14
-- pypi: git+https://github.com/hygeos/eotools.git#7bf94d85a99211900ff658a07bbb60a4e24c4296
+  editable: true
+- pypi: git+https://github.com/hygeos/eotools.git#94705f41f5e0d5cbb2a3e0864d0ee8ad5fa150ad
   name: eotools
   version: 0.1.0
   requires_dist:
@@ -1042,7 +1041,8 @@ packages:
   - xlrd
   - core @ git+https://github.com/hygeos/core.git ; extra == 'git'
   - luts @ git+https://github.com/hygeos/luts.git ; extra == 'git'
-  - eoread[git] @ git+https://github.com/hygeos/eoread.git ; extra == 'git'
+  - eoread @ git+https://github.com/hygeos/eoread.git ; extra == 'git'
+  - sand @ git+https://github.com/hygeos/sand.git ; extra == 'git'
   - gatiab ; extra == 'gatiab'
   requires_python: '>=3.11'
 - conda: https://conda.anaconda.org/conda-forge/noarch/eumdac-3.1.1-pyhd8ed1ab_1.conda
@@ -3585,7 +3585,7 @@ packages:
   purls: []
   size: 394197
   timestamp: 1765160261434
-- pypi: git+https://github.com/hygeos/sand.git#a80db0e104457f49f42a62ecb17ae38e8fe6a20c
+- pypi: git+https://github.com/hygeos/sand.git#c5f4c80be2400fb505b985d6c6323ffaa4861c2e
   name: sand
   version: 2.1.4
   requires_dist:

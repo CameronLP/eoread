@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import xarray as xr
-import dask.array as da
+import numpy as np
 
 from pathlib import Path
 from typing import Literal, Union
@@ -152,8 +152,8 @@ def Level1_OLCI(
     tie_geom_file = dirname/'tie_geometries.nc'
     tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
     tie_ds = tie_ds.assign_coords(
-        tie_columns=da.arange(tie_ds.sizes['tie_columns'])*ac_factor,
-        tie_rows=da.arange(tie_ds.sizes['tie_rows'])*al_factor,
+        tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
+        tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
     )
     assert tie_ds.tie_columns[0] == ds[str(n.columns)][0]
     assert tie_ds.tie_columns[-1] == ds[str(n.columns)][-1]
@@ -174,11 +174,12 @@ def Level1_OLCI(
                 (str(n.vaa), 'OAA', interp_aa),
             ]:
         if method == 'atan2':
-            _cos = spatial_resample(da.cos(da.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
-            _sin = spatial_resample(da.sin(da.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
-            ds[ds_full] = da.degrees(da.arctan2(_sin, _cos))
+            _cos = spatial_resample(np.cos(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+            _sin = spatial_resample(np.sin(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+            ds[ds_full] = np.degrees(np.arctan2(_sin, _cos))
         else:
             ds[ds_full] = spatial_resample(tie_ds[ds_tie], shape, tie_chunks, method)
+            pass
             
         ds[ds_full].attrs = tie_ds[ds_tie].attrs
         if tie_param: ds[ds_full+'_tie'] = tie_ds[ds_tie]
@@ -188,8 +189,8 @@ def Level1_OLCI(
     tie_meteo_file = dirname/'tie_meteo.nc'
     tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
     tie = tie.assign_coords(
-                tie_columns = da.arange(tie.sizes['tie_columns'])*ac_factor,
-                tie_rows = da.arange(tie.sizes['tie_rows'])*al_factor,
+                tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
+                tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
                 )
     assert tie.tie_columns[0] == ds[str(n.columns)][0]
     assert tie.tie_columns[-1] == ds[str(n.columns)][-1]
@@ -199,7 +200,7 @@ def Level1_OLCI(
     wind0 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=0), shape, tie_chunks, 'linear')
     wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
     
-    ds['horizontal_wind'] = da.sqrt(wind0**2 + wind1**2)
+    ds['horizontal_wind'] = np.sqrt(wind0**2 + wind1**2)
     ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
     for var_from, var_to in [
         ('humidity', 'humidity'),

@@ -1,7 +1,6 @@
 from core.geo import n, convert_latlon_2D
 from core.interpolate import Linear, Nearest, interp
 from core.files import uncompress
-from dask.array import linspace
 from tempfile import TemporaryDirectory
 from typing import Literal
 import xarray as xr
@@ -242,11 +241,13 @@ def spatial_resample(arr,
         if ratio is < 1 then upscales
     """
     arr = arr.squeeze()
+    arr = arr.compute()
     assert len(arr.shape) == 2, 'Array should be 2D'
     assert all(k in arr.dims for k in output_shape.keys())
         
     ratio = [arr.sizes[d]/output_shape[d] for d in arr.dims]
     
+    # No resolution change => simple renaming
     if ratio[0] == 1 and ratio[1] == 1: 
         combi = zip(arr.dims, (str(n.rows), str(n.columns)))
         return arr.rename({d0:d1 for d0,d1 in combi}) 
@@ -261,17 +262,18 @@ def spatial_resample(arr,
         
     # over-sample
     else:
-        m = Linear if method == 'linear' else Nearest
-        
-        raster = [linspace(0, arr.sizes[d], output_shape[d]) for d in arr.dims]
-        raster = [xr.DataArray(l, dims=('d0','d1')).chunk(chunks) 
-                  for l in convert_latlon_2D(*raster)]
-        params = {d: m(raster[i]) for i,d in enumerate(arr.dims)}
-        arr_resampled = interp(arr.compute(), **params)
-
+        method = Linear if method == 'linear' else Nearest
+        xy = np.meshgrid(*[np.arange(0, output_shape[d]) for d in arr.dims])
+        params = {
+            d: method(xr.DataArray(xy[i], dims=('d0','d1'))) 
+            for i,d in enumerate(arr.dims)
+        }
+        arr_resampled = interp(arr, **params)
+    
     return arr_resampled.rename({
-        'd0': str(n.rows),
-        'd1': str(n.columns)})
+        'd0': str(n.columns),
+        'd1': str(n.rows)
+    })
 
 def open_raster(dirname, 
                 pattern: str, 

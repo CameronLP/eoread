@@ -148,6 +148,7 @@ def _msi_read_latlon(ds: xr.Dataset, chunks: list, xmlgranule: dict) -> None:
     dims = (str(n.rows), str(n.columns))
     geocoding = xmlgranule['Geometric_Info']['Tile_Geocoding']
     
+    # FIXME: LATLON should be replaced by a map_block
     ds[str(n.lat)] = DataArray_from_array(
         _LATLON(geocoding, 'lat', ds), dims,
         chunks=chunks,
@@ -304,12 +305,13 @@ def _msi_read_geometry(
     ds = ds.assign_coords(tie_rows = tie_rows, tie_columns = tie_columns)
 
     # initialize the dask arrays
-    x = xr.DataArray(np.arange(len(ds.x)), dims=('x'))
-    y = xr.DataArray(np.arange(len(ds.y)), dims=('y'))
+    x = xr.DataArray(np.arange(len(ds.x)), dims=('x'))#.chunk(chunks[0])
+    y = xr.DataArray(np.arange(len(ds.y)), dims=('y'))#.chunk(chunks[1])
     for name, tie in [(n.sza, sza),(n.saa, saa),(n.vza, vza),(n.vaa, vaa)]:
-        ds[str(name)+'_tie'] = xr.DataArray(tie.copy(), dims=dims)
-        interp_tie = interp(ds[str(name)+'_tie'], tie_rows=Linear(x), tie_columns=Linear(y))
-        ds[str(name)] = interp_tie.chunk(chunks)
+        ds[str(name)+'_tie'] = xr.DataArray(tie, dims=dims)
+        ds[str(name)] = interp(
+            ds[str(name)+'_tie'], tie_rows=Linear(x), tie_columns=Linear(y)
+        )
     
     return ds
 
@@ -435,6 +437,6 @@ def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
         ds[str(n.flags)],
         'L1_INVALID', 4,
         np.isnan(ds.vza)
-        )
+    )
     
     return drop_unused_dims(ds)
