@@ -139,6 +139,14 @@ def Level1_MSI(
     if resolution:
         ds = ds.set_coords(str(n.bgroup))
     
+    # SRF getter
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter_arg'] = {
+        'S2A': 'sentinel2_1_msi', 
+        'S2B': 'sentinel2_2_msi', 
+        'S2C': 'sentinel2_3_msi', 
+    }[platform]
+    
     if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
     
