@@ -13,9 +13,18 @@ from core.env import getdir
 resolutions = ['10', '20', '60']
 
 
-@pytest.fixture(scope="session")
-def level1_msi(): 
-    return get_sample(1)
+@pytest.fixture()
+def level1_msi() -> Path:
+    msi_prod = (
+        getdir("DIR_SAMPLES")
+        / "SENTINEL-2-MSI"
+        / "S2B_MSIL1C_20250320T104639_N0511_R051_T31UDS_20250320T142408.SAFE"
+    )
+    if not msi_prod.exists():
+        raise FileNotFoundError(
+            f"MSI sample product not found. Please download {msi_prod.name} in {msi_prod.parent}"
+        )
+    return msi_prod
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):
