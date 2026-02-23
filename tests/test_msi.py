@@ -76,6 +76,6 @@ def test_subset(level1_msi, chunks):
     l1 = Level1_MSI(level1_msi, chunks=chunks, metadata_template=[])
     generic.test_subset(l1)
 
-def test_plot(request, level1_msi, chunks):
-    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=10)
-    generic.test_plot(request, l1, 4)
+def test_plot(request, level1_msi):
+    l1 = Level1_MSI(level1_msi, resolution=60).drop(['x', 'y'])
+    generic.plot(request, l1, 'B8A', poi={'x': 500, 'y': 1000}, yincrease=False)

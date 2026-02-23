@@ -137,7 +137,9 @@ def test_plot(request, ds, index_band):
     savefig(request)
 
 
-def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
+def plot(
+    request, l1: xr.Dataset, band_nir, poi: dict | None = None, yincrease: bool = True
+):
     """
     Plot typical level 1 parameters to give an overview of the product
     """
@@ -151,7 +153,7 @@ def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
         data = da.compute()
         print(data.name, data.attrs)
         
-        _, ax, _ = xrimshow(downsample(data))
+        _, ax, _ = xrimshow(downsample(data), yincrease=yincrease)
 
         # Show point of interest
         if poi is not None:
@@ -162,18 +164,26 @@ def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
                 markersize=7,
                 markeredgewidth=1,
             )
-            print(data.name, ':', data.sel(poi).values.item())
+            print(data.name, ':', data.isel(poi).values.item())
 
         savefig(request)
     
     # Plot spectrum over the point of interest
     if poi is not None:
-        l1[n.rtoa].sel(poi).plot(figsize=(5, 3))
+        l1c = l1.sel(poi).compute()
+        for dim in ['wav', 'cwav']:
+            if (dim in l1c) and (l1c[dim].ndim == 1):
+                l1c = l1c.assign_coords(bands=l1c[dim])
+            
+        l1c[n.rtoa].plot(figsize=(5, 3), marker='+')
         plt.grid(True)
         plt.title('rho_toa')
         plt.tight_layout()
         plt.axis(ymin=0.)
         savefig(request)
+
+        with xr.set_options(display_max_rows=999):
+            print(l1c)
         
 
 def test_execution_time(reader_fn, params: dict):
