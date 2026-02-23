@@ -1,4 +1,4 @@
-from core.geo import n, convert_latlon_2D
+from core.geo import n
 from core.interpolate import Linear, Nearest, interp
 from core.files import uncompress
 from tempfile import TemporaryDirectory
@@ -24,6 +24,7 @@ def xrimshow(
     cbar_gap_vertical: float=0.2,
     cbar_label_space: float=0.5,
     title_height: float=0.4,
+    yincrease: bool = True,
 ):
     """
     Plot a 2D DataArray using imshow with consistent absolute margins.
@@ -75,6 +76,9 @@ def xrimshow(
     title_height : float, default=0.4
         Space reserved for the title in inches (replaces margin_top
         when *title* is set).
+    yincrease : bool, default=True
+        If True, the y-axis increases upward (standard orientation).
+        If False, the y-axis increases downward (inverted orientation).
 
     Returns
     -------
@@ -157,6 +161,7 @@ def xrimshow(
         add_colorbar=True,
         cbar_ax=cax,
         cbar_kwargs={'orientation': cbar_orientation},
+        yincrease=yincrease,
     )
 
     if title is not None:
