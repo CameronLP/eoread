@@ -12,7 +12,7 @@ import numpy as np
 import pyproj
 import xarray as xr
 
-from core.tools import merge, drop_unused_dims
+from core.tools import merge, drop_unused_dims, only
 from core.table import read_xml
 from core import env, log
 from core.geo import n
@@ -205,15 +205,10 @@ def _msi_read_toa(
         radio_offset = [0]*len(metadata['name'])
     
     # Open deserved bands
-    indexes = []
     quantif = product_image['QUANTIFICATION_VALUE']['values']
-    for filename in (granule_dir/'IMG_DATA').glob(f'*.jp2'):
-        
-        # Add band to dataset
-        band = filename.stem.split('_')[-1]
-        if 'TCI' == band: continue
-        iband = list(metadata['name']).index(band.replace('B0','B'))
-        indexes.append(iband)
+    for iband, bname in enumerate(metadata['name']):
+        bname_ = bname.replace('B', 'B0') if len(bname)==2 else bname
+        filename = only((granule_dir/'IMG_DATA').glob(f'*_{bname_}.jp2'))
         
         arr = xr.open_dataarray(filename, engine='rasterio').chunk([1]+list(chunks))
         arr = ((arr+radio_offset[iband])/quantif).astype('float32')
@@ -222,10 +217,10 @@ def _msi_read_toa(
         if resolution:
             ratio = {str(n.columns): ds.totalheight, str(n.rows): ds.totalwidth} 
             arr_resampled = spatial_resample(arr.squeeze(), ratio, chunks)
-            ds[str(n.rtoa)+f'_{band}'] = arr_resampled
+            ds[str(n.rtoa)+f'_{bname}'] = arr_resampled
         else:
             res = str(metadata['resolution'][iband]) + 'm'
-            name = str(n.rtoa)+f'_{res}_{band}'
+            name = str(n.rtoa)+f'_{res}_{bname}'
             arr = arr.squeeze().rename({'y': f'y_{res}', 'x': f'x_{res}'})
             ds[name] = arr.chunk(chunks)
     
