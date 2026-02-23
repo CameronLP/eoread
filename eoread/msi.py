@@ -27,7 +27,7 @@ user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2
 def Level1_MSI(
         dirname: Union[str, Path],
         chunks: Union[int, tuple] = 500,
-        resolution: Literal[10,20,60,None] = 10,
+        resolution: Literal[10,20,60,None] = 60,
         metadata_template: Union[list, None] = None, 
         v1_compat: bool = False,
         verbose: bool = True
