@@ -12,6 +12,7 @@ import xarray as xr
 import numpy as np
 
 from pyhdf.SD import SD, SDC
+from dask.array import array
 
 from core import tools
 
@@ -67,6 +68,7 @@ class HDF4_ArrayLike:
             self.shape = tuple(shp)
         else:
             self.shape = (shp,)
+        self.ndim = len(self.shape)
 
     def __getitem__(self, keys):
         """
@@ -80,7 +82,7 @@ class HDF4_ArrayLike:
         """
         return self.sds.__getitem__(keys)
 
-def load_hdf4(filename, trim_dims=False, chunks=1000, lazy=False):
+def load_hdf4(filename, trim_dims=False, lazy=False):
     """
     Load an HDF4 file as an xarray Dataset with optional lazy loading.
     
