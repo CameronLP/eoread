@@ -122,6 +122,12 @@ def Level1_MODIS(
     l1.attrs['version']           = int(metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID']['VALUE'])
     l1.attrs['user_guide']        = user_guide
     l1.attrs['_flag_reader'] = 'eoread.modis.FlagsReader_MODIS'
+
+    # SRF getter
+    l1.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    l1.attrs['_srf_getter_arg'] = 'eos_1_modis'
+    
+    # Filter metadata if needed
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     metadata['attributes'] = attributes
     l1.attrs['metadata'] = filter_fn(metadata, metadata_template)

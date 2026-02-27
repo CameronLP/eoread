@@ -124,6 +124,9 @@ def Level1_VENUS(
     ds = drop_unused_dims(ds)
     # Add flag reader and SRF getter in attributes
     ds.attrs['_flag_reader'] = 'eoread.venus.FlagsReader_VENUS'
+    ds.attrs['_srf_getter'] = 'eoread.venus.get_SRF'
+    ds.attrs['_srf_getter_arg'] = None
+    
     return ds.unify_chunks()
 
 

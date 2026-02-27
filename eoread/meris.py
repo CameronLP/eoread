@@ -130,6 +130,10 @@ def Level1_MERIS(
     ds.attrs['user_guide'] = user_guide
     ds.attrs['_flag_reader'] = 'eoread.meris.FlagsReader_MERIS'
 
+    # SRF getter
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_meris'
+    ds.attrs['_srf_getter_arg'] = ''
+
     # Read date
     dstart = _Internal.read_date(metadata['SENSING_START'])
     dstop = _Internal.read_date(metadata['SENSING_STOP'])

@@ -84,10 +84,11 @@ def Level1_ECOSTRESS(
     l1.attrs[str(names.input_directory)] = str(filepath.parent)
     l1.attrs[str(names.resolution)] = 70
     
-    # Change dimensions name and update coordinates
-    new_dims = (str(n.rows),str(n.columns))    
-    revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
-    l1 = l1.rename_dims(revize_dims)
+    # SRF getter
+    l1.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    l1.attrs['_srf_getter_arg'] = 'iss_1_ecostres'
+     
+    # Update coordinates
     l1 = l1.assign_coords({
         str(names.bands): l1[str(names.bands)].values.astype(str),
         str(names.bgroup): (str(names.bands), ['bands_ir']*5)

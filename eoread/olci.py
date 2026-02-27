@@ -170,6 +170,13 @@ def Level1_OLCI(
     if verbose: log.debug('add important attributes')
     _Internal.add_attributes(ds, manifest, dirname)
     ds.attrs['_flag_reader'] = 'eoread.olci.FlagsReader_OLCI'
+
+    # SRF getter
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_olci'
+    ds.attrs['_srf_getter_arg'] = {
+        'Sentinel-3A': 'sentinel3_1_olci',
+        'Sentinel-3B': 'sentinel3_2_olci',
+    }[ds.attrs[str(names.platform)]]
     
     if verbose: log.debug('compute reflectances')
     ds = _Internal.olci_init_spectral(ds)

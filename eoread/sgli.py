@@ -96,6 +96,11 @@ def Level1_SGLI(filepath: str|Path,
     ds.attrs[str(names.resolution)] = 250
     ds.attrs[str(names.input_directory)] = str(filepath.parent)
     ds.attrs['_flag_reader'] = 'eoread.sgli.FlagsReader_SGLI'
+
+    # SRF getter
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter_arg'] = 'gcom-c_1_sgli'
+    
     if add_ancillary_data: 
         if verbose: log.info('Read ancillary data')
         ds = _Internal.read_ancillary(ds, tree)
