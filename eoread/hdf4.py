@@ -18,9 +18,18 @@ from core import tools
 
 
 def clean_attrs(A):
-    '''
-    Remove all '\x00' from attribute values
-    '''
+    """
+    Remove all null terminators from HDF4 attribute string values.
+    
+    HDF4 files often contain null-terminated strings in attributes.
+    This function strips trailing '\x00' characters from string values.
+    
+    Args:
+        A: Dictionary of HDF4 attributes
+        
+    Returns:
+        Dictionary with cleaned attribute values (non-strings unchanged)
+    """
     def clean(x):
         if isinstance(x, str):
             return x.rstrip('\x00')
@@ -30,6 +39,18 @@ def clean_attrs(A):
 
 
 class HDF4_ArrayLike:
+    """
+    Array-like wrapper for HDF4 Scientific Dataset (SDS) objects.
+    
+    Provides a NumPy-compatible interface to HDF4 datasets with proper
+    dtype, shape, and ndim attributes. Enables lazy loading via Dask.
+    
+    Attributes:
+        sds: HDF4 Scientific Dataset object
+        dtype: NumPy dtype of the dataset
+        shape: Tuple describing array dimensions
+        ndim: Number of dimensions
+    """
     def __init__(self, sds):
         self.sds = sds
         self.dtype = {
@@ -49,11 +70,36 @@ class HDF4_ArrayLike:
             self.shape = (shp,)
 
     def __getitem__(self, keys):
+        """
+        Read data from HDF4 dataset using NumPy-style indexing.
+        
+        Args:
+            keys: Slice or index specification
+            
+        Returns:
+            NumPy array with requested data
+        """
         return self.sds.__getitem__(keys)
 
 def load_hdf4(filename, trim_dims=False, chunks=1000, lazy=False):
     """
-    Loads a hdf4 file as a lazy xarray object
+    Load an HDF4 file as an xarray Dataset with optional lazy loading.
+    
+    This function provides an alternative to xarray's pynio engine, which is
+    complex to install. All datasets are wrapped in Dask arrays for consistency.
+    
+    Args:
+        filename: Path to the HDF4 file (.hdf)
+        trim_dims: If True, removes unused dimensions from the dataset
+        lazy: If True, uses lazy loading (Dask arrays). If False, loads data immediately.
+        
+    Returns:
+        xr.Dataset with variables from the HDF4 file. Each variable includes its
+        original HDF4 attributes, and the dataset has global file attributes.
+        
+    Example:
+        >>> ds = load_hdf4('MODIS_L1B.hdf', lazy=True)
+        >>> ds = load_hdf4('ancillary_data.hdf', trim_dims=True)
     """
     hdf = SD(str(filename))
     ds = xr.Dataset()

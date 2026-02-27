@@ -16,17 +16,38 @@ def Level1_HYPSO(
         v1_compat: bool = False,
         verbose: bool = True,
     ) -> xr.Dataset:
-    '''
-    Read an NTNU HYPSO Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, 
-    the angles on the full grid, etc.
+    """
+    Read an NTNU HYPSO-1 Level1 product as an xarray.Dataset.
+    
+    HYPSO-1 is a hyperspectral imaging satellite operated by the Norwegian University
+    of Science and Technology (NTNU). It provides high-resolution hyperspectral data
+    for ocean monitoring and research.
+    
+    The dataset contains TOA radiances, viewing/solar angles on the full grid,
+    and geolocation information.
 
-    Arguments:
-        filepath: Path of the HYPSO file
-        chunks: Size of chunks for spatial axis
-        metadata_template: If None, add all metadata in output xarray.Dataset attributes else add only specified metadata.
-        v1_compat: Option to format output xarray.Dataset such as version 1
-    '''
+    Args:
+        filepath: Path to the HYPSO HDF5 file (.h5)
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+                If tuple, should be (rows_chunk, columns_chunk)
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+                          Use empty list [] for minimal metadata.
+        verbose: If True, prints debug messages during reading
+        
+    Returns:
+        xr.Dataset containing:
+            - Lt: Top-of-atmosphere radiance (W/sr/m^2)
+            - VZA, VAA, SZA, SAA: Viewing and solar geometry angles
+            - lat, lon: Geolocation arrays
+            - central_wavelength: Band wavelengths
+            - Metadata attributes
+            
+    Raises:
+        AssertionError: If the file does not exist
+        
+    Example:
+        >>> ds = Level1_HYPSO('hypso_product.h5', chunks=1000)
+    """
     
     ds = xr.Dataset()
     filepath = Path(filepath)
@@ -85,11 +106,22 @@ def Level1_HYPSO(
 
 def get_sample(level: int=1) -> Path:
     """
-    Bring a HYPSO file path to test reading function
+    Retrieve a sample HYPSO-1 product file for testing.
+    
+    Returns path to a pre-configured HYPSO sample product from environment variables.
 
     Args:
-        level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
+        level: Processing level of the product (currently only level=1 is supported)
+        
+    Returns:
+        Path to the HYPSO HDF5 file
+        
+    Raises:
+        AssertionError: If the sample directory does not exist
+        
+    Example:
+        >>> hypso_file = get_sample(level=1)
+        >>> ds = Level1_HYPSO(hypso_file)
     """
     sample = env.getdir('DIR_SAMPLE_HYPSO')
     assert sample.exists()

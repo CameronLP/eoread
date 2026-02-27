@@ -137,30 +137,43 @@ def Level1_MODIS(
     return l1.unify_chunks()
 
 
-def _transform_radiometry(level1: xr.Dataset, chunks: list, resolution: int) -> xr.Dataset:
-    """Convert raw DN values to calibrated radiance and reflectance."""
-    dim = 'dim'
-    bandnames = [
-        "new_Band_250M:MODIS_SWATH_Type_L1B", 
-        "new_Band_500M:MODIS_SWATH_Type_L1B", 
-        "new_Band_1KM_RefSB:MODIS_SWATH_Type_L1B",
-        "new_Band_1KM_Emissive:MODIS_SWATH_Type_L1B"
-    ]
+def get_sample(level: int = 1) -> Path:
+    """
+    Retrieve a sample MODIS product file for testing.
     
-    ds_names = xr.Dataset({
-        'var': (dim, ['EV_250_Aggr1km_RefSB','EV_500_Aggr1km_RefSB','EV_1KM_RefSB','EV_1KM_Emissive']),
-        'old': (dim, bandnames)
-    })
-    
-    data_arrays = {'ltoa': [], 'rtoa': []}
-    for i in range(len(ds_names[dim])):
+    Returns paths to pre-configured sample products from environment variables.
+
+    Args:
+        level: Processing level (currently only level=1 is supported)
+
+    Returns:
+        Path to the MODIS HDF4 file
         
-        # Compute radiance
-        names = ds_names.isel({dim: i})
-        rad = level1[str(names['var'].values)]
-        new_dim = [d for d in rad.dims if 'Band' in d][0]
-        bands_dim = new_dim.replace('new_','').split(':')[0]
-        bands = level1[bands_dim].values.astype(str)
+    Raises:
+        AssertionError: If the sample file does not exist
+    """
+    return collect_sample(f'LEVEL{level}_MODISA_MYD', 'nasa', 'AQUA-MODIS-LR', level)
+    
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
+    
+    @staticmethod
+    def transform_radiometry(level1: xr.Dataset, chunks: list, resolution: int) -> xr.Dataset:
+        """Convert raw DN values to calibrated radiance and reflectance."""
+        dim = 'dim'
+        
+        data_arrays = {'ltoa': [], 'rtoa': []}
+        variables = ['EV_250_Aggr1km_RefSB','EV_500_Aggr1km_RefSB','EV_1KM_RefSB','EV_1KM_Emissive']        
+        for var in variables:
+            
+            # Compute radiance
+            rad = level1[var]
+            bands_dim = only([d for d in rad.dims if str(names.bands) in d])
+            bands = level1[bands_dim].values.astype(str)
 
         # Broadcast scales and offsets with appropriate dimensions
         level1 = level1.assign_coords({new_dim: bands})

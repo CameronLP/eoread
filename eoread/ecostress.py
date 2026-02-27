@@ -32,7 +32,6 @@ def Level1_ECOSTRESS(
                 If list, should be [rows_chunk, columns_chunk]
         metadata_template: List of metadata keys to include. If None, includes all metadata.
                           Use empty list [] for minimal metadata.
-        v1_compat: If True, formats output to match version 1 structure for backward compatibility
         
     Example:
         >>> ds = Level1_ECOSTRESS('ECOv002_L1CG_RAD_*.h5', chunks=1000)

@@ -34,7 +34,7 @@ def Level1_MERIS(
         metadata_template: list = None,
         v1_compat: bool = False,
         verbose: bool = True
-    ):
+    ) -> xr.Dataset:
     '''
     Read an MERIS Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA radiances,
@@ -141,29 +141,57 @@ def Level1_MERIS(
     return ds.unify_chunks()
 
 
-def _rename_meris(ds):
-    ds = ds.rename({v: v.replace('radiance', str(n.ltoa)) 
-                    for v in ds.variables if 'radiance' in v})
-    return ds.rename({
-        'latitude'    : str(n.lat),
-        'longitude'   : str(n.lon),
-        'view_zenith' : str(n.vza), 
-        'view_azimuth': str(n.vaa),
-        'sun_zenith'  : str(n.sza),
-        'sun_azimuth' : str(n.saa), 
-    })
+def get_sample(level: int=1) -> Path:
+    """
+    Retrieve a sample MERIS product file for testing.
+    
+    Returns path to a pre-configured MERIS sample product from environment variables.
 
-def _read_metadata(ds, product, template):
-    metadata = {}
-    for ph in [product.get_mph(), product.get_sph()]:
-        metadata.update({
-            f.get_name(): f.get_elem(0) if f.get_num_elems() == 1 else f.get_elems()
-            for f in ph.fields()})
+    Args:
+        level: Processing level of the product (currently only level=1 is supported)
+        
+    Returns:
+        Path to the MERIS .N1 file
+        
+    Example:
+        >>> meris_file = get_sample(level=1)
+        >>> ds = Level1_MERIS(meris_file)
+    """
+    return collect_sample(f'LEVEL{level}_MERIS', None)
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
     
-    filter_fn = (lambda x,y: x) if template is None else filter_metadata 
-    ds.attrs['metadata'] = filter_fn(metadata, template)   
-    
-    return metadata
+    @staticmethod
+    def rename_variables(ds: xr.Dataset) -> xr.Dataset:
+        """Rename MERIS variables to standardized naming conventions."""
+        ds = ds.rename({v: v.replace('radiance', str(names.ltoa)) 
+                        for v in ds.variables if 'radiance' in v})
+        return ds.rename({
+            'latitude'    : str(names.lat),
+            'longitude'   : str(names.lon),
+            'view_zenith' : str(names.vza), 
+            'view_azimuth': str(names.vaa),
+            'sun_zenith'  : str(names.sza),
+            'sun_azimuth' : str(names.saa), 
+        })
+
+    @staticmethod
+    def read_metadata(ds: xr.Dataset, product, template: list) -> dict:
+        """Extract metadata from MERIS product header."""
+        metadata = {}
+        for ph in [product.get_mph(), product.get_sph()]:
+            metadata.update({
+                f.get_name(): f.get_elem(0) if f.get_num_elems() == 1 else f.get_elems()
+                for f in ph.fields()})
+        
+        filter_fn = (lambda x,y: x) if template is None else filter_metadata 
+        ds.attrs['metadata'] = filter_fn(metadata, template)   
+        
+        return metadata
 
 def _read_date(dat):
     dat = dat.decode('utf-8')

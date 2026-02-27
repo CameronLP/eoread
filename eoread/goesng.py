@@ -24,17 +24,36 @@ def Level1_GOESNG(filepath: str|Path,
                   convert_auxfile=True,
                   cloudmask=False,
                   chunksize=1000):
-    '''
-    Read an GOES-NG Level1 product as an xarray.Dataset
-    Formats the Dataset so that it contains the TOA radiances, brightness temperatures,
-    the angles on the full grid, etc.
+    """
+    Read a GOES-NG Level1 product as an xarray.Dataset.
+    
+    GOES-NG (Next Generation) satellites provide geostationary imagery with the
+    Advanced Baseline Imager (ABI). This reader formats the dataset to contain
+    TOA reflectances, viewing/solar angles on the full grid, and geolocation.
 
-    Arguments:
-        filepath: file at 1km (ex: Emultic1kmNC4_goes16_201808101100.nc)
-        auxfile: path to angles file (default: config['auxfile'])
-        cloudmask: whether to include the cloud mask
-        chunksize: int, or dict {'x': <value>, 'y': <value>} (chunksize at 1km)
-    '''
+    Args:
+        filepath: Path to the 1km resolution file (e.g., 'Emultic1kmNC4_goes16_201808101100.nc')
+        auxfile: Path to auxiliary angles file. If None, uses config['auxfile'].
+                Default: 'ANCILLARY/GOESNG-0750.1km.hdf'
+        convert_auxfile: If True, converts HDF4 auxiliary file to NetCDF for faster access 
+        cloudmask: If True, includes cloud mask from NWC SAF product
+        chunksize: Chunk size (int or dict with 'x' and 'y' keys). 
+                  Must be divisible by 4 for proper resampling between 500m, 1km, and 4km grids.
+        
+    Returns:
+        xr.Dataset containing:
+            - Rtoa: Top-of-atmosphere reflectance for 4 bands (470, 640, 865, 1610 nm)
+            - VZA, VAA, SZA, SAA: Viewing and solar geometry angles
+            - lat, lon: Geolocation arrays
+            - Optional cloud mask if cloudmask=True
+            
+    Raises:
+        AssertionError: If required files (1km and 500m) don't exist or chunk size 
+                       is not divisible by 4
+                       
+    Example:
+        >>> ds = Level1_GOESNG('Emultic1kmNC4_goes16_201808101100.nc', chunksize={'x': 1000, 'y': 1000})
+    """
     ds = xr.Dataset()
     
     if isinstance(chunksize, dict):

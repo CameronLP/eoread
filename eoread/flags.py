@@ -30,7 +30,8 @@ class FlagsReaderBase(ABC):
     - Extract raw flags from the dataset structure
 
     The abstract interface ensures that all flag managers can be used interchangeably,
-    allowing downstream code to work with flags in a sensor-agnostic manner.
+    allowing downstream code (in paticular, FlagsInit) to work with flags in a
+    sensor-agnostic manner.
     """
 
     @abstractmethod
@@ -40,7 +41,7 @@ class FlagsReaderBase(ABC):
 
     @abstractmethod
     def dims_like(self) -> str:
-        """Returns an input var name that has the same shape as the output"""
+        """Returns an input var name that has the same shape as the `getflag` output"""
         return ""
 
     @abstractmethod
@@ -57,10 +58,11 @@ class FlagsReaderBase(ABC):
         """
         pass
 
-    @abstractmethod
     def getflag_raw(self, ds: xr.Dataset, flag_name: str) -> xr.DataArray:
         """
         Retrieve a raw flag from the dataset.
+        
+        This method is not mandatory, as it is not used by `FlagsInit`.
 
         Args:
             ds (xr.Dataset): The dataset.
@@ -69,7 +71,7 @@ class FlagsReaderBase(ABC):
         Returns:
             xr.DataArray: The flag data (bool)
         """
-        pass
+        raise NotImplementedError
 
 
 class FlagsReader(FlagsReaderBase):
@@ -145,10 +147,54 @@ class FlagsReader(FlagsReaderBase):
 
 class FlagsInit(BlockProcessor):
     """
-    Generic implementation of flags initializer, that initializes flags from Level1
-    using a per-sensor flag manager.
+    Generic flags initializer that extracts quality flags from Level 1 data using a
+    per-sensor flag manager.
 
-    flag_reader should be stored as an attribute ('_flag_reader') in the level1 object.
+    The flag reader instance should be stored as an attribute ('_flag_reader') in the
+    Level 1 object that uses this initializer.
+
+    Parameters
+    ----------
+    flags : dict
+        Mapping of flag names to integer values (powers of 2 for bitmask encoding).
+
+    dtype : str
+        Data type for the flag array (typically 'uint16' for packed flags).
+
+    flag_reader : str
+        Fully qualified module path to the flag reader class (inherits from FlagsReaderBase).
+
+    flag_reader_kwargs : dict | None, optional
+        Additional keyword arguments for the flag reader constructor.
+
+    flags_varname : str, default='flags'
+        Name of the variable to create in the dataset containing the initialized flags.
+
+    Example
+    -------
+    ```python
+    from eoread.flags import FlagsInit, FlagsReader, GenericFlags
+
+    # Define flag mapping (bitmask values)
+    flags = {
+        GenericFlags.LAND: 1 << 0,  # 1
+        GenericFlags.CLOUD: 1 << 1,  # 2
+    }
+
+    # Create flags initializer
+    flags_init = FlagsInit(
+        flags=flags,
+        dtype="uint16",
+        flag_reader="eoread.flags.FlagsReader",
+        flag_reader_kwargs={
+            "mapping": {
+                GenericFlags.LAND: "~WATER",
+                GenericFlags.CLOUD: "CLOUD_MASK",
+            },
+            "flags_var": "quality_flags"
+        }
+    )
+    ```
     """
 
     def __init__(

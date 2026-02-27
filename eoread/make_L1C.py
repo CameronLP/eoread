@@ -29,14 +29,37 @@ def makeL1C(
     **kwargs
 ) -> Path:
     """
-    Generate a L1C product with SeaDAS OCSSW from various sensors
+    Generate a Level-1C product from NASA L1A/L1B data using SeaDAS OCSSW tools.
+    
+    This function automatically detects the sensor type from the filename and
+    dispatches to the appropriate sensor-specific L1C generation function. L1C
+    products include polarization-corrected reflectances without atmospheric
+    correction, generated using NASA's l2gen processor.
+    
+    Supported sensors:
+    - MODIS (Aqua/Terra): Files starting with 'A'
+    - VIIRS (SNPP/JPSS-1): Files starting with 'V' or 'JPSS1_VIIRS'
+    - HAWKEYE (SeaHawk-1): Files starting with 'SEAHAWK1_HAWKEYE'
+    - SeaWiFS: Files starting with 'S'
 
-    filename_L1A: path to L1A product (MODIS, SeaWiFS or VIIRS)
-    dirname: path to target directory (default None: same directory as l1a)
-    method: "shell", "docker" or "auto"
-    Other kwargs are passed to l1gen.
+    Args:
+        l1a: Path to the Level-1A or Level-1B input product.
+        dirname: Directory for output L1C file. If None, uses same directory as input.
+        method: Execution method - "shell" runs OCSSW commands directly (requires
+            OCSSWROOT environment variable), "docker" runs via container, "auto"
+            automatically selects based on executable availability.
+        **kwargs: Additional arguments passed to l2gen processor.
 
-    Returns the path to the new product
+    Returns:
+        Path to the generated L1C product file.
+        
+    Raises:
+        ValueError: If the sensor type cannot be determined from the filename.
+        
+    Example:
+        >>> l1c = makeL1C('A2023001000000.L1A_LAC', method='shell')
+        >>> print(l1c)
+        A2023001000000.L1C
     """
     l1a = Path(l1a)
     # sensor switch
@@ -53,6 +76,22 @@ def makeL1C(
 
 
 def makeL1C_HAWKEYE(l1a: Path, dirname: Path | None, method: str, **kwargs) -> Path:
+    """
+    Generate Level-1C product from SeaHawk-1 HAWKEYE L1A data.
+    
+    Creates a geolocation file (GEO) and runs l2gen to produce polarization-
+    corrected reflectances. The GEO file is generated in a temporary directory
+    and removed after processing.
+
+    Args:
+        l1a: Path to HAWKEYE Level-1A input file.
+        dirname: Output directory for L1C file, or None to use input directory.
+        method: Execution method ("shell", "docker", or "auto").
+        **kwargs: Additional arguments passed to l2gen.
+
+    Returns:
+        Path to the generated L1C product.
+    """
     l1c = (dirname or l1a.parent) / l1a.name.replace("L1A", "L1C")
     with TemporaryDirectory() as tmpdir:
         geo = Path(tmpdir) / (l1a.stem + ".GEO")
@@ -66,6 +105,22 @@ def makeL1C_HAWKEYE(l1a: Path, dirname: Path | None, method: str, **kwargs) -> P
     return l1c
 
 def makeL1C_MODIS(l1a: Path, dirname: Path | None, method: str) -> Path:
+    """
+    Generate Level-1C product from MODIS (Aqua/Terra) L1A data.
+    
+    Creates both geolocation (GEO) and calibrated radiance (L1B) files as
+    intermediate products, then runs l2gen to produce the L1C output with
+    polarization-corrected reflectances. Temporary files are created in a
+    temporary directory and automatically cleaned up.
+
+    Args:
+        l1a: Path to MODIS Level-1A input file.
+        dirname: Output directory for L1C file, or None to use input directory.
+        method: Execution method ("shell", "docker", or "auto").
+
+    Returns:
+        Path to the generated L1C product.
+    """
     if dirname is None:
         dname = l1a.parent
     else:
@@ -95,6 +150,22 @@ def makeL1C_MODIS(l1a: Path, dirname: Path | None, method: str) -> Path:
 
 @filegen(arg="l1b", if_exists="skip")
 def make_L1B_MODIS(l1a: Path, l1b: Path, geo: Path, method: str):
+    """
+    Generate MODIS Level-1B calibrated radiances from L1A data.
+    
+    Runs the modis_L1B processor from OCSSW to calibrate raw MODIS data.
+    Uses the @filegen decorator to skip processing if output already exists.
+
+    Args:
+        l1a: Path to MODIS L1A input file.
+        l1b: Path for output L1B calibrated radiance file.
+        geo: Path to MODIS geolocation file (required input).
+        method: Execution method ("shell", "docker", or "auto").
+        
+    Raises:
+        RuntimeError: If modis_L1B processing fails.
+        AssertionError: If L1B file is not created successfully (shell mode).
+    """
     if method == "auto":
         method = get_method_auto("modis_L1B")
     if method == "shell":
@@ -118,6 +189,22 @@ def make_L1B_MODIS(l1a: Path, l1b: Path, geo: Path, method: str):
 
 @filegen(arg="geo", if_exists="skip")
 def make_MODIS_GEO(l1a: Path, geo: Path, method: str):
+    """
+    Generate MODIS geolocation file from L1A data.
+    
+    Runs the modis_GEO processor from OCSSW to compute pixel-level geolocation
+    (latitude, longitude, view angles, solar angles). Uses the @filegen decorator
+    to skip processing if output already exists.
+
+    Args:
+        l1a: Path to MODIS L1A input file.
+        geo: Path for output geolocation file.
+        method: Execution method ("shell", "docker", or "auto").
+        
+    Raises:
+        RuntimeError: If modis_GEO processing fails.
+        AssertionError: If GEO file is not created successfully (shell mode).
+    """
     if method == "auto":
         method = get_method_auto("modis_GEO")
     if method == "shell":
@@ -140,6 +227,25 @@ def make_MODIS_GEO(l1a: Path, geo: Path, method: str):
 
 
 def makeL1C_VIIRS(l1a: Path, dirname: Path | None, method: str) -> Path:
+    """
+    Generate Level-1C product from VIIRS (SNPP or JPSS-1) L1A data.
+    
+    Creates a geolocation file (GEO-M) and runs l2gen to produce polarization-
+    corrected reflectances. Handles multiple VIIRS filename conventions for
+    both SNPP and JPSS-1 platforms. The GEO file is created in a temporary
+    directory and automatically cleaned up.
+
+    Args:
+        l1a: Path to VIIRS Level-1A input file (SNPP or JPSS-1).
+        dirname: Output directory for L1C file, or None to use input directory.
+        method: Execution method ("shell", "docker", or "auto").
+
+    Returns:
+        Path to the generated L1C product.
+        
+    Raises:
+        RuntimeError: If filename doesn't match expected VIIRS conventions.
+    """
     if dirname is None:
         dname = l1a.parent
     else:
@@ -177,6 +283,21 @@ def makeL1C_VIIRS(l1a: Path, dirname: Path | None, method: str) -> Path:
 
 @filegen(arg="geo", if_exists="skip")
 def make_VIIRS_GEO(l1a: Path, geo: Path, method: str):
+    """
+    Generate VIIRS moderate-resolution geolocation file from L1A data.
+    
+    Runs the geolocate_viirs processor from OCSSW to compute pixel-level
+    geolocation for VIIRS moderate resolution bands. Uses the @filegen
+    decorator to skip processing if output already exists.
+
+    Args:
+        l1a: Path to VIIRS L1A input file.
+        geo: Path for output GEO-M geolocation file.
+        method: Execution method ("shell", "docker", or "auto").
+        
+    Raises:
+        RuntimeError: If geolocate_viirs processing fails.
+    """
     if method == "auto":
         method = get_method_auto("geolocate_viirs")
     if method == "docker":
@@ -198,6 +319,21 @@ def make_VIIRS_GEO(l1a: Path, geo: Path, method: str):
 
 @filegen(arg="geo", if_exists="skip")
 def make_HAWKEYE_GEO(l1a: Path, geo: Path, method: str):
+    """
+    Generate SeaHawk-1 HAWKEYE geolocation file from L1A data.
+    
+    Runs the geolocate_hawkeye processor from OCSSW to compute pixel-level
+    geolocation. Uses the @filegen decorator to skip processing if output
+    already exists.
+
+    Args:
+        l1a: Path to HAWKEYE L1A input file.
+        geo: Path for output geolocation file.
+        method: Execution method ("shell", "docker", or "auto").
+        
+    Raises:
+        RuntimeError: If geolocate_hawkeye processing fails.
+    """
     if method == "auto":
         method = get_method_auto("geolocate_hawkeye")
     if method == "docker":
@@ -219,6 +355,22 @@ def make_HAWKEYE_GEO(l1a: Path, geo: Path, method: str):
 
 
 def makeL1C_SeaWIFS(l1a: Path, dirname: Path | None, method: str, **kwargs) -> Path:
+    """
+    Generate Level-1C product from SeaWiFS L1A data.
+    
+    Runs l2gen directly on SeaWiFS data to produce polarization-corrected
+    reflectances. SeaWiFS L1A files already contain geolocation information,
+    so no separate GEO file is needed.
+
+    Args:
+        l1a: Path to SeaWiFS Level-1A input file.
+        dirname: Output directory for L1C file, or None to use input directory.
+        method: Execution method ("shell", "docker", or "auto").
+        **kwargs: Additional arguments passed to l2gen.
+
+    Returns:
+        Path to the generated L1C product.
+    """
     if dirname is None:
         dname = l1a.parent
     else:
@@ -231,12 +383,40 @@ def makeL1C_SeaWIFS(l1a: Path, dirname: Path | None, method: str, **kwargs) -> P
 
 
 def get_method_auto(executable: str) -> str:
+    """
+    Automatically determine execution method based on executable availability.
+    
+    Checks if the specified OCSSW executable is available in the system PATH.
+    Returns "shell" if found (for direct execution), otherwise returns "docker"
+    to run via container.
+
+    Args:
+        executable: Name of the OCSSW executable to check (e.g., 'l2gen', 'modis_GEO').
+
+    Returns:
+        "shell" if executable is found in PATH, "docker" otherwise.
+    """
     if shutil.which(executable) is not None:
         return "shell"
     else:
         return "docker"
 
 def get_ocssw_executable(executable: str) -> str:
+    """
+    Get the full path to an OCSSW executable from OCSSWROOT.
+    
+    Constructs the path to an OCSSW binary using the OCSSWROOT environment
+    variable and verifies that the executable exists.
+
+    Args:
+        executable: Name of the OCSSW executable (e.g., 'l2gen', 'modis_GEO').
+
+    Returns:
+        Full path to the executable as a string.
+        
+    Raises:
+        AssertionError: If the executable is not found or OCSSWROOT is not set.
+    """
     exe = getdir("OCSSWROOT") / "bin" / executable
     assert shutil.which(exe) is not None, (
         f"Could not find {executable}, please check the environment variable OCSSWROOT"
@@ -244,6 +424,16 @@ def get_ocssw_executable(executable: str) -> str:
     return str(exe)
 
 def get_prefix() -> str:
+    """
+    Generate shell command prefix to set up OCSSW environment.
+    
+    Creates a command prefix that sets OCSSWROOT and sources the OCSSW
+    environment configuration file. This prefix should be prepended to
+    OCSSW commands when running in shell mode.
+
+    Returns:
+        Shell command prefix string to initialize OCSSW environment.
+    """
     root = getdir("OCSSWROOT")
     cmd = f"OCSSWROOT={root} && source {root}/OCSSW_bash.env && "
     return cmd
@@ -254,6 +444,23 @@ def l2gen_cmdline(
     geofile: bool,
     **kwargs
 ) -> str:
+    """
+    Construct l2gen command line for L1C generation.
+    
+    Builds the l2gen command with appropriate parameters for generating L1C
+    products: polarization-corrected reflectances (rhot_nnn, polcor_nnn),
+    geometry (sensor/solar angles), and geolocation, with atmospheric
+    correction disabled.
+
+    Args:
+        nbands: Number of spectral bands in the sensor.
+        geofile: Whether a separate geolocation file is used.
+        **kwargs: Additional l2gen parameters (key=value pairs).
+
+    Returns:
+        Complete l2gen command line string with placeholders for file paths.
+        Placeholders: {ifile}, {ofile}, and optionally {geofile}.
+    """
     gains = " ".join(["1.0"] * nbands)
 
     cmd = get_prefix()
@@ -271,6 +478,19 @@ def l2gen_cmdline(
 def get_ocssw_docker_app(
     version: Union[str, None] = None, tags: Union[list, None] = None
 ):
+    """
+    Initialize OCSSW Docker application instance.
+    
+    Creates an OCSSW hydro application object for running OCSSW processors
+    in Docker containers. Requires the hydro package for container management.
+
+    Args:
+        version: Specific OCSSW version to use, or None for default.
+        tags: List of Docker image tags to use, or None for default.
+
+    Returns:
+        OCSSW hydro application instance configured for the specified version/tags.
+    """
     from hydro.apps.OCSSW.OCSSW import OCSSW
     app = OCSSW(version=version, tags=tags)
     return app
@@ -285,6 +505,26 @@ def run_l2gen_L1C(
     geofile: None | Path = None,
     **kwargs
 ):
+    """
+    Run l2gen to generate Level-1C product with polarization correction.
+    
+    Executes NASA's l2gen processor without atmospheric correction to produce
+    L1C products containing polarization-corrected reflectances, viewing/solar
+    geometry, and geolocation. Uses the @filegen decorator to skip processing
+    if output already exists.
+
+    Args:
+        ifile: Path to input L1A or L1B file.
+        l1c: Path for output L1C file.
+        nbands: Number of spectral bands in the sensor.
+        method: Execution method ("shell", "docker", or "auto").
+        geofile: Path to geolocation file, or None if geolocation is embedded.
+        **kwargs: Additional parameters passed to l2gen.
+        
+    Raises:
+        ValueError: If method is not "shell", "docker", or "auto".
+        RuntimeError: If l2gen processing fails (shell mode).
+    """
     # run the command
     print("L1A/B:", ifile)
     print("L1C:", l1c)

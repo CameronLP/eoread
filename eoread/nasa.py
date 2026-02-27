@@ -14,7 +14,6 @@ How to install SeaDAS OCSSW (see https://seadas.gsfc.nasa.gov/downloads/)
 
 from pathlib import Path
 import xarray as xr
-import numpy as np
 from datetime import datetime
 import subprocess
 
@@ -26,11 +25,22 @@ from . import eo
 
 
 def check_nasa_download(filename):
-    '''
-    sanity check of file downloaded on NASA earthdata
-    check that downloaded file is not HTML
-    raise an error if it is not the case (authentication error)
-    '''
+    """
+    Verify that a NASA EarthData download completed successfully.
+    
+    Checks for HTML error pages that indicate authentication or download failures.
+    
+    Args:
+        filename: Path to the downloaded file to check
+        
+    Raises:
+        RuntimeError: If the file contains HTML error content, indicating
+                     authentication failure or file not found
+                     
+    Note:
+        Requires .netrc file with NASA EarthData credentials.
+        See: https://support.earthdata.nasa.gov/index.php?/Knowledgebase/Article/View/43/21/
+    """
     errormsg = 'Error authenticating to NASA EarthData for downloading ancillary data. ' \
     'Please provide authentication through .netrc. See more information on ' \
     'https://support.earthdata.nasa.gov/index.php?/Knowledgebase/Article/View/43/21/how-to-access-urs-gated-data-with-curl-and-wget'
@@ -45,14 +55,29 @@ def check_nasa_download(filename):
 
 
 def nasa_download(product, dirname, tmpdir=None, verbose=True, wget_extra=""):
-    '''
-    Download a product on oceandata.sci.gsfc.nasa.gov
-
-    Example:
-        nasa_download('A2005005002500.L1A_LAC.bz2', '/data/')
+    """
+    Download a NASA ocean color product from oceandata.sci.gsfc.nasa.gov.
     
-    Note: a full URL can be provided instead of just the product name
-    '''
+    Supports MODIS, VIIRS, SeaWiFS, and Sentinel-3 OLCI products.
+    Automatically handles authentication using wget cookie files.
+    
+    Args:
+        product: Product filename or full URL to download
+        dirname: Target directory for the downloaded file
+        tmpdir: Temporary directory for partial downloads
+        verbose: If True, prints download progress
+        wget_extra: Additional wget command-line options
+        
+    Returns:
+        Path to the downloaded file
+        
+    Example:
+        >>> nasa_download('A2005005002500.L1A_LAC.bz2', '/data/')
+        >>> nasa_download('S3A_OL_1_EFR_*.zip', '/data/')  # Sentinel-3
+    
+    Note:
+        Full URLs can be provided instead of just product names.
+    """
     if product.startswith('https://'):
         url = product
     elif product.startswith('S3'):
@@ -75,27 +100,49 @@ def nasa_download(product, dirname, tmpdir=None, verbose=True, wget_extra=""):
 
 def nasa_download_uncompress(product, dirname) -> Path:
     """
-    Download a product on oceandata.sci.gsfc.nasa.gov with
-    `nasa_download` and uncompress the result
+    Download and automatically uncompress a NASA product.
+    
+    Combines nasa_download with automatic decompression of .bz2, .gz,
+    and .zip archives.
+    
+    Args:
+        product: Product filename to download
+        dirname: Target directory
+        
+    Returns:
+        Path to the uncompressed file
     """
     return uncompress_decorator()(nasa_download)(product, dirname)
 
 
 def nasa_search(**kwargs):
     """
-    Search for files on oceancolor server
-
-    Args are passed directly to the query
-
+    Search for NASA ocean color products on oceandata.sci.gsfc.nasa.gov.
+    
+    Uses the NASA OceanColor API to find products matching the search criteria.
+    
+    Args:
+        **kwargs: Search parameters passed to the API, such as:
+            - sensor: Sensor name ('seawifs', 'modis', 'viirs', etc.)
+            - sdate: Start date (YYYY-MM-DD)
+            - edate: End date (YYYY-MM-DD)
+            - dtype: Data type ('L1', 'L2', 'L3', etc.)
+            - search: Filename pattern
+            
+    Returns:
+        List of product filenames matching the search criteria
+        
     Example:
-
-    nasa_search(sensor='seawifs',
-                sdate='2000-04-17',
-                edate='2000-04-17',
-                dtype='L1',
-                search='*L1A_GAC'):
-
-    See https://oceancolor.gsfc.nasa.gov/data/download_methods/#api
+        >>> products = nasa_search(
+        ...     sensor='seawifs',
+        ...     sdate='2000-04-17',
+        ...     edate='2000-04-17',
+        ...     dtype='L1',
+        ...     search='*L1A_GAC'
+        ... )
+    
+    See:
+        https://oceancolor.gsfc.nasa.gov/data/download_methods/#api
     """
     query = [f'{k}={v}' for k, v in kwargs.items()]
     query += ['addurl=0', 'results_as_file=1']
@@ -106,6 +153,30 @@ def nasa_search(**kwargs):
 
 
 def Level1_NASA(filename, chunks=500):
+    """
+    Read a NASA L1C product (MODIS, VIIRS, SeaWiFS) as an xarray.Dataset.
+    
+    L1C products are generated with SeaDAS l2gen to include polarization
+    correction and other radiometric corrections.
+    
+    Args:
+        filename: Path to the NASA L1C NetCDF file
+        chunks: Chunk size for spatial dimensions
+        
+    Returns:
+        xr.Dataset containing:
+            - Rtoa: Top-of-atmosphere reflectance (polarization corrected)
+            - VZA, VAA, SZA, SAA: Viewing and solar geometry
+            - lat, lon: Geolocation
+            - flags: Quality flags (LAND, L1_INVALID)
+            
+    Note:
+        Requires SeaDAS OCSSW installation. See:
+        https://seadas.gsfc.nasa.gov/downloads/
+        
+    Example:
+        >>> ds = Level1_NASA('A2005005002500.L1C.nc', chunks=1000)
+    """
     ds = xr.open_dataset(filename, chunks=chunks)
     # TODO: use xr.open_datatree instead of several xr.open_dataset
 

@@ -49,17 +49,6 @@ def Level1_VENUS(
                    Warning: Uncompressing masks is time-consuming.
         metadata_template: List of metadata keys to include. If None, includes all metadata.
         v1_compat: If True, formats output to match version 1 structure
-
-    Returns:
-        xarray.Dataset containing:
-            - Rtoa: Top of atmosphere reflectance (dimensionless)
-            - SOL_ALL, VIE_ALL: Solar and viewing angle grids
-            - lat, lon: Geolocation arrays
-            - CLA_ALL: Cloud altitude
-            - Optional masks: CLD_XS, USI_XS, PIX_*, SAT_* (if read_masks=True)
-            - bands: Spectral band names (B1-B12)
-            - central_wavelength: Band wavelengths (nm)
-            - Metadata attributes with product information
     
     Raises:
         AssertionError: If the directory does not exist
@@ -146,16 +135,6 @@ def Level2_VENUS(
         dirname: Path to the VENµS Level2A product directory
         chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
         metadata_template: List of metadata keys to include. If None, includes all metadata.
-
-    Returns:
-        xarray.Dataset containing:
-            - rho_surface: Surface reflectance (SRE)
-            - rho_flat: Flat surface reflectance (FRE)
-            - water_vapor: Column water vapor content
-            - aod: Aerosol optical depth
-            - Quality masks: CLM_XS, USI_XS, SAT_XS, PIX_XS, IAB_XS, EDG_XS
-            - Geometric angles and geolocation
-            - Metadata attributes
     """
     ds = xr.Dataset()
     dirname = Path(dirname)
@@ -208,190 +187,52 @@ def Level2_VENUS(
     return ds.unify_chunks()
 
 
-def _venus_read_metadata(
-        ds: xr.Dataset, 
-        dirname: Path, 
-        metadata_template: Union[list, None]
-    ) -> tuple[xr.Dataset, dict]:
-    """Extract metadata from XML files and populate dataset attributes."""
-    # load xml file
-    xmlfiles = list((dirname/'DATA').glob('*UII_ALL.xml'))
-    assert len(xmlfiles) == 1
-    xmlroot = read_xml(xmlfiles[0])
-
-    # load main xml file
-    xmlfiles = list(dirname.glob('*MTD_ALL.xml'))
-    assert len(xmlfiles) == 1
-    xmlgranule = read_xml(xmlfiles[0])
-    
-    # Extract resolution, band names and wavelength
-    resolution = None
-    bandnames, cwvl = [], []
-    log.debug('Extract central wavelength')
-    radio_info = xmlgranule['Radiometric_Informations']['Spectral_Band_Informations_List']
-    for band in radio_info['Spectral_Band_Informations']:
-        r = band['SPATIAL_RESOLUTION']['values']
-        if resolution: assert resolution == r
-        else: resolution = r
-        cwvl.append(band['Wavelength']['CENTRAL']['values'])
-        bandnames.append(band['attributes']['band_id'])
-    ds = ds.assign({str(n.cwav): ((str(n.bands)), cwvl)})
-    ds = ds.assign_coords({str(n.bands): bandnames})
-    
-    # read date
-    date = xmlgranule['Product_Characteristics']['ACQUISITION_DATE']
-
-    # get platform
-    platform = xmlgranule['Product_Characteristics']['PLATFORM']
-    assert platform == 'VENUS'
-
-    # read image size for current resolution
-    shape_info = xmlgranule['Geoposition_Informations']['Geopositioning']['Group_Geopositioning_List']
-    ds.attrs['totalheight'] = shape_info['Group_Geopositioning']['NROWS']
-    ds.attrs['totalwidth'] = shape_info['Group_Geopositioning']['NCOLS']
-    
-    # attributes
-    log.debug('Add important attributes')
-    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
-    ds.attrs[str(n.datetime)] = date
-    ds.attrs[str(n.platform)] = platform
-    ds.attrs[str(n.resolution)] = resolution
-    ds.attrs[str(n.sensor)] = 'VENUS'
-    ds.attrs[str(n.product_name)] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
-    ds.attrs[str(n.input_directory)] = str(dirname.parent)
-    ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
-    ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
-    ds.attrs['user_guide'] = user_guide
-    
-    return ds, xmlgranule
-
-
-def _venus_read_latlon(ds: xr.Dataset, geocoding: dict, chunks: list) -> None:
-    """Add latitude and longitude arrays from UTM projection."""
-    ds[str(n.lat)] = DataArray_from_array(
-        _LATLON(geocoding, 'lat', ds),
-        (str(n.rows), str(n.columns)),
-        chunks=chunks,
-    )
-
-    ds[str(n.lon)] = DataArray_from_array(
-        _LATLON(geocoding, 'lon', ds),
-        (str(n.rows), str(n.columns)),
-        chunks=chunks,
-    )
-
-def _venus_read_toa(
-        ds: xr.Dataset, 
-        granule_dir: Path, 
-        quantif: float, 
-        chunks: list
-    ) -> xr.Dataset:
-    """Read and calibrate TOA reflectance from TIFF files."""
-    for name in ds[str(n.bands)]:
-        
-        arr = open_raster(granule_dir, f'*REF_{name.values}.tif', engine='rasterio').chunk(chunks)
-        arr = (arr/quantif).astype('float32')
-        
-        ratio = {str(n.rows): ds.totalheight, str(n.columns): ds.totalwidth}        
-        arr_resampled = spatial_resample(arr, ratio, chunks)
-        ds[str(n.rtoa)+f'_{name.values}'] = arr_resampled
-
-    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_(B.+)', dtype=str)
-    ds[str(n.rtoa)].attrs.update(unit=None)
-    return ds
-
-
-def _venus_read_rho(
-        ds: xr.Dataset, 
-        granule_dir: Path, 
-        quantif: float, 
-        chunks: list
-    ) -> xr.Dataset:
-    """Read surface and flat reflectances, plus aerosol and water vapor data."""
-    for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
-        for name in ds[str(n.bands)]:
-            
-            arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif', engine='rasterio').chunk(chunks)
-            arr = (arr/quantif).astype('float32')
-
-            ratio = {'y': ds.totalheight, 'x': ds.totalwidth}  
-            arr_resampled = spatial_resample(arr, ratio, chunks)
-            ds[var+f'_{name.values}'] = arr_resampled
-
-    ds = merge(ds, dim=str(n.bands), pattern=r'(.+)_(B.+)', dtype=str)
-    
-    # read Aerosol_Optical_Thickness of waper vapor content
-    atb = open_raster(granule_dir, '*ATB_XS.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['water_vapor'] = atb.sel(band=1)
-    ds['aod'] = atb.sel(band=2)
-
-    return ds
-
-def _venus_read_geometry(ds: xr.Dataset, dirname: Path, chunks: list) -> xr.Dataset:
-    """Read solar and viewing angle grids from TIFF files."""
-    # read solar angles
-    sa = open_raster(dirname/'DATA','*SOL_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['SOL_ALL'] = sa.rename(x=str(n.columns)+'_tie', y=str(n.rows)+'_tie')
-    
-    # read view angles
-    va = open_raster(dirname/'DATA','*VIE_ALL.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['VIE_ALL'] = va.rename(x=str(n.columns)+'_tie', y=str(n.rows)+'_tie')
-    
-    return ds.rename(band=str(n.bands)+'_angle')
-
-class _LATLON:
+def get_sample(level: int = 1) -> Path:
     """
-    Array-like object for lazy computation of VENµS latitude/longitude arrays.
+    Retrieve a sample VENµS product directory for testing.
     
-    Computes geographic coordinates from UTM projection parameters stored in metadata.
-    Supports dask-based lazy evaluation for memory efficiency.
+    Returns paths to pre-configured sample products from environment variables.
+
+    Args:
+        level: Processing level (1 for Level1C, 2 for Level2A)
+
+    Returns:
+        Path to the VENµS product directory
+        
+    Raises:
+        ValueError: If level is not 1 or 2
     """
-    def __init__(self, geocoding: dict, kind: Literal['lat', 'lon'], ds: xr.Dataset):
-        """Initialize coordinate calculator from geocoding metadata."""
-        self.kind = kind
-
-        code = geocoding['Coordinate_Reference_System']['Horizontal_Coordinate_System']['HORIZONTAL_CS_CODE']
-
-        self.proj = pyproj.Proj('EPSG:{}'.format(code))
-
-        # lookup position in the UTM grid
-        geopos = geocoding['Geopositioning']['Group_Geopositioning_List']
-        geopos = geopos['Group_Geopositioning']
-        ULX = int(geopos['ULX'])
-        ULY = int(geopos['ULY'])
-        XDIM = int(geopos['XDIM'])
-        YDIM = int(geopos['YDIM'])
-
-        assert (XDIM%2 == 0) and (YDIM%2 == 0)
-        self.x = ULX + XDIM//2 + XDIM*da.arange(ds.totalwidth)
-        self.y = ULY + YDIM//2 + YDIM*da.arange(ds.totalheight)
-
-        self.shape = (ds.totalheight, ds.totalwidth)
-        self.ndim = 2
-        self.dtype = 'float32'
-
-    def __getitem__(self, key):
-        X, Y = self.x[key[1]], self.y[key[0]]
-        if isinstance(key[0], slice) and isinstance(key[1], slice):
-            # keys are both slices
-            X, Y = da.meshgrid(X, Y)
-        else:
-            X, Y = da.broadcast_arrays(X, Y)
-
-        lon, lat = self.proj(X, Y, inverse=True)
-
-        if self.kind == 'lat':
-            if hasattr(lat, 'astype'):
-                return lat.astype(self.dtype)
-            else:
-                return da.array(lat, dtype=self.dtype)
-        else:
-            if hasattr(lon, 'astype'):
-                return lon.astype(self.dtype)
-            else:
-                return da.array(lon, dtype=self.dtype)
-
-
+    
+    # Check if user has provided a path
+    variable = env.getvar(f'LEVEL{level}_VENUS', default='')
+    
+    # If not provided, try to download a sample with SAND
+    if variable == '':
+        
+        # Check SAND importation
+        try: 
+            from sand.sample_product import products
+            from sand.cnes import DownloadCNES
+        except ImportError:
+            raise ImportError('To use get_sample function, you need to install SAND module')
+        
+        # Retrieve name of example product
+        sand_collection = 'VENUS'
+        params = products[sand_collection]['constraint']
+        
+        # Download product with SAND
+        dl = DownloadCNES()
+        directory = env.getdir('DIR_SAMPLES')/sand_collection
+        query = dl.query(collection_sand=sand_collection, level=level, **params)
+        target = dl.download(query[0], directory)
+        
+        assert target.exists()
+        return target
+        
+    else:
+        return Path(variable)
+    
+    
 def get_SRF(
     ds_in: Union[xr.Dataset, None] = None, 
     dir_data: Union[Path, None] = None

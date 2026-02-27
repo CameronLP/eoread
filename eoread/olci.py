@@ -77,7 +77,6 @@ def Level1_OLCI(
     Args:
         dirname: Path to the OLCI .SEN3 directory
         chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
-        tie_param: If True, keeps tie-point data in the output dataset
         interp_angles: Interpolation method for angles:
                       - 'linear': Linear interpolation for all angles
                       - 'atan2': Trigonometric interpolation (sin/cos then atan2)
@@ -494,10 +493,34 @@ def Level2_OLCI(
     return ds.unify_chunks()
 
 
-def _read_bands(ds: xr.Dataset, dirname: Path, chunks: dict, level: int) -> xr.Dataset:
-    """Read spectral band radiance or reflectance data from NetCDF files."""
-    prod_list = []
-    for band in ds[str(n.bands)].values:
+def get_sample(level: int = 1) -> Path:
+    """
+    Download or retrieve a sample OLCI product for testing.
+    
+    Requires the 'sand' module for EUMETSAT Data Store access.
+
+    Args:
+        level: Processing level (1 for Level1, 2 for Level2)
+
+    Returns:
+        Path to the downloaded .SEN3 directory
+        
+    Raises:
+        ImportError: If the 'sand' module is not installed
+    """
+    return collect_sample(f'LEVEL{level}_OLCI', 'eumdac', 'SENTINEL-3-OLCI-FR', level)
+
+
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
+    
+    @staticmethod
+    def read_ltao(dirname: Path, band: str, chunks: dict, collec: dict) -> None:
+        """Read Level1 radiance data for a single band."""
         filename = dirname/f'{band}_radiance.nc'
         data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
         prod_list.append(data)
