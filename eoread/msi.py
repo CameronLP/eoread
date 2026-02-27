@@ -159,7 +159,8 @@ def Level1_MSI(
     
     ds = drop_unused_dims(ds)
     if resolution:
-        ds = ds.set_coords(str(n.bgroup))
+        ds = ds.transpose(..., *[str(names.rows), str(names.columns)])
+        ds = ds.set_coords(str(names.bgroup))
     
     return ds.unify_chunks()
 

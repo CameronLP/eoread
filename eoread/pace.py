@@ -75,8 +75,8 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     ds = ds.assign_coords({str(names.bands): ds[str(names.cwav)].astype(int).astype(str)})
     ds = ds.chunk({str(names.bands): -1})
 
-    # x/y dimensions
-    ds = ds.rename(scans="y", pixels="x")
+    # Rename and rechunk spatial dimensions
+    ds = ds.rename(scans="y", pixels="x").chunk(chunks)
 
     # Remove duplicate bands by keeping only unique wavelength values, sorted by increasing wavelength
     seen = set()

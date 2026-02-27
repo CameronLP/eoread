@@ -104,6 +104,12 @@ def Level1_SGLI(filepath: str|Path,
     if add_ancillary_data: 
         if verbose: log.info('Read ancillary data')
         ds = _Internal.read_ancillary(ds, tree)
+    
+    bgroup = ['bands'] * len(ds[str(names.bands)])
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), bgroup)})
+    ds = ds.transpose(..., str(names.rows), str(names.columns))
+    
+    return ds.unify_chunks()
 
 
 class FlagsReader_SGLI(FlagsReaderBase):

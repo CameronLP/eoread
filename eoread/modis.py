@@ -137,11 +137,11 @@ def Level1_MODIS(
     band_dims = [b for b in l1.dims if b.startswith(str(names.bands)+'_')]
     bands = [list(l1[b].values) for b in band_dims]
     groups = [[b]*l1.sizes[b] for b in band_dims]
-    indexes = [list(l1[str(n.bands)].values).index(b) for b in sum(bands, [])]
-    groups = [sum(groups, [])[i] for i in indexes]
-    l1 = l1.assign_coords({str(n.bgroup): (str(n.bands), groups)})
+    bands, groups = sum(bands, []), sum(groups, [])
+    groups = [groups[bands.index(str(b))] for b in l1[str(names.bands)].values]
+    l1 = l1.assign_coords({str(names.bgroup): (str(names.bands), groups)})
+    l1 = l1.transpose(..., str(names.rows), str(names.columns))
 
-    if v1_compat: return _v1_compat(l1, filepath)
     return l1.unify_chunks()
 
 

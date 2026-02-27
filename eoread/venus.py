@@ -122,6 +122,15 @@ def Level1_VENUS(
     
     # Reconstruct band groups
     ds = drop_unused_dims(ds)
+    groups = ['bands_vnir']*len(ds[str(names.bands)])
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), groups)})
+    
+    # Update spatial coordinates
+    ds = ds.assign_coords({
+        str(names.columns): np.arange(len(ds[str(names.columns)])),
+        str(names.rows): np.arange(len(ds[str(names.rows)]))
+    })
+    
     # Add flag reader and SRF getter in attributes
     ds.attrs['_flag_reader'] = 'eoread.venus.FlagsReader_VENUS'
     ds.attrs['_srf_getter'] = 'eoread.venus.get_SRF'
