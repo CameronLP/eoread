@@ -164,6 +164,8 @@ def get_sample(level: int = 1) -> Path:
     Raises:
         ImportError: If the 'sand' module is not installed
     """
+    return collect_sample(f'LEVEL{level}_ECOSTRESS', 'nasa', 'ISS-ECOSTRESS', level)
+
 
 ################################################################################
 # Intern methods

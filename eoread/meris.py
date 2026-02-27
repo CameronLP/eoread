@@ -143,6 +143,8 @@ def Level1_MERIS(
     return ds.unify_chunks()
 
 
+def get_sample(level: int=1) -> Path:
+    return collect_sample(f'LEVEL{level}_MERIS', None)
 
 ################################################################################
 # Intern methods

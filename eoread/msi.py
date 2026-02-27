@@ -405,6 +405,9 @@ def get_sample(level: int = 1) -> Path:
         
     Raises:
         ImportError: If the 'sand' module is not installed
+    """
+    return collect_sample(f'LEVEL{level}_MSI', 'cdse', 'SENTINEL-2-MSI', level)
+
 
 ################################################################################
 # Intern methods

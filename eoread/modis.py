@@ -139,6 +139,9 @@ def Level1_MODIS(
     return l1.unify_chunks()
 
 
+def get_sample(level: int = 1) -> Path:
+    return collect_sample(f'LEVEL{level}_MODISA_MYD', 'nasa', 'AQUA-MODIS-LR', level)
+    
 
 ################################################################################
 # Intern methods

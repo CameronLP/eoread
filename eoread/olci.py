@@ -324,6 +324,10 @@ def Level2_OLCI(
     return ds.unify_chunks()
 
 
+def get_sample(level: int = 1) -> Path:
+    return collect_sample(f'LEVEL{level}_OLCI', 'eumdac', 'SENTINEL-3-OLCI-FR', level)
+
+
 
 ################################################################################
 # Intern methods

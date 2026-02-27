@@ -90,7 +90,7 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     return ds
 
 
-def get_sample(sample: int = 1) -> Dict:
+def get_sample(level: int = 1) -> Path:
     """
     Return sample PACE Level-1B products
 
@@ -99,6 +99,8 @@ def get_sample(sample: int = 1) -> Dict:
         roi: region of interest within the full product
         px: sample pixel coordinates within the roi
     """
+    return collect_sample(f'LEVEL{level}_PACE', 'nasa', 'PACE-OCI', level)
+
 
 ################################################################################
 # Intern methods
