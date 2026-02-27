@@ -17,7 +17,6 @@ def Level1_ECOSTRESS(
         filepath: Union[Path, str], 
         chunks: Union[int, list] = 500, 
         metadata_template: Union[list, None] = None,
-        v1_compat: bool = False,
         verbose: bool = True,
     ) -> xr.Dataset:
     """
@@ -91,8 +90,7 @@ def Level1_ECOSTRESS(
     if verbose: log.debug('add latlon variables')
     l1 = _Internal.supplement_latlon(l1, chunks)
     
-    if v1_compat: return _v1_compat(l1)
-    else: return l1
+    return l1
 
 
 def Level2_ECOSTRESS(

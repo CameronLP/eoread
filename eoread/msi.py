@@ -32,7 +32,7 @@ def Level1_MSI(
         chunks: Union[int, tuple] = 500,
         resolution: Literal[10,20,60,None] = 10,
         metadata_template: Union[list, None] = None, 
-        v1_compat: bool = False,
+        read_mask: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
     """
@@ -147,7 +147,6 @@ def Level1_MSI(
     if resolution:
         ds = ds.set_coords(str(n.bgroup))
     
-    if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
 
 
