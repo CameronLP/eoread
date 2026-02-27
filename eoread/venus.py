@@ -97,18 +97,21 @@ def Level1_VENUS(
     if read_masks:
         
         # read cloud mask
+        kwargs = dict(compress_ext='.zip', engine='rasterio')
+        cld = open_raster(dirname/'MASKS','*CLD_XS.zip', **kwargs).chunk(chunks)
         ds['CLD_XS'] = cld.rename(x=str(names.columns), y=str(names.rows))
         
         # read cloud mask
-        usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
+        usi = open_raster(dirname/'MASKS','*USI_XS.zip', **kwargs).chunk(chunks)
         ds['USI_XS'] = usi.rename(x=str(names.columns), y=str(names.rows))
     
         # Read quality masks
         for bn in ds[str(names.bands)]:
             
-            pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
+            pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip', **kwargs).chunk(chunks)
             ds[f'PIX_{bn.values}'] = pix.rename(x=str(names.columns), y=str(names.rows))
             
+            sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip', **kwargs).chunk(chunks) 
             ds[f'SAT_{bn.values}'] = sat.rename(x=str(names.columns), y=str(names.rows))
     
         # Concatenate quality masks 
