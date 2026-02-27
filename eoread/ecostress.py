@@ -5,20 +5,20 @@ from core.geo.naming import names
 from core.tools import merge
 from core import env, log
 
-from pathlib import Path
-from shapely import wkt
+from dask.array import meshgrid
 from typing import Union
+from pathlib import Path
+from re import findall
 
 import numpy as np
-import xarray as xr 
-import dask.array as da
+import xarray as xr
 
 
 user_guide = 'https://ecostress.jpl.nasa.gov/downloads/userguides/1_ECOSTRESS_L1_UserGuide_20190619.pdf'
 
-def Level1_ECOSTRESS(
+def Level1C_ECOSTRESS(
         filepath: Union[Path, str], 
-        chunks: Union[int, list] = 500, 
+        chunks: Union[int, list, dict] = 500, 
         metadata_template: Union[list, None] = None,
         verbose: bool = True,
     ) -> xr.Dataset:
@@ -103,7 +103,9 @@ def Level1_ECOSTRESS(
 
 def Level2_ECOSTRESS(
         filepath: Union[Path, str], 
-        chunks: int = 500
+        chunks: Union[int, list, dict] = 500, 
+        metadata_template: Union[list, None] = None,
+        verbose: bool = True,
     ) -> xr.Dataset:
     """
     Read an ECOSTRESS Level2 product as an xarray.Dataset.

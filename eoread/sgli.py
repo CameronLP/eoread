@@ -18,7 +18,7 @@ from eoread.tools import (
 
 from core.geo.naming import names
 from core.tools import merge, drop_unused_dims
-from core import env, log
+from core import log
 
 
 def get_sample(level: int=1) -> Path:
@@ -38,11 +38,13 @@ sgli_central_wavelengths = da.array([
     763.00, 868.50, 868.50], dtype='float32')
 
 
-def Level1_SGLI(filepath: str|Path,
-                chunks: int|tuple = 500,
-                metadata_template: list | None = None,
-                add_ancillary_data: bool = False, 
-                v1_compat: bool = False):
+def Level1_SGLI(
+        filepath: str|Path,
+        chunks: int|tuple = 500,
+        metadata_template: list | None = None,
+        add_ancillary_data: bool = False,
+        verbose: bool = True
+    ) -> xr.Dataset:
     """
     Read an SGLI Level1 product as an xarray.Dataset
     Formats the Dataset so that it contains the TOA radiances,
@@ -78,7 +80,7 @@ def Level1_SGLI(filepath: str|Path,
         imdata.Lt_VN01.dims,
         (str(names.rows), str(names.columns))
     )))
-    shape = imdata.Lt_VN01.shape
+    sizes = imdata.Lt_VN01.sizes
 
     if verbose: log.debug('Read and compute geometric angles')
     _Internal.init_geometry(ds, tree, sizes, chunks)

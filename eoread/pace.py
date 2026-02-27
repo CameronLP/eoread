@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict
+from typing import Union
 
 import xarray as xr
 from core.tools import only
@@ -10,10 +10,19 @@ from eoread.tools import collect_sample, format_chunks, filter_metadata
 from eoread.flags import GenericFlags, FlagsReaderBase
 
 
-def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
+def Level1B_PACE_OCI(
+        product_pace_oci: Path,
+        chunks: int|list = 500,
+        metadata_template: Union[list, None] = None,
+        verbose: bool = True
+    ) -> xr.Dataset:
     """
     Read PACE OCI Level 1B products
     """
+    
+    # Open file
+    tree = xr.open_datatree(product_pace_oci)
+    
     # Format chunks
     chunks = format_chunks(chunks)
 

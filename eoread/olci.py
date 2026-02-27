@@ -27,45 +27,9 @@ from eoread.tools import (
 filterwarnings('ignore', message=".*Duplicate dimension.*")
 
 
-def get_sample(level: int = 1) -> Path:
-    """
-    Download or retrieve a sample OLCI product for testing.
-    
-    Requires the 'sand' module for EUMETSAT Data Store access.
-
-    Args:
-        level: Processing level (1 for Level1, 2 for Level2)
-
-    Returns:
-        Path to the downloaded .SEN3 directory
-        
-    Raises:
-        ImportError: If the 'sand' module is not installed
-        
-    Example:
-        >>> sen3_dir = get_sample(level=1)
-        >>> ds = Level1_OLCI(sen3_dir)
-    """
-    try: 
-        from sand.eumdac import DownloadEumDAC
-        from sand.sample_product import products
-    except ImportError:
-        raise ImportError('To use get_sample function, you need to install SAND module')
-    
-    sensor = 'SENTINEL-3-OLCI-FR'
-    prod_id = products[sensor][f'l{level}_product']
-
-    targetdir = env.getdir('DIR_SAMPLES')
-    dl = DownloadEumDAC()
-    target = dl.download_file(prod_id, targetdir)
-    assert target.exists()
-    return target
-
-
 def Level1_OLCI(
         dirname: Union[str, Path], 
         chunks: Union[int, tuple] = 500,
-        tie_param: bool = False,
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
         metadata_template: Union[list, None] = None, 
         verbose: bool = True
@@ -92,6 +56,10 @@ def Level1_OLCI(
     """
     ds = xr.Dataset()
     dirname = Path(dirname)
+    assert dirname.exists(), 'Folder does not exist'
+    if (dirname/dirname.name).exists(): 
+        dirname = (dirname/dirname.name)
+    
     # Format chunks
     chunks = format_chunks(chunks)
     chunks = {'rows': chunks[str(names.rows)], 'columns': chunks[str(names.columns)]}
@@ -188,9 +156,9 @@ def Level1_OLCI(
 def Level2_OLCI(
         dirname: Union[str, Path],
         chunks: Union[int, tuple] = 500,
-        tie_param: bool = False,
-        init_spectral: bool = True,
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
+        metadata_template: Union[list, None] = None, 
+        verbose: bool = True
     ) -> xr.Dataset:
     """
     Read a Sentinel-3 OLCI Level2 product as an xarray.Dataset.
@@ -206,8 +174,8 @@ def Level2_OLCI(
         interp_angles: Interpolation method for angles ('atan2', 'linear', or 'legacy')
     """
     ds = xr.Dataset()
-
     dirname = Path(dirname)
+    assert dirname.exists(), 'Folder does not exist'
     if (dirname/dirname.name).exists():
         dirname = (dirname/dirname.name)
         
@@ -216,8 +184,10 @@ def Level2_OLCI(
     chunks = {'rows': chunks[str(names.rows)], 'columns': chunks[str(names.columns)]}
 
     # read manifest file for file names and footprint
+    if verbose: log.debug('Read metadata')
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     manifest = read_xml(dirname/'xfdumanifest.xml')
-    ds.attrs.update(**manifest)
+    ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
     
     # Add latlon footprint
     footprint = manifest['metadataSection']['metadataObject'][2]

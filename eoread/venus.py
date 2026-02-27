@@ -4,12 +4,11 @@
 # https://www.eoportal.org/satellite-missions/venus#vssc-ven%C2%B5s-superspectral-camera
 
 from pathlib import Path
-from typing import Union, Literal
+from typing import Union
 
-import dask.array as da
-import pandas as pd
+import numpy as np
 import xarray as xr
-import pyproj
+from pyproj import Proj
 
 from core.files import mdir
 from core.table import read_xml
@@ -31,7 +30,6 @@ user_guide = 'https://www.cesbio.cnrs.fr/multitemp/ven%c2%b5s-product-format/'
 def Level1_VENUS(
         dirname: Union[str, Path], 
         chunks: Union[int, tuple] = 500,
-        read_masks: bool = False, 
         metadata_template: Union[list, None] = None,
         read_masks: bool = False, 
         verbose: bool = True
@@ -277,6 +275,9 @@ def get_SRF(
         >>> srf = get_SRF()
         >>> print(srf.sel(wav=550, method='nearest'))  # SRF at 550nm
     """
+    from core.network.download import download_url
+    from core.table import read_csv
+    
     if dir_data is None:
         dir_data = mdir(env.getdir('DIR_STATIC')/'venus')
 
@@ -284,10 +285,7 @@ def get_SRF(
     srf_file = download_url(url, dir_data)
     nbands = 12
     ibands = range(1, nbands+1)
-    df = pd.read_csv(
-        srf_file,
-        sep=None,
-        names=['wav_um', *ibands])
+    df = read_csv(srf_file, sep=None, names=['wav_um', *ibands])
 
     ds = xr.Dataset()
     ds.attrs["desc"] = 'Spectral response functions for VENµS'

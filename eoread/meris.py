@@ -11,6 +11,7 @@ l1 = Level1_MERIS('MER_FRS_1PNPDE20060822_092058_000001972050_00308_23408_0077.N
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from dask.array import array
 
 import epr
 import numpy as np

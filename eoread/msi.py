@@ -4,12 +4,11 @@
 # Update processing baseline 4.00
 # https://sentinels.copernicus.eu/web/sentinel/-/copernicus-sentinel-2-major-products-upgrade-upcoming
 
+from pyproj import Proj
 from pathlib import Path
 from typing import Literal, Union
 
-import dask.array as da
 import numpy as np
-import pyproj
 import xarray as xr
 
 from core.interpolate import interp, Linear
@@ -31,8 +30,8 @@ user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2
 
 def Level1_MSI(
         dirname: Union[str, Path],
-        chunks: Union[int, tuple] = 500,
-        resolution: Literal[10,20,60,None] = 10,
+        chunks: Union[int, tuple, dict] = 500,
+        resolution: Literal[10,20,60,None] = 60,
         metadata_template: Union[list, None] = None, 
         read_mask: bool = False,
         verbose: bool = True
@@ -55,8 +54,11 @@ def Level1_MSI(
     Example:
         >>> ds = Level1_MSI('S2A_MSIL1C_*.SAFE', chunks=1000)
     """
+    
+    # Check that folder exists
     ds = xr.Dataset()
     dirname = Path(dirname).resolve()
+    assert dirname.exists(), 'Folder does not exist'
     
     # Format chunks
     chunks = format_chunks(chunks)
@@ -65,7 +67,8 @@ def Level1_MSI(
         granules = list((dirname/'GRANULE').glob('*'))
         assert len(granules) == 1
         granule_dir = granules[0]
-    else: granule_dir = dirname
+    else: 
+        granule_dir = dirname
 
     # load xml files
     xmlgranule = granule_dir/'MTD_TL.xml'
