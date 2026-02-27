@@ -71,7 +71,7 @@ def Level1_MODIS(
     
     # Revize variables
     if verbose: log.debug('Reading h4file')
-    l1 = load_hdf4(filepath, trim_dims=True)
+    l1 = xr.open_dataset(filepath, engine='netcdf4')
     l1 = l1.rename_vars({
         'Latitude': str(n.lat), 'Longitude': str(n.lon),
         'SensorZenith': str(n.vza), 'SensorAzimuth': str(n.vaa),
