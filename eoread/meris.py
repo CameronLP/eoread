@@ -63,7 +63,7 @@ def Level1_MERIS(
     
     # Read metadata
     if verbose: log.debug('read metadata')
-    metadata = _read_metadata(ds, prod, metadata_template)
+    metadata = _Internal.read_metadata(ds, prod, metadata_template)
     nb_bands = metadata['NUM_BANDS']
     
     # Assign band names and wavelengths
@@ -75,17 +75,16 @@ def Level1_MERIS(
     if verbose: log.debug('load raster')
     for name in prod.get_band_names():
         band = prod.get_band(name)
-        ds[name] = DataArray_from_array(
-            _READ_MERIS(band, lock),
-            (str(n.rows), str(n.columns)),
-            chunks=chunks,
-        )
+        ds[name] = xr.DataArray(
+            array(_Internal.READ_MERIS(band, lock)),
+            dims=(str(names.rows), str(names.columns)),
+        ).chunk(chunks)
         ds[name].attrs['unit'] = band.unit
         ds[name].attrs['description'] = band.description
         
     # Rename several variables and compile radiance rasters
     if verbose: log.debug('concatenate ltoa rasters')
-    ds = _rename_meris(ds)
+    ds = _Internal.rename_variables(ds)
     ds = merge(ds, dim=str(n.bands), dtype=str)
     ds = ds.chunk({str(n.bands):1})
     
@@ -128,8 +127,8 @@ def Level1_MERIS(
     ds.attrs['user_guide'] = user_guide
 
     # Read date
-    dstart = _read_date(metadata['SENSING_START'])
-    dstop = _read_date(metadata['SENSING_STOP'])
+    dstart = _Internal.read_date(metadata['SENSING_START'])
+    dstop = _Internal.read_date(metadata['SENSING_STOP'])
     d = dstart + (dstop - dstart)//2
     ds.attrs[str(n.datetime)] = d.isoformat()
     
@@ -141,23 +140,6 @@ def Level1_MERIS(
     return ds.unify_chunks()
 
 
-def get_sample(level: int=1) -> Path:
-    """
-    Retrieve a sample MERIS product file for testing.
-    
-    Returns path to a pre-configured MERIS sample product from environment variables.
-
-    Args:
-        level: Processing level of the product (currently only level=1 is supported)
-        
-    Returns:
-        Path to the MERIS .N1 file
-        
-    Example:
-        >>> meris_file = get_sample(level=1)
-        >>> ds = Level1_MERIS(meris_file)
-    """
-    return collect_sample(f'LEVEL{level}_MERIS', None)
 
 ################################################################################
 # Intern methods
@@ -193,148 +175,68 @@ class _Internal:
         
         return metadata
 
-def _read_date(dat):
-    dat = dat.decode('utf-8')
-    months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-    for i,m in enumerate(months): dat = dat.replace(f'-{m}-', f'-{i+1:02d}-')
-    return datetime.strptime(dat, '%d-%m-%Y %H:%M:%S.%f')
+    @staticmethod
+    def read_date(dat: str):
+        """Parse MERIS-formatted date string to Python datetime."""
+        dat = dat.decode('utf-8')
+        months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+        for i,m in enumerate(months): dat = dat.replace(f'-{m}-', f'-{i+1:02d}-')
+        return datetime.strptime(dat, '%d-%m-%Y %H:%M:%S.%f')
 
 
-# FIXME : Following classes should be revized
-class _READ_MERIS:
-    '''
-    An array-like to read data from a given MERIS band
-    '''
-    def __init__(self, band, lock):
-        self.width = band.product.get_scene_width()
-        self.height = band.product.get_scene_height()
-        self.band = band
-        self.lock = lock
-        self.shape = (self.height, self.width)
-        self.dtype = {
-            'float': np.float32,
-            'short': np.int16,
-            'uchar': np.uint8,
-        }[epr.data_type_id_to_str(band.data_type)]
-        self.ndim = len(self.shape)
-
-    def __getitem__(self, keys):
-        assert len(keys) == self.ndim
-        start = []
-        steps = []
-        sizes = []
-        sel = []
-        for k in keys:
-            if isinstance(k, slice):
-                st = k.start or 0
-                start.append(st)
-                steps.append(k.step or 1)
-                sizes.append(k.stop - st)
-                sel.append(slice(None))
-            else:  # Indexing with int
-                start.append(0)
-                steps.append(1)
-                sizes.append(1)
-                sel.append(0)
-
-        with self.lock:
-            if (sizes[0] > steps[0]) and (sizes[1] > steps[1]):
-                r = self.band.read_as_array(
-                    yoffset=start[0],
-                    xoffset=start[1],
-                    height=sizes[0],
-                    width=sizes[1],
-                    ystep=steps[0],
-                    xstep=steps[1],
-                )
-            else:
-                r = self.band.read_as_array(
-                    yoffset=start[0],
-                    xoffset=start[1],
-                    height=sizes[0],
-                    width=sizes[1],
-                )[::steps[0], ::steps[1]]
-        assert r.dtype == self.dtype
-        return r[sel[0], sel[1]]
-
-def get_sample(level: int=1) -> Path:
-    """
-    Bring a MERIS file path to test reading function
-
-    Args:
-        level (int, optional): Level of the product. Defaults to 1.
-        use_cache (bool, optional): Option to save the result of the query to the download API to speed up the process. Defaults to True.
-    """
-    sample = Path('/archive2/data/EOREAD_TESTDATA/MERIS/MER_RR__1PRACR20080701_014028_000026402070_00003_33123_0000.N1')
-    assert sample.exists()
-    return sample
-
-def _v1_compat(ds, prod, lock, chunks):
-    
-    from core.tools import raiseflag
-    from .common import len_slice
-    
-    class READ_BITMASK:
+    # FIXME : Following classes should be revized
+    class READ_MERIS:
         '''
-        An array-like to read MERIS bitmask
+        An array-like to read data from a given MERIS band
         '''
-        def __init__(self, prod, bmexpr, lock):
-            self.width = prod.get_scene_width()
-            self.height = prod.get_scene_height()
-            self.prod = prod
+        def __init__(self, band, lock):
+            width = band.product.get_scene_width()
+            height = band.product.get_scene_height()
+            self.band = band
             self.lock = lock
-            self.bmexpr = bmexpr
-            self.shape = (self.height, self.width)
+            self.shape = (height, width)
+            self.dtype = {
+                'float': np.float32,
+                'short': np.int16,
+                'uchar': np.uint8,
+            }[epr.data_type_id_to_str(band.data_type)]
             self.ndim = len(self.shape)
-            self.dtype = np.bool
 
         def __getitem__(self, keys):
-            width = len_slice(keys[1], self.width)
-            height = len_slice(keys[0], self.height)
-            raster = epr.create_bitmask_raster(
-                width, height,
-                xstep=keys[1].step or 1,
-                ystep=keys[0].step or 1,
-                )
+            assert len(keys) == self.ndim
+            start = []
+            steps = []
+            sizes = []
+            sel = []
+            for k in keys:
+                if isinstance(k, slice):
+                    st = k.start or 0
+                    start.append(st)
+                    steps.append(k.step or 1)
+                    sizes.append(k.stop - st)
+                    sel.append(slice(None))
+                else:  # Indexing with int
+                    start.append(0)
+                    steps.append(1)
+                    sizes.append(1)
+                    sel.append(0)
+
             with self.lock:
-                self.prod.read_bitmask_raster(
-                    self.bmexpr,
-                    xoffset=keys[1].start or 0,
-                    yoffset=keys[0].start or 0,
-                    raster=raster)
-
-            return raster.data
-    
-    BANDS_MERIS = [412, 443, 490, 510, 560,
-                620, 665, 681, 709, 754,
-                760, 779, 865, 885, 900]
-    
-    # Define central wavelength as coordinates for band dimension
-    ds = ds.assign_coords(bands=BANDS_MERIS)
-    
-    # Add other computed variables
-    ds['horizontal_wind'] = np.sqrt(ds['zonal_wind']**2 + ds['merid_wind']**2)
-    ds['total_column_ozone'] = ds['ozone']
-    ds['sea_level_pressure'] = ds['atm_press']
-
-    # Flags
-    ds['flags'] = xr.zeros_like(ds[str(n.lat)], dtype='uint8')
-    for (flag, val, bmexpr) in [
-            ('LAND', 1, 'l1_flags.LAND_OCEAN'),
-            ('L1_INVALID', 4, '(l1_flags.INVALID) OR (l1_flags.SUSPECT) OR (l1_flags.COSMETIC)'),
-        ]:
-        raiseflag(
-            ds['flags'],
-            flag,
-            val,
-            DataArray_from_array(
-                READ_BITMASK(prod, bmexpr, lock),
-                ('y','x'),
-                chunks=chunks,
-            ),
-        )
-    
-    # Level up metadata in attribute dictionary 
-    ds.attrs.update(ds.attrs['metadata'])
-    
-    return ds
+                if (sizes[0] > steps[0]) and (sizes[1] > steps[1]):
+                    r = self.band.read_as_array(
+                        yoffset=start[0],
+                        xoffset=start[1],
+                        height=sizes[0],
+                        width=sizes[1],
+                        ystep=steps[0],
+                        xstep=steps[1],
+                    )
+                else:
+                    r = self.band.read_as_array(
+                        yoffset=start[0],
+                        xoffset=start[1],
+                        height=sizes[0],
+                        width=sizes[1],
+                    )[::steps[0], ::steps[1]]
+            assert r.dtype == self.dtype
+            return r[sel[0], sel[1]]

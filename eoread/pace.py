@@ -37,18 +37,18 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     # TOA reflectance
     ds["Rtoa"] = xr.concat(
         [
-            obs["rhot_blue"].rename(blue_bands="bands"),
-            obs["rhot_red"].rename(red_bands="bands"),
-            obs["rhot_SWIR"].rename(SWIR_bands="bands"),
+            _Internal.rename_bands(obs["rhot_blue"]),
+            _Internal.rename_bands(obs["rhot_red"]),
+            _Internal.rename_bands(obs["rhot_SWIR"]),
         ],
         dim="bands",
     )
 
     ds["wav"] = xr.concat(
         [
-            bdata["blue_wavelength"].rename(blue_bands="bands"),
-            bdata["red_wavelength"].rename(red_bands="bands"),
-            bdata["SWIR_wavelength"].rename(SWIR_bands="bands"),
+            _Internal.rename_bands(bdata["blue_wavelength"]),
+            _Internal.rename_bands(bdata["red_wavelength"]),
+            _Internal.rename_bands(bdata["SWIR_wavelength"]),
         ],
         dim="bands",
     )
@@ -104,23 +104,25 @@ def get_sample(sample: int = 1) -> Dict:
         roi: region of interest within the full product
         px: sample pixel coordinates within the roi
     """
-    if sample == 1:
-        # Freely accessible on NASA website
-        return {
-            "path": download_url(
-                url="https://oceancolor.gsfc.nasa.gov/images/data/pace/sample_data/PACE_OCI.20250101T000738.L1B.V3.nc",
-                dirname=getdir("DIR_SAMPLES") / "PACE_OCI",
-            ),
-            "roi": {"y": slice(1680, None), "x": slice(700, 900)},
-            "px": {"y": 15, "x": 150},
-        }
-    elif sample == 2:
-        pace_level1 = getdir("DIR_PACE_LEVEL1B") / "PACE_OCI.20250430T130447.L1B.V3.nc"
-        assert pace_level1.exists()
-        return {
-            "path": pace_level1,
-            "roi": {"y": slice(750, 900), "x": slice(950, 1050)},
-            "px": {"y": 100, "x": 20},
-        }
-    else:
-        raise ValueError
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
+    
+    @staticmethod
+    def rename_bands(ds: xr.Dataset) -> xr.Dataset:
+        """Rename band dimension and add band group coordinate."""
+        
+        # Determine band dimension
+        dim = only([d for d in ds.dims if 'bands' in d])
+        
+        # Rename bands dimension
+        ds = ds.rename({dim: str(names.bands)})
+        
+        # Assign bands group dimension
+        bgroup = [dim] * len(ds[str(names.bands)])
+        ds = ds.assign_coords({str(names.bgroup): (str(names.bands), bgroup)})
+        
+        return ds

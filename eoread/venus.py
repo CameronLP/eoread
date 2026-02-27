@@ -69,22 +69,22 @@ def Level1_VENUS(
     
     # read metadata
     if verbose: log.debug('Reading metadata')
-    ds, metadata_granule = _venus_read_metadata(ds, dirname, metadata_template)
+    ds, metadata_granule = _Internal.read_metadata(ds, dirname, metadata_template)
 
     # read geaometry
     if verbose: log.debug('Read and compute geometric angles')
-    ds = _venus_read_geometry(ds, dirname, chunks)
+    ds = _Internal.read_geometry(ds, dirname, chunks)
 
     # read TOA
     if verbose: log.debug('Read top of atmosphere data')
     radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
-    ds = _venus_read_toa(ds, dirname, quantif, chunks)
+    ds = _Internal.read_toa(ds, dirname, quantif, chunks)
 
     # lat-lon
     if verbose: log.debug('Compute LatLon raster')
     geocoding = metadata_granule['Geoposition_Informations']
-    _venus_read_latlon(ds, geocoding, chunks)
+    ds = _Internal.supplement_latlon(ds, chunks, geocoding)
     
     # read cloud altitude
     if verbose: log.debug('Open masks')
@@ -147,21 +147,21 @@ def Level2_VENUS(
     
     # read metadata
     log.debug('Reading metadata')
-    ds, metadata_granule = _venus_read_metadata(ds, dirname, metadata_template)
+    ds, metadata_granule = _Internal.read_metadata(ds, dirname, metadata_template)
     
     # lat-lon
     log.debug('Compute LatLon raster')
     geocoding = metadata_granule['Geoposition_Informations']
-    _venus_read_latlon(ds, geocoding, chunks)
+    ds = _Internal.supplement_latlon(ds, chunks, geocoding)
 
     # read geaometry
     log.debug('Read and compute geometric angles')
-    ds = _venus_read_geometry(ds, dirname, chunks)
+    ds = _Internal.read_geometry(ds, dirname, chunks)
 
     # read reflectances
     radio_info = metadata_granule['Radiometric_Informations']
     quantif = float(radio_info['REFLECTANCE_QUANTIFICATION_VALUE'])
-    ds = _venus_read_rho(ds, dirname, quantif, chunks)
+    ds = _Internal.read_rho(ds, dirname, quantif, chunks)
     
     # read cloud mask
     log.debug('Open masks')
@@ -293,117 +293,152 @@ def get_SRF(
 
     return ds
 
-def get_sample(level: int = 1) -> Path:
-    """
-    Retrieve a sample VENµS product directory for testing.
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
     
-    Returns paths to pre-configured sample products from environment variables.
-
-    Args:
-        level: Processing level (1 for Level1C, 2 for Level2A)
-
-    Returns:
-        Path to the VENµS product directory
+    @staticmethod
+    def read_metadata(
+            ds: xr.Dataset, 
+            dirname: Path, 
+            metadata_template: Union[list, None]
+        ) -> tuple[xr.Dataset, dict]:
+        """Extract metadata from XML files and populate dataset attributes."""
         
-    Raises:
-        ValueError: If level is not 1 or 2
+        # load xml file
+        xmlfiles = list((dirname/'DATA').glob('*UII_ALL.xml'))
+        assert len(xmlfiles) == 1
+        xmlroot = read_xml(xmlfiles[0])
+
+        # load main xml file
+        xmlfiles = list(dirname.glob('*MTD_ALL.xml'))
+        assert len(xmlfiles) == 1
+        xmlgranule = read_xml(xmlfiles[0])
         
-    Example:
-        >>> venus_dir = get_sample(level=1)
-        >>> ds = Level1_VENUS(venus_dir)
-    """
-    if level == 1:
-        return env.getdir('DIR_VENUS_L1C')
-    elif level == 2:
-        return env.getdir('DIR_VENUS_L2A')
-    else:
-        raise ValueError(level)
-    # try: 
-    #     from sand.cnes import DownloadCNES
-    #     from sand.sample_product import products
-    # except ImportError:
-    #     raise ImportError('To use get_sample function, you need to install SAND module')
-    
-    # sensor = 'VENUS'
-    # params = products[sensor]['constraint']
-    # dl = DownloadCNES()
-    # query = dl.query(collection_sand=sensor, level=level, **params)
-    # return dl.download(query[0], env.getdir('DIR_SAMPLES'))
+        # Extract resolution, band names and wavelength
+        resolution = None
+        bandnames, cwvl = [], []
+        radio_info = xmlgranule['Radiometric_Informations']['Spectral_Band_Informations_List']
+        for band in radio_info['Spectral_Band_Informations']:
+            r = band['SPATIAL_RESOLUTION']['values']
+            if resolution: assert resolution == r
+            else: resolution = r
+            cwvl.append(band['Wavelength']['CENTRAL']['values'])
+            bandnames.append(band['attributes']['band_id'])
+        ds = ds.assign({str(names.cwav): ((str(names.bands)), cwvl)})
+        ds = ds.assign_coords({str(names.bands): bandnames})
+        
+        # read date
+        date = xmlgranule['Product_Characteristics']['ACQUISITION_DATE']
 
-def _v1_compat(ds: xr.Dataset, chunks: list) -> xr.Dataset:
-    """Transform dataset to version 1 format for backward compatibility."""
-    import numpy as np
-    
-    def read_xml_block(item):
-        '''
-        read a block of xml data and returns it as a numpy float32 array
-        '''
-        d = [i.split() for i in item]
-        return np.array(d, dtype='float32')
-    
-    # Redefine geometric angles based on grnaule metadata
-    angles = ds.attrs['metadata_granule']['Geometric_Informations']['Angles_Grids_List']
-    sza = read_xml_block(angles['Sun_Angles_Grids']['Zenith']['Values_List']['VALUES'])
-    saa = read_xml_block(angles['Sun_Angles_Grids']['Azimuth']['Values_List']['VALUES'])
+        # get platform
+        platform = xmlgranule['Product_Characteristics']['PLATFORM']
+        assert platform == 'VENUS'
 
-    shp = (ds.totalheight, ds.totalwidth)
+        # read image size for current resolution
+        shape_info = xmlgranule['Geoposition_Informations']['Geopositioning']['Group_Geopositioning_List']
+        ds.attrs['totalheight'] = shape_info['Group_Geopositioning']['NROWS']
+        ds.attrs['totalwidth'] = shape_info['Group_Geopositioning']['NCOLS']
+        
+        # attributes
+        filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+        ds.attrs[str(names.datetime)] = date
+        ds.attrs[str(names.platform)] = platform
+        ds.attrs[str(names.resolution)] = resolution
+        ds.attrs[str(names.sensor)] = 'VENUS'
+        ds.attrs[str(names.product_name)] = xmlgranule['Product_Characteristics']['PRODUCT_ID']
+        ds.attrs[str(names.input_directory)] = str(dirname.parent)
+        ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
+        ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
+        ds.attrs['user_guide'] = user_guide
+        
+        return ds, xmlgranule
 
-    # read view angles (for each band)
-    vza = {}
-    vaa = {}
-    via_list = angles['Viewing_Incidence_Angles_Grids_List']['Band_Viewing_Incidence_Angles_Grids_List']
-    for e in via_list['Viewing_Incidence_Angles_Grids']:
+    @staticmethod
+    def supplement_latlon(ds: xr.Dataset, chunks: list, xmlgranule: dict) -> xr.Dataset:
+        """Generate latitude and longitude arrays from corner coordinates."""
+        
+        # Get tile projection from metadata
+        code = xmlgranule['Coordinate_Reference_System']['Horizontal_Coordinate_System']
+        proj = Proj(code['HORIZONTAL_CS_CODE'])
+        
+        # lookup position in the UTM grid
+        geopos = xmlgranule['Geopositioning']['Global_Geopositioning']
+        latlon = np.array([[geo['LON'], geo['LAT']] for geo in geopos.values()])
+        lat, lon = latlon[:,1], latlon[:,0]
+                
+        # Compute latitude and longitude rasters
+        lon = np.linspace(lon.min(), lon.max(), ds.totalwidth)
+        lat = np.linspace(lat.min(), lat.max(), ds.totalheight)
+        lon, lat = np.meshgrid(lon, lat)
+        
+        # Add rasters in the dataset
+        dims = [str(names.rows), str(names.columns)]
+        return ds.assign({
+            str(names.lon): xr.DataArray(lon, dims=dims).chunk(chunks), 
+            str(names.lat): xr.DataArray(lat, dims=dims).chunk(chunks)
+        })
+            
+    @staticmethod
+    def read_toa(
+            ds: xr.Dataset, 
+            granule_dir: Path, 
+            quantif: float, 
+            chunks: list
+        ) -> xr.Dataset:
+        """Read and calibrate TOA reflectance from TIFF files."""
+        for name in ds[str(names.bands)]:
+            
+            arr = open_raster(granule_dir, f'*REF_{name.values}.tif', engine='rasterio').chunk(chunks)
+            arr = (arr/quantif).astype('float32')
+            
+            ratio = {str(names.rows): ds.totalheight, str(names.columns): ds.totalwidth}        
+            arr_resampled = spatial_resample(arr, ratio, chunks)
+            ds[str(names.rtoa)+f'_{name.values}'] = arr_resampled
 
-        # read zenith angles
-        data = read_xml_block(e['Zenith']['Values_List']['VALUES'])
-        bandid = int(e['attributes']['detector_id'])
-        if bandid not in vza:
-            vza[bandid] = data
-        else:
-            ok = ~np.isnan(data)
-            vza[bandid][ok] = data[ok]
+        ds = merge(ds, dim=str(names.bands), pattern=r'(.+)_(B.+)', dtype=str)
+        ds[str(names.rtoa)].attrs.update(unit=None)
+        return ds
 
-        # read azimuth angles
-        data = read_xml_block(e['Azimuth']['Values_List']['VALUES'])
-        bandid = int(e['attributes']['detector_id'])
-        if bandid not in vaa:
-            vaa[bandid] = data
-        else:
-            ok = ~np.isnan(data)
-            vaa[bandid][ok] = data[ok]
+    @staticmethod
+    def read_rho(
+            ds: xr.Dataset, 
+            granule_dir: Path, 
+            quantif: float, 
+            chunks: list
+        ) -> xr.Dataset:
+        """Read Level2 surface and flat reflectances, aerosol and water vapor."""
+        for rho, var in zip(['SRE','FRE'],['rho_surface','rho_flat']):
+            for name in ds[str(names.bands)]:
+                
+                arr = open_raster(granule_dir, f'*{rho}_{name.values}.tif', engine='rasterio').chunk(chunks)
+                arr = (arr/quantif).astype('float32')
 
-    # use the first band as vza and vaa
-    k = sorted(vza.keys())[0]
-    assert k in vaa
+                ratio = {'y': ds.totalheight, 'x': ds.totalwidth}  
+                arr_resampled = spatial_resample(arr, ratio, chunks)
+                ds[var+f'_{name.values}'] = arr_resampled
 
-    # initialize the dask arrays
-    dims = ('tie_rows', 'tie_columns')
-    out = dict(zip(dims, ds[str(n.lat)].shape))
-    for name, tie in [(str(n.sza), sza),
-                      (str(n.saa), saa),
-                      (str(n.vza), vza[k]),
-                      (str(n.vaa), vaa[k]),
-                      ]:
-        da_tie = xr.DataArray(
-            tie,
-            dims=dims,
-            coords={'tie_rows': np.linspace(0, shp[0]-1, sza.shape[0]),
-                    'tie_columns': np.linspace(0, shp[1]-1, sza.shape[1])})
-        ds[name+'_tie'] = da_tie
-        ds[name] = spatial_resample(da_tie, out, chunks, 'linear')
+        ds = merge(ds, dim=str(names.bands), pattern=r'(.+)_(B.+)', dtype=str)
+        
+        # read Aerosol_Optical_Thickness of waper vapor content
+        atb = open_raster(granule_dir, '*ATB_XS.tif', engine='rasterio').chunk(chunks)
+        ds['water_vapor'] = atb.sel(band=1)
+        ds['aod'] = atb.sel(band=2)
+
+        return ds
     
-    # Assign central wavelengths as band coordinates
-    venus_band_names = [420,443,490,555,620,622,667,702,742,782,865,910]
-    ds = ds.assign_coords(bands=venus_band_names)
-    
-    # Drop NVIS bands dimension
-    ds = ds.assign(Rtoa=(('bands','y','x'),ds[str(n.rtoa)].data))
-    
-    # Flags 
-    ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')
-    
-    # Add CRS 
-    crs = ds.attrs['metadata_granule']['Geoposition_Informations']['Coordinate_Reference_System']['Horizontal_Coordinate_System']['HORIZONTAL_CS_CODE']
-    ds.attrs[str(n.crs)] = 'epsg:'+str(crs)
-    
-    return ds
+    @staticmethod
+    def read_geometry(ds: xr.Dataset, dirname: Path, chunks: list) -> xr.Dataset:
+        """Read solar and viewing angle grids from TIFF files."""
+        # read solar angles
+        sa = open_raster(dirname/'DATA','*SOL_ALL.tif', engine='rasterio').chunk(chunks)
+        ds['SOL_ALL'] = sa.rename(x=str(names.columns)+'_tie', y=str(names.rows)+'_tie')
+        
+        # read view angles
+        va = open_raster(dirname/'DATA','*VIE_ALL.tif', engine='rasterio').chunk(chunks)
+        ds['VIE_ALL'] = va.rename(x=str(names.columns)+'_tie', y=str(names.rows)+'_tie')
+        
+        return ds.rename(band=str(names.bands)+'_angle')

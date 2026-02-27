@@ -133,7 +133,7 @@ def Level1_OLCI(
 
     # Read main product
     if verbose: log.debug('Read radiances')
-    ds = _read_bands(ds, dirname, chunks, 1)
+    ds = _Internal.read_bands(ds, dirname, chunks, 1)
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
@@ -142,80 +142,13 @@ def Level1_OLCI(
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
 
-    # dimensions
-    shape = ds.latitude.shape
-    ac_factor = ds.latitude.ac_subsampling_factor
-    al_factor = ds.latitude.al_subsampling_factor
-    ds = ds.rename({'rows':str(n.rows), 'columns':str(n.columns)})
-
     # tie geometry interpolation
     if verbose: log.debug('read geometric tie points')
-    tie_geom_file = dirname/'tie_geometries.nc'
-    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
-    tie_ds = tie_ds.assign_coords(
-        tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
-        tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
-    )
-    assert tie_ds.tie_columns[0] == ds[str(n.columns)][0]
-    assert tie_ds.tie_columns[-1] == ds[str(n.columns)][-1]
-    assert tie_ds.tie_rows[0] == ds[str(n.rows)][0]
-    assert tie_ds.tie_rows[-1] == ds[str(n.rows)][-1]
-
-    if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
-    elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
-    elif interp_angles == 'legacy': interp_aa, interp_za = 'nearest', 'linear'
-    else: raise ValueError(f'Invalid interp_angles "{interp_angles}"')
-    
-    tie_chunks = tuple(chunks.values())
-    shape = dict(tie_rows=shape[0], tie_columns=shape[1])
-    for (ds_full, ds_tie, method) in [
-                (str(n.sza), 'SZA', interp_za),
-                (str(n.saa), 'SAA', interp_aa),
-                (str(n.vza), 'OZA', interp_za),
-                (str(n.vaa), 'OAA', interp_aa),
-            ]:
-        if method == 'atan2':
-            _cos = spatial_resample(np.cos(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
-            _sin = spatial_resample(np.sin(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
-            ds[ds_full] = np.degrees(np.arctan2(_sin, _cos))
-        else:
-            ds[ds_full] = spatial_resample(tie_ds[ds_tie], shape, tie_chunks, method)
-            pass
-            
-        ds[ds_full].attrs = tie_ds[ds_tie].attrs
-        if tie_param: ds[ds_full+'_tie'] = tie_ds[ds_tie]
+    _Internal.read_angle(ds, dirname, interp_angles, chunks)
 
     # tie meteo interpolation
     if verbose: log.debug('read meteorological tie points')
-    tie_meteo_file = dirname/'tie_meteo.nc'
-    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
-    tie = tie.assign_coords(
-                tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
-                tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
-                )
-    assert tie.tie_columns[0] == ds[str(n.columns)][0]
-    assert tie.tie_columns[-1] == ds[str(n.columns)][-1]
-    assert tie.tie_rows[0] == ds[str(n.rows)][0]
-    assert tie.tie_rows[-1] == ds[str(n.rows)][-1]
-
-    wind0 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=0), shape, tie_chunks, 'linear')
-    wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
-    
-    ds['horizontal_wind'] = np.sqrt(wind0**2 + wind1**2)
-    ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
-    for var_from, var_to in [
-        ('humidity', 'humidity'),
-        ('sea_level_pressure', 'sea_level_pressure'),
-        ('total_columnar_water_vapour', 'total_columnar_water_vapour'),
-        ('total_ozone', 'total_column_ozone')
-        ]:
-        ds[var_to] = spatial_resample(tie[var_from], shape, tie_chunks, 'linear')
-        ds[var_to].attrs = tie[var_from].attrs
-        if tie_param: ds[var_to+'_tie'] = tie[var_from]
-
-    # check subsampling factors
-    assert ((ds.sizes[str(n.columns)]-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
-    assert ((ds.sizes[str(n.rows)]-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
+    _Internal.read_ancillary_data(ds, dirname, chunks)
 
     # instrument data
     instrument_data = xr.open_dataset(
@@ -235,25 +168,11 @@ def Level1_OLCI(
     
     # attributes
     if verbose: log.debug('add important attributes')
-    meta = manifest['metadataSection']['metadataObject']
-    date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
-    start = datetime.fromisoformat(date['startTime'])
-    stop  = datetime.fromisoformat(date['stopTime'])
-    ds.attrs[str(n.datetime)] = (start + (stop - start)/2.).isoformat()
-    
-    platform = meta[1]['metadataWrap']['xmlData']['platform']
-    ds.attrs[str(n.platform)] = platform['familyName'] + platform['number']
-    ds.attrs[str(n.resolution)] = 500
-    ds.attrs[str(n.sensor)] = platform['instrument']['familyName']['attributes']['abbreviation']
-    ds.attrs[str(n.product_name)] = dirname.name
-    ds.attrs[str(n.input_directory)] = str(dirname.parent)
-
-    ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
-    ds = ds.rename({'columns': str(n.columns), 'rows': str(n.rows)})
+    _Internal.add_attributes(ds, manifest, dirname)
     
     if verbose: log.debug('compute reflectances')
-    _olci_init_spectral(ds, chunks)
-    ds = init_Rtoa(ds)
+    ds = _Internal.olci_init_spectral(ds)
+    ds = _Internal.extract_rtoa(ds)
 
     if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
@@ -318,7 +237,8 @@ def Level2_OLCI(
         f'expected level2 encountered {level_from_manifest}'
 
     # Read main product
-    ds = _read_bands(ds, dirname, chunks, 2)
+    if verbose: log.debug('Read radiances')
+    ds = _Internal.read_bands(ds, dirname, chunks, 2)
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
@@ -327,105 +247,13 @@ def Level2_OLCI(
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
 
-    # dimensions
-    dims2 = ('rows','columns')
-    shape2 = ds.latitude.shape
-    ac_factor = ds.latitude.ac_subsampling_factor
-    al_factor = ds.latitude.al_subsampling_factor
-
     # tie geometry interpolation
-    tie_geom_file = dirname/'tie_geometries.nc'
-    tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
-    tie_ds = tie_ds.assign_coords(
-        tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
-        tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
-    )
-    assert tie_ds.tie_columns[0] == ds.columns[0]
-    assert tie_ds.tie_columns[-1] == ds.columns[-1]
-    assert tie_ds.tie_rows[0] == ds.rows[0]
-    assert tie_ds.tie_rows[-1] == ds.rows[-1]
-
-    if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
-    elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
-    elif interp_angles == 'legacy': interp_aa, interp_za = 'nearest', 'linear'
-    else: raise ValueError(f'Invalid interp_angles "{interp_angles}"')
-    
-    for (ds_full, ds_tie, method) in [
-                ('sza', 'SZA', interp_za),
-                ('saa', 'SAA', interp_aa),
-                ('vza', 'OZA', interp_za),
-                ('vaa', 'OAA', interp_aa),
-            ]:
-        if method == 'atan2':
-            _cos = DataArray_from_array(
-                Interpolator(shape2, np.cos(np.radians(tie_ds[ds_tie].astype('float32'))), 'linear'),
-                dims2,
-                chunks,
-            )
-            _sin = DataArray_from_array(
-                Interpolator(shape2, np.sin(np.radians(tie_ds[ds_tie].astype('float32'))), 'linear'),
-                dims2,
-                chunks,
-            )
-            ds[ds_full] = np.degrees(np.arctan2(_sin, _cos))
-        else:
-            ds[ds_full] = DataArray_from_array(
-                Interpolator(shape2, tie_ds[ds_tie].astype('float32'), method),
-                dims2,
-                chunks,
-            )
-        ds[ds_full].attrs = tie_ds[ds_tie].attrs
-        if tie_param:
-            ds[ds_full+'_tie'] = tie_ds[ds_tie]
+    if verbose: log.debug('read geometric tie points')
+    _Internal.read_angle(ds, dirname, interp_angles, chunks)
 
     # tie meteo interpolation
-    tie_meteo_file = dirname/'tie_meteo.nc'
-    tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
-    tie = tie.assign_coords(
-                tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
-                tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
-                )
-    assert tie.tie_columns[0] == ds.columns[0]
-    assert tie.tie_columns[-1] == ds.columns[-1]
-    assert tie.tie_rows[0] == ds.rows[0]
-    assert tie.tie_rows[-1] == ds.rows[-1]
-    
-    wind0 = DataArray_from_array(
-        Interpolator(
-            shape2,
-            tie.horizontal_wind.isel(wind_vectors=0)
-        ),
-        dims2,
-        chunks,
-    )
-    wind1 = DataArray_from_array(
-        Interpolator(
-            shape2,
-            tie.horizontal_wind.isel(wind_vectors=1)
-        ),
-        dims2,
-        chunks,
-    )
-    ds['horizontal_wind'] = np.sqrt(wind0**2 + wind1**2)
-    ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
-    for var_from, var_to in [
-        ('humidity', 'humidity'),
-        ('sea_level_pressure', 'sea_level_pressure'),
-        ('total_columnar_water_vapour', 'total_columnar_water_vapour'),
-        ('total_ozone', 'total_column_ozone')
-        ]:
-        ds[var_to] = DataArray_from_array(
-            Interpolator(shape2, tie[var_from]),
-            dims2,
-            chunks,
-        )
-        ds[var_to].attrs = tie[var_from].attrs
-        if tie_param:
-            ds[var_to+'_tie'] = tie[var_from]
-
-    # check subsampling factors
-    assert ((ds.sizes['columns']-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
-    assert ((ds.sizes['rows']-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
+    if verbose: log.debug('read meteorological tie points')
+    _Internal.read_ancillary_data(ds, dirname, chunks)
 
     # instrument data
     instrument_data_file = dirname/'instrument_data.nc'
@@ -480,37 +308,16 @@ def Level2_OLCI(
         #     ds.quality_flags & qf["invalid"],
         # )
     
-    # attributes
-    # ds.attrs[naming.datetime] = (dstart + (dstop - dstart)/2.).isoformat()
-    ds.attrs[str(n.platform)] = 'Sentinel-3'   # FIXME: A or B
-    ds.attrs[str(n.sensor)] = 'OLCI'
-    ds.attrs[str(n.input_directory)] = os.path.dirname(dirname)
+   # attributes
+    if verbose: log.debug('add important attributes')
+    _Internal.add_attributes(ds, manifest, dirname)
 
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
-
-    if init_spectral: _olci_init_spectral(ds, chunks)
-
-    ds = ds.rename({'columns': str(n.columns), 'rows': str(n.rows)})
+    
+    if verbose: log.debug('compute reflectances')
+    ds = _Internal.olci_init_spectral(ds)
 
     return ds.unify_chunks()
-
-
-def get_sample(level: int = 1) -> Path:
-    """
-    Download or retrieve a sample OLCI product for testing.
-    
-    Requires the 'sand' module for EUMETSAT Data Store access.
-
-    Args:
-        level: Processing level (1 for Level1, 2 for Level2)
-
-    Returns:
-        Path to the downloaded .SEN3 directory
-        
-    Raises:
-        ImportError: If the 'sand' module is not installed
-    """
-    return collect_sample(f'LEVEL{level}_OLCI', 'eumdac', 'SENTINEL-3-OLCI-FR', level)
 
 
 
@@ -524,113 +331,191 @@ class _Internal:
     def read_ltao(dirname: Path, band: str, chunks: dict, collec: dict) -> None:
         """Read Level1 radiance data for a single band."""
         filename = dirname/f'{band}_radiance.nc'
-        data = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
-        prod_list.append(data)
-
-    if level == 1: 
-        param_name, unit = str(n.ltoa), 'W/sr/m^2'
-    else: 
-        param_name, unit = str(n.rho_w), None
+        da = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
+        collec['ltoa'].append(da)
     
-    ds[param_name] = xr.concat(prod_list, dim=str(n.bands))
-    ds[param_name].attrs.update(unit=unit)
-    return ds
-
-def _olci_init_spectral(ds: xr.Dataset, chunks: dict) -> None:
-    """
-    Broadcast spectral (detector-wise) data to the full image grid.
+    @staticmethod
+    def read_rtoa(dirname: Path, band: str, chunks: dict, collec: dict) -> None:
+        """Read Level2 reflectance data and uncertainties for a single band."""
+        filename = dirname/f'{band}_reflectance.nc'
+        ds = xr.open_dataset(filename, engine='h5netcdf').chunk(chunks)
+        collec['rtoa'].append(ds[f'{band}_reflectance'])
+        collec['unc'].append(ds[f'{band}_reflectance_unc'])
     
-    Extracts detector-specific wavelengths and solar fluxes and maps them
-    to each pixel based on the detector_index variable.
+    @staticmethod
+    def read_bands(ds: xr.Dataset, dirname: Path, chunks: dict, level: int) -> xr.Dataset:
+        """Read spectral band radiance or reflectance data from NetCDF files."""
+        if level == 1:
+            prod_list = {'ltoa': []}
+            reader = _Internal.read_ltao
+        else:
+            prod_list = {'rtoa': [], 'unc': []}
+            reader =_Internal.read_rtoa
+            
+        for band in ds[str(names.bands)].values:
+            reader(dirname, band, chunks, prod_list)
+
+        if level == 1: 
+            ds[str(names.ltoa)] = xr.concat(prod_list['ltoa'], dim=str(names.bands))
+            ds[str(names.ltoa)].attrs.update(unit='W/sr/m^2')
+        else: 
+            ds[str(names.rho_w)] = xr.concat(prod_list['rtoa'], dim=str(names.bands))
+            ds['uncertainty'] = xr.concat(prod_list['unc'], dim=str(names.bands))
+            ds[str(names.rho_w)].attrs.update(unit=None)
+        
+        return ds
+
+    @staticmethod
+    def olci_init_spectral(ds: xr.Dataset) -> xr.Dataset:
+        """Broadcast spectral (detector-wise) data to the full image grid."""
+        # wavelength
+        ds[str(names.wav)] = xr.apply_ufunc(
+            lambda l0, di: l0[:,0,0,di],
+            ds.lambda0,  # (bands x detectors)
+            ds.detector_index,   # (rows x columns)
+            dask='parallelized',
+            input_core_dims=[['detectors'], []],
+            output_dtypes=[ds.lambda0.dtype],
+        )
+        ds[str(names.wav)].attrs.update(ds.lambda0.attrs)
+
+        # solar flux
+        ds[str(names.F0)] = xr.apply_ufunc(
+            lambda sf, di: sf[:,0,0,di],
+            ds.solar_flux,  # (bands x detectors)
+            ds.detector_index,   # (rows x columns)
+            dask='parallelized',
+            input_core_dims=[['detectors'], []],
+            output_dtypes=[ds.solar_flux.dtype],
+        )
+        ds[str(names.F0)].attrs.update(ds.solar_flux.attrs)
+        
+        return ds
     
-    Adds the following variables to ds (in place):
-        - wav: Wavelength for each pixel and band (nm)
-        - F0: Solar flux for each pixel and band
-    """
-    # wavelength
-    ds[str(n.wav)] = xr.apply_ufunc(
-        lambda l0, di: l0[:,0,0,di],
-        ds.lambda0,  # (bands x detectors)
-        ds.detector_index,   # (rows x columns)
-        dask='parallelized',
-        input_core_dims=[['detectors'], []],
-        output_dtypes=[ds.lambda0.dtype],
-    )
-    ds[str(n.wav)].attrs.update(ds.lambda0.attrs)
+    @staticmethod
+    def extract_rtoa(ds: xr.Dataset) -> xr.Dataset:
+        """Compute TOA reflectance from radiance using solar geometry."""
+        mus = np.cos(np.radians(ds.sza))
+        ds = ds.assign({
+            str(names.rtoa): ((str(names.bands),str(names.rows),str(names.columns)), 
+            (np.pi*ds[str(names.ltoa)]/(mus*ds[str(names.F0)])).data)
+        })
+        ds[str(names.rtoa)].attrs.update(unit=None)
+        return ds
 
-    # solar flux
-    ds[str(n.F0)] = xr.apply_ufunc(
-        lambda sf, di: sf[:,0,0,di],
-        ds.solar_flux,  # (bands x detectors)
-        ds.detector_index,   # (rows x columns)
-        dask='parallelized',
-        input_core_dims=[['detectors'], []],
-        output_dtypes=[ds.solar_flux.dtype],
-    )
-    ds[str(n.F0)].attrs.update(ds.solar_flux.attrs)
-
-
-def _decompose_flags(value: int, flags: dict) -> list:
-    """Return list of flag meanings for a given binary flag value."""
-    return [m for (m, v) in flags.items() if (v & value != 0)]
-
-
-def get_valid_l2_pixels(
-        wqsf: xr.DataArray, 
-        flags: list = [
-            'INVALID', 'LAND', 'CLOUD', 'CLOUD_AMBIGUOUS', 'CLOUD_MARGIN',
-            'SNOW_ICE', 'SUSPECT', 'HISOLZEN', 'SATURATED', 'HIGHGLINT', 'WHITECAPS',
-            'AC_FAIL', 'OC4ME_FAIL', 'ANNOT_TAU06', 'RWNEG_O2', 'RWNEG_O3', 'RWNEG_O4',
-            'RWNEG_O5', 'RWNEG_O6', 'RWNEG_O7', 'RWNEG_O8', 'ANNOT_ABSO_D',
-            'ANNOT_DROUT', 'ANNOT_MIXR1']
-    ) -> xr.DataArray:
-    """
-    Get valid Level2 water pixels by masking specified quality flags.
+    @staticmethod
+    def decompose_flags(value: int, flags: dict) -> list:
+        """Return list of flag meanings for a given binary flag value."""
+        return [m for (m, v) in flags.items() if (v & value != 0)]
     
-    Args:
-        wqsf: Water Quality and Science Flags array
-        flags: List of flag names to mask out. Pixels with any of these flags
-              raised will be marked as invalid.
+    @staticmethod
+    def read_angle(ds: xr.Dataset, dirname: str, interp_angles: str, chunks: dict) -> None:
+        """Read and interpolate viewing/solar angles from tie points to full grid."""
+        
+        # Open the dataset containing geometric information
+        ac_factor = ds.latitude.ac_subsampling_factor
+        al_factor = ds.latitude.al_subsampling_factor
+        tie_geom_file = dirname/'tie_geometries.nc'
+        tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
+        tie_ds = tie_ds.assign_coords(
+            tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
+            tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
+        )
+        
+        # Check first and last items are the same 
+        assert tie_ds.tie_columns[0] == ds['columns'][0]
+        assert tie_ds.tie_columns[-1] == ds['columns'][-1]
+        assert tie_ds.tie_rows[0] == ds['rows'][0]
+        assert tie_ds.tie_rows[-1] == ds['rows'][-1]
+        
+        # Determine interpolation strategy
+        if interp_angles == 'linear': interp_aa, interp_za = 'linear', 'linear'
+        elif interp_angles == 'atan2': interp_aa, interp_za = 'atan2', 'atan2'
+        elif interp_angles == 'legacy': interp_aa, interp_za = 'nearest', 'linear'
+        else: raise ValueError(f'Invalid interp_angles "{interp_angles}"')
+        
+        # Iterate over all angles
+        shape = ds.latitude.shape
+        shape = dict(tie_rows=shape[0], tie_columns=shape[1])
+        mapping = dict(tie_rows='rows', tie_columns='columns')
+        tie_chunks = dict(tie_rows=chunks['rows'], tie_columns=chunks['columns'])
+        for (ds_full, ds_tie, method) in [
+                    (str(names.sza), 'SZA', interp_za),
+                    (str(names.saa), 'SAA', interp_aa),
+                    (str(names.vza), 'OZA', interp_za),
+                    (str(names.vaa), 'OAA', interp_aa),
+                ]:
+            
+            # Super-sample of the raster
+            if method == 'atan2':
+                _cos = spatial_resample(np.cos(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+                _sin = spatial_resample(np.sin(np.radians(tie_ds[ds_tie])), shape, tie_chunks, 'linear')
+                raster = np.degrees(np.arctan2(_sin, _cos))
+            else:
+                raster = spatial_resample(tie_ds[ds_tie], shape, tie_chunks, method)
+            
+            # Add tie points            
+            ds[ds_full] = raster.rename(mapping)
+            ds[ds_full].attrs = tie_ds[ds_tie].attrs
+            ds[ds_full+'_tie'] = tie_ds[ds_tie]
+        
+        # check subsampling factors
+        assert ((ds.sizes['columns']-1) == ac_factor*(tie_ds.sizes['tie_columns']-1))
+        assert ((ds.sizes['rows']-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
     
-    Returns:
-        Boolean array where True indicates valid pixels
-    """
-    bval = 0
-    L2_FLAGS = getflags(wqsf)
-    for flag in flags:
-        bval += int(L2_FLAGS[flag])
+    @staticmethod
+    def read_ancillary_data(ds: xr.Dataset, dirname: str,  chunks: dict) -> None:
+        """Read and interpolate meteorological tie-point data to full grid."""
+        
+        # Open the dataset containing meteorologic information
+        ac_factor = ds.latitude.ac_subsampling_factor
+        al_factor = ds.latitude.al_subsampling_factor
+        tie_meteo_file = dirname/'tie_meteo.nc'
+        tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
+        tie = tie.assign_coords(
+            tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
+            tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
+        )
+        
+        # Check first and last items are the same 
+        assert tie.tie_columns[0] == ds['columns'][0]
+        assert tie.tie_columns[-1] == ds['columns'][-1]
+        assert tie.tie_rows[0] == ds['rows'][0]
+        assert tie.tie_rows[-1] == ds['rows'][-1]
 
-    return wqsf & bval == 0
-
-
-def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
-    """Transform dataset to version 1 format for backward compatibility."""
-    # Reset band coordinates
-    ds = ds.assign_coords(bands=[400, 412, 443, 490, 510, 560, 620, 665, 674, 681, 709, 754, 760, 764, 767, 779, 865, 885, 900, 940, 1020]) 
+        shape = ds.latitude.shape
+        shape = dict(tie_rows=shape[0], tie_columns=shape[1])
+        mapping = dict(tie_rows='rows', tie_columns='columns')
+        tie_chunks = dict(tie_rows=chunks['rows'], tie_columns=chunks['columns'])
+        wind0 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=0), shape, tie_chunks, 'linear')
+        wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
+        
+        wind = np.sqrt(wind0**2 + wind1**2)
+        ds['horizontal_wind'] = wind.rename(mapping)
+        ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
+        for var_from, var_to in [
+            ('humidity', 'humidity'),
+            ('sea_level_pressure', 'sea_level_pressure'),
+            ('total_columnar_water_vapour', 'total_columnar_water_vapour'),
+            ('total_ozone', 'total_column_ozone')
+            ]:
+            raster = spatial_resample(tie[var_from], shape, tie_chunks, 'linear')
+            ds[var_to] = raster.rename(mapping)
+            ds[var_to].attrs = tie[var_from].attrs
+            ds[var_to + '_tie'] = tie[var_from]
     
-    # rename bands variable
-    ds = ds.assign({str(n.rtoa): ((str(n.bands), str(n.rows), str(n.columns)), ds[str(n.rtoa)].data)})
-    
-    # Add flags
-    ds[str(n.flags)] = xr.zeros_like(
-        ds.vza,
-        dtype=n.flags.dtype)
-    qf = getflags(ds.quality_flags)
-
-    # raise LAND mask when land is raised but not fresh_inland_water
-    from .eo import raiseflag
-    raiseflag(
-        ds[str(n.flags)],
-        "LAND", 1,
-        ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
-    )
-    raiseflag(
-        ds[str(n.flags)],
-        "L1_INVALID", 4,
-        ds.quality_flags & qf["invalid"],
-    )
-    
-    # Complete attributes
-    for k,v in list(ds.longitude.attrs.items())[5:]: ds.attrs[k] = v
-    
-    return ds
+    @staticmethod
+    def add_attributes(ds: xr.Dataset, metadata: dict, dirname: str) -> None:
+        """Extract and add product metadata attributes to the dataset."""
+        meta = metadata['metadataSection']['metadataObject']
+        date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
+        start = datetime.fromisoformat(date['startTime'])
+        stop  = datetime.fromisoformat(date['stopTime'])
+        ds.attrs[str(names.datetime)] = (start + (stop - start)/2.).isoformat()
+        
+        platform = meta[1]['metadataWrap']['xmlData']['platform']
+        ds.attrs[str(names.platform)] = platform['familyName'] + platform['number']
+        ds.attrs[str(names.resolution)] = 500
+        ds.attrs[str(names.sensor)] = platform['instrument']['familyName']['attributes']['abbreviation']
+        ds.attrs[str(names.product_name)] = dirname.name
+        ds.attrs[str(names.input_directory)] = str(dirname.parent)

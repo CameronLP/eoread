@@ -54,12 +54,12 @@ def Level1_ECOSTRESS(
     
     if verbose: log.debug('parsing metadata text')
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
-    p = _parser(info.split('\n'))
+    p = _Internal.metadata_parser(info.split('\n'))
     p.parse()
     
-    # Change radiometry of input data 
+    # Compute Brightness Temperature and Radiance
     if verbose: log.debug('compute brightness temperature')
-    l1 = _transform_radiometry(raw, granule_mtd)   
+    l1 = _Internal.transform_radiometry(raw, granule_mtd)   
     
     # Add attributes
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
@@ -88,7 +88,7 @@ def Level1_ECOSTRESS(
     
     # Add latlon variables
     if verbose: log.debug('add latlon variables')
-    l1 = _supplement_latlon(l1, list(chunks))
+    l1 = _Internal.supplement_latlon(l1, chunks)
     
     if v1_compat: return _v1_compat(l1)
     else: return l1
@@ -125,11 +125,11 @@ def Level2_ECOSTRESS(
     attributes  = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
     
     info = data['HDFEOS INFORMATION']['StructMetadata.0'].values.item().decode()
-    p = _parser(info.split('\n'))
+    p = _Internal.metadata_parser(info.split('\n'))
     p.parse()
     
     # Change radiometry of input data 
-    l2 = _transform_radiometry(raw, granule_mtd)   
+    l2 = _Internal.transform_radiometry(raw, granule_mtd)
     
     # Add attributes
     for att in list(attributes):
@@ -143,84 +143,8 @@ def Level2_ECOSTRESS(
     l2 = l2.rename_dims(revize_dims)
     
     # Add latlon variables
-    l2 = _supplement_latlon(l2, chunks)
+    l2 = _Internal.supplement_latlon(l2, chunks)
     return l2
-
-
-def _transform_radiometry(raw_data: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
-    """Convert raw radiances to calibrated units and compute brightness temperature."""
-    # Combine band radiances into a single variable 
-    level1 = merge(raw_data, dim=str(n.bands), pattern=r'(.+)_(\d+)')
-    
-    # Rename radiance variable
-    level1 = level1.rename({'radiance': str(n.ltoa)})
-    level1[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
-    
-    # Compute brightness temperature for Emissive bands 
-    return _compute_bt(level1, granule_mtd)
-
-def _supplement_latlon(l1: xr.Dataset, chunks: list) -> xr.Dataset:
-    """Add latitude and longitude coordinates based on scene boundary."""
-    # Compute LatLon variables
-    size = l1['cloud'].shape
-    poly = wkt.loads(l1.metadata['SceneBoundaryLatLonWKT'])
-    coords = np.array(poly.exterior.coords)
-    north  = coords[:,1].max()
-    south  = coords[:,1].min()
-    east   = coords[:,0].max()
-    west   = coords[:,0].min()
-    
-    # Build the lat and lon arrays
-    dims = [str(n.rows),str(n.columns)]
-    lat = da.linspace(north,south,size[0]).reshape((size[0],1))
-    lon = da.linspace(west,east,size[1]).reshape((1,size[1]))
-    l1[str(n.lon)] = xr.DataArray(da.repeat(lon, size[0], axis=0), 
-                                  dims=dims).chunk(chunks=chunks)
-    l1[str(n.lat)] = xr.DataArray(da.repeat(lat, size[1], axis=1), 
-                                  dims=dims).chunk(chunks=chunks)
-    return l1
-
-def _compute_bt(l1: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
-    """Compute brightness temperature from radiance using Planck's law."""
-    # Initialized constants
-    K1 = 1.191042 * 1e8
-    K2 = 1.4387752 * 1e4
-    
-    # Temperature correction
-    cwvl   = granule_mtd.BandSpecification[1:].rename(phony_dim_0=str(n.bands)) # convert into µm
-    gain   = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1=str(n.bands))
-    offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1=str(n.bands))
-    l1 = l1.assign({str(n.cwav): ((str(n.bands)), cwvl.data*1e3)})
-    
-    # Some versions of the modis files do not contain all the bands.
-    valid = ~l1[str(n.ltoa)].isnull()
-    array = K2 / (cwvl * np.log(K1 / (l1[str(n.ltoa)].where(valid) * cwvl ** 5) + 1))
-    l1[str(n.bt)] = gain * array.where(valid) + offset
-    l1[str(n.bt)].attrs = {'unit': 'Kelvin'}
-    
-    return l1
-
-def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
-    """Transform dataset to version 1 format for backward compatibility."""
-    
-    # Assign central wavelengths as bands coordinates
-    ds = ds.assign_coords({str(n.bands): [8290,8780,9200,10490,12090]})
-    ds = ds.rename({str(n.bands): 'bands_tir'})
-    
-    # Add a new variables called flags
-    flags = ds.data_quality[0] != 0
-    ds['flags'] = flags.astype(n.flags.dtype)
-    
-    # Add missing attributes
-    ds.attrs['product_name'] = ds.attrs['product_name'][:-3]
-    ds.attrs['Description'] = ds.metadata['LongName']
-    ds.attrs['shortname']  = str(ds.metadata['ShortName'])
-    ds.attrs['night']      = str(str(ds.metadata['DayNightFlag']) != 'Day')
-    ds.attrs['CRS']        = str(ds.metadata['CRS'])
-    ds.attrs['Boundary']   = str(ds.metadata['SceneBoundaryLatLonWKT'])
-    ds.attrs['version']    = str(ds.metadata['PGEVersion'])  
-
-    return ds
 
 
 def get_sample(level: int = 1) -> Path:
@@ -239,77 +163,133 @@ def get_sample(level: int = 1) -> Path:
     Raises:
         ImportError: If the 'sand' module is not installed
     """
-    try: 
-        from sand.nasa import DownloadNASA
-        from sand.sample_product import products
-    except ImportError:
-        raise ImportError('To use get_sample function, you need to install SAND module')
-    
-    sensor = 'ISS-ECOSTRESS'
-    prod_id = products[sensor][f'l{level}_product']
-    target = env.getdir('DIR_SAMPLES')/prod_id
-    dl = DownloadNASA()
-    dl.download_file(target.name, target.parent)
-    assert target.exists()
-    return target
 
-class _parser:
-    """Parser for HDFEOS metadata structure."""
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
     
-    def __init__(self, text: list):
-        """Initialize parser with metadata text lines."""
-        self.data = {}
-        self.text = text.copy()
-    
-    def empty(self) -> bool:
-        """Check if there are remaining lines to parse."""
-        return len(self.text) == 0
-    
-    def consume(self) -> str:
-        """Remove and return the next non-empty line."""
+    @staticmethod
+    def transform_radiometry(raw_data: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
+        """Convert raw radiances to calibrated units and compute brightness temperature."""
+        # Combine band radiances into a single variable 
+        level1 = merge(raw_data, dim=str(names.bands), pattern=r'(.+)_(\d+)')
         
-        line = self.text[0]
-        if len(self.text) == 1: # case for last line
-            self.text = []
+        # Rename radiance variable
+        level1 = level1.rename({'radiance': str(names.ltoa)})
+        level1[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
+        
+        # Compute brightness temperature for Emissive bands 
+        level1 = _Internal.compute_bt(level1, granule_mtd)
+        return level1
+
+    @staticmethod
+    def parse_wkt(wkt: str) -> list:
+        """Parse Well-Known Text (WKT) geometry string to extract coordinate pairs."""
+        points = findall(r'(-?\d+\.\d+)\s+(-?\d+\.\d+)', wkt)
+        points = [(float(lon), float(lat)) for lon, lat in points]
+        return np.array(points)
+    
+    @staticmethod
+    def supplement_latlon(l1: xr.Dataset, chunks: dict) -> xr.Dataset:
+        """Add latitude and longitude coordinates based on scene boundary."""
+        # Compute LatLon variables
+        size = l1['cloud'].sizes
+        coords = _Internal.parse_wkt(l1.metadata['SceneBoundaryLatLonWKT'])
+        north  = coords[:,1].max()
+        south  = coords[:,1].min()
+        east   = coords[:,0].max()
+        west   = coords[:,0].min()
+        
+        # Build the lat and lon arrays
+        lat = np.linspace(south, north, size[str(names.rows)])
+        lon = np.linspace(west, east, size[str(names.columns)])
+        lon, lat = meshgrid(lon, lat)
+        
+        dims = list(size)
+        l1[str(names.lon)] = xr.DataArray(lon, dims=dims).chunk(chunks=chunks)
+        l1[str(names.lat)] = xr.DataArray(lat, dims=dims).chunk(chunks=chunks)
+        return l1
+
+    @staticmethod
+    def compute_bt(l1: xr.Dataset, granule_mtd: xr.Dataset) -> xr.Dataset:
+        """Compute brightness temperature from radiance using Planck's law."""
+        # Initialized constants
+        K1 = 1.191042 * 1e8
+        K2 = 1.4387752 * 1e4
+        
+        # Temperature correction
+        cwvl = granule_mtd.BandSpecification[1:].rename(phony_dim_0=str(names.bands))
+        gain = granule_mtd.CalibrationGainCorrection.rename(phony_dim_1=str(names.bands))
+        offset = granule_mtd.CalibrationOffsetCorrection.rename(phony_dim_1=str(names.bands))
+        l1 = l1.assign({str(names.cwav): ((str(names.bands)), cwvl.data*1e3)}) # convert into nm
+        
+        # Some versions of the modis files do not contain all the bands.
+        valid = ~l1[str(names.ltoa)].isnull()
+        array = K2 / (cwvl * np.log(K1 / (l1[str(names.ltoa)].where(valid) * cwvl ** 5 + 1)))
+        l1[str(names.bt)] = gain * array.where(valid) + offset
+        l1[str(names.bt)].attrs = {'unit': 'Kelvin'}
+        
+        return l1
+
+    class metadata_parser:
+        """Parser for HDFEOS metadata structure."""
+        
+        def __init__(self, text: list):
+            """Initialize parser with metadata text lines."""
+            self.data = {}
+            self.text = text.copy()
+        
+        def empty(self) -> bool:
+            """Check if there are remaining lines to parse."""
+            return len(self.text) == 0
+        
+        def consume(self) -> str:
+            """Remove and return the next non-empty line."""
+            
+            line = self.text[0]
+            if len(self.text) == 1: # case for last line
+                self.text = []
+                return line.strip()
+                    
+            self.text = self.text[1:]
+            
+            line = line.strip()
+            while line == "":
+                line = self.consume()
+            
             return line.strip()
+        
+        def peek(self) -> str:
+            """Return the next line without consuming it."""
+            return self.text[0].strip()
+        
+        def parse(self) -> None:
+            """Parse all remaining lines into structured metadata."""
+            
+            while not self.empty():
+                end = self._parse_recu(self.data)
+                if end: break
                 
-        self.text = self.text[1:]
-        
-        line = line.strip()
-        while line == "":
+        def _parse_recu(self, data: dict = None) -> bool:
+            """Recursively parse metadata groups and objects."""
             line = self.consume()
-        
-        return line.strip()
-    
-    def peek(self) -> str:
-        """Return the next line without consuming it."""
-        return self.text[0].strip()
-    
-    def parse(self) -> None:
-        """Parse all remaining lines into structured metadata."""
-        
-        while not self.empty():
-            end = self._parse_recu(self.data)
-            if end: break
+            if line == "END":
+                return True
             
-    def _parse_recu(self, data: dict = None) -> bool:
-        """Recursively parse metadata groups and objects."""
-        line = self.consume()
-        if line == "END":
-            return True
-        
-        key, val = line.split('=')
-        if key in ['GROUP','OBJECT']: 
-            data[val] = {}
+            key, val = line.split('=')
+            if key in ['GROUP','OBJECT']: 
+                data[val] = {}
+                
+                line = self.peek()
+                while f'END_' not in line:
+                    self._parse_recu(data[val])
+                    line = self.peek() # refresh peeked line !! 
+                
+                # closing tag
+                self.consume()
             
-            line = self.peek()
-            while f'END_' not in line:
-                self._parse_recu(data[val])
-                line = self.peek() # refresh peeked line !! 
+            else: data[key] = val 
             
-            # closing tag
-            self.consume()
-        
-        else: data[key] = val 
-        
-        return False
+            return False

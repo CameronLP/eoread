@@ -68,199 +68,146 @@ def Level1_SGLI(filepath: str|Path,
     imdata = tree['Image_data'].to_dataset()
     
     # read metadata
-    log.debug('Reading metadata files')
-    metadata = _read_metadata(ds, tree, metadata_template)
-    ds = ds.assign({str(n.bnames): ((str(n.bands)), metadata['Stored_channels'].split(',')),
-                    str(n.cwav): ((str(n.bands)), sgli_central_wavelengths)})
-
+    if verbose: log.debug('Reading metadata files')
+    metadata = _Internal.read_metadata(ds, tree, metadata_template)
     imdata = imdata.rename_dims(dict(zip(
         imdata.Lt_VN01.dims,
         (str(n.rows), str(n.columns))
     )))
     shape = imdata.Lt_VN01.shape
 
-    log.debug('Read and compute geometric angles')
-    _init_geometry(ds, tree, shape, chunks)
-    init_geo(ds)
+    if verbose: log.debug('Read and compute geometric angles')
+    _Internal.init_geometry(ds, tree, sizes, chunks)
     
-    log.debug('Read top of atmosphere data')
-    ds = _init_toa(ds, imdata, chunks)
+    if verbose: log.debug('Read top of atmosphere data')
+    ds = _Internal.read_toa(ds, imdata, chunks)
+    ds = _Internal.read_mask(ds, imdata, chunks)
 
     # Attributes
-    log.debug('Add important attributes')
-    ds.attrs[str(n.datetime)] = metadata['Scene_center_time']
-    ds.attrs[str(n.product_name)] = metadata['Product_file_name']
-    ds.attrs[str(n.platform)] = 'GCOM-C'
-    ds.attrs[str(n.sensor)] = 'SGLI'
-    ds.attrs[str(n.resolution)] = 250
-    ds.attrs[str(n.input_directory)] = str(filepath.parent)
+    if add_ancillary_data: 
+        if verbose: log.info('Read ancillary data')
+        ds = _Internal.read_ancillary(ds, tree)
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
     
-    # # Flags
-    # ds[naming.flags] = xr.zeros_like(
-    #     ds.vza,
-    #     dtype=naming.flags_dtype)
-
-    # raiseflag(
-    #     ds[naming.flags],
-    #     'LAND',
-    #     flags['LAND'],
-    #     imdata['Land_water_flag'] > thres_land_flag,
-    # )
-    
-    if add_ancillary_data: ds = _read_ancillary(ds, tree)
-    ds = ds.assign_coords({str(n.bands): ds[str(n.bands_nvis)].data})
-
-    if v1_compat: return _v1_compat(ds, imdata)
-    return drop_unused_dims(ds).unify_chunks()
-
-
-def _init_toa(ds, imdata, chunks):
-
-    for i in range(len(ds.bands)):
-        Rtoa = imdata[f'Lt_VN{i+1:02}'].chunk(chunks)
-        attrs = Rtoa.attrs
-        Rtoa = (Rtoa & attrs['Mask']) * attrs['Slope_reflectance'] + attrs['Offset_reflectance']
-        Rtoa = Rtoa/ds.mus
-        Rtoa.attrs = attrs
-        ds[str(n.rtoa)+f'_{i+1}'] = Rtoa
+    @staticmethod
+    def read_toa(ds: xr.Dataset, imdata: xr.Dataset, chunks: dict) -> xr.Dataset:
+        """Read and calibrate TOA reflectance from SGLI image data."""
         
-    ds = merge(ds, dim=str(n.bands_nvis))
-    ds[str(n.rtoa)].attrs['unit'] = None
-    return ds
+        mus = da.cos(da.radians(ds.sza))
+        
+        for band in ds.bands.values:
+            Rtoa = imdata[f'Lt_{band[:4]}'].chunk(chunks)
+            attrs = Rtoa.attrs
+            Rtoa = (Rtoa & attrs['Mask']) * attrs['Slope_reflectance']
+            Rtoa = (Rtoa + attrs['Offset_reflectance'])/mus
+            Rtoa.attrs = attrs
+            ds[str(names.rtoa)+f'_{band}'] = Rtoa
+            
+        pattern = f'({str(names.rtoa)})'+r'_(.+)'
+        ds = merge(ds, dim=str(names.bands), pattern=pattern, dtype=str)
+        ds[str(names.rtoa)].attrs['unit'] = None
+        return ds
 
-
-def _init_geometry(ds, tree, shape, chunks):
+    @staticmethod
+    def read_mask(ds: xr.Dataset, imdata: xr.Dataset, chunks: dict) -> xr.Dataset:
+        """Read land/water mask and quality flags from SGLI image data."""
+        ds['water'] = imdata['Land_water_flag'].chunk(chunks)
+        ds['quality_flag'] = imdata['QA_flag'].chunk(chunks)
+        return ds
     
-    geom = tree['Geometry_data'].to_dataset()
+    @staticmethod
+    def init_geometry(ds: xr.Dataset, tree: xr.Dataset, shape: dict, chunks: dict) -> None:
+        """Read and interpolate geometric angles from tie points to full resolution."""
+        
+        # Transform into dataset and rename axis
+        geom = tree['Geometry_data'].to_dataset()
+        geom = geom.rename_dims(dict(zip(
+            geom.Latitude.dims,
+            (str(names.rows)+'_tie', str(names.columns)+'_tie')
+        )))
+        
+        # Add tie points into dataset
+        ds['lat_tie'] = geom.Latitude
+        ds['lon_tie'] = geom.Longitude
+        ds['vza_tie'] = geom['Sensor_zenith']
+        ds['vaa_tie'] = geom['Sensor_azimuth']
+        ds['sza_tie'] = geom['Solar_zenith']
+        ds['saa_tie'] = geom['Solar_azimuth']
+        
+        # Apply slope transformation
+        delta = 10
+        for x in [x for x in ds if x.endswith('_tie')]:
+            assert ds[x].Resampling_interval == delta
+            assert ds[x].Offset == 0.
+            ds[x] = (1 + ds[x].Slope) * ds[x]
 
-    geom = geom.rename_dims(dict(zip(
-        geom.Latitude.dims,
-        (str(n.rows)+'_tie', str(n.columns)+'_tie')
-    )))
+        # assign tiepoint coordinates
+        mapping = {str(names.rows)+'_tie': str(names.rows), str(names.columns)+'_tie': str(names.columns)}
+        ds[str(names.columns)+'_tie'] = da.arange(ds.sizes[str(names.columns)+'_tie'])*delta
+        ds[str(names.rows)+'_tie'] = da.arange(ds.sizes[str(names.rows)+'_tie'])*delta
 
-    ds['lat_tie'] = geom.Latitude
-    ds['lon_tie'] = geom.Longitude
+        # Create interpolated datasets
+        for (name, A) in [
+                (str(names.lat), ds.lat_tie),
+                (str(names.lon), ds.lon_tie),
+                (str(names.vza), ds.vza_tie),
+                (str(names.vaa), ds.vaa_tie),
+                (str(names.sza), ds.sza_tie),
+                (str(names.saa), ds.saa_tie),
+            ]:
+            A = A.rename(mapping)
+            ds[name] = spatial_resample(A, shape, chunks=chunks)
 
-    ds['vza_tie'] = geom['Sensor_zenith']
-    ds['vaa_tie'] = geom['Sensor_azimuth']
-    ds['sza_tie'] = geom['Solar_zenith']
-    ds['saa_tie'] = geom['Solar_azimuth']
+    @staticmethod
+    def calc_central_wavelength():
+        """Read SRF and calculate central wavelength for each band"""
+        dir_auxdata = Path(__file__).parent/'auxdata'/'sgli'
 
-    delta = 10
-    for x in [x for x in ds if x.endswith('_tie')]:
-        assert ds[x].Resampling_interval == delta
-        assert ds[x].Offset == 0.
-        ds[x] = ds[x] * ds[x].Slope
+        file_rsr = dir_auxdata/'sgli_rsr_f_for_algorithm_201008.txt.gz'
+        assert file_rsr.exists(), file_rsr
 
-    # assign tiepoint coordinates
-    ds[str(n.columns)+'_tie'] = da.arange(ds.sizes[str(n.columns)+'_tie'])*delta
-    ds[str(n.rows)+'_tie'] = da.arange(ds.sizes[str(n.rows)+'_tie'])*delta
+        rsr = pd.read_csv(
+            file_rsr,
+            engine='python',
+            delim_whitespace=True,
+            index_col=False,
+        )
 
-    # Create interpolated datasets
-    shape = dict(zip(ds.lat_tie.dims, shape))
-    for (name, A) in [
-            (str(n.lat), ds.lat_tie),
-            (str(n.lon), ds.lon_tie),
-            (str(n.vza), ds.vza_tie),
-            (str(n.vaa), ds.vaa_tie),
-            (str(n.sza), ds.sza_tie),
-            (str(n.saa), ds.saa_tie),
-        ]:
-        ds[name] = spatial_resample(A, shape, chunks=chunks)
+        rsr = rsr.rename(columns=dict(zip(
+            [x for x in rsr.columns if x.startswith('WL')],
+            [x.replace('RSR_', 'WL_') for x in rsr.columns if x.startswith('RSR')],
+        )))
 
+        wav_data = []
 
-def calc_central_wavelength():
-    """
-    Read SRF and calculate central wavelength for each band
+        # calculate central wavelengths
+        for i, _ in enumerate(sgli_bands):
+            srf = rsr[f'RSR_VN{i+1:02}']
+            wav = rsr[f'WL_VN{i+1:02}']
+            wav_eq = da.trapz(wav*srf)/da.trapz(srf)
+            wav_data.append(wav_eq)
 
-    `print([f'{x:.2f}' for x in calc_central_wavelength()[1]])`
+        return sgli_bands, wav_data
 
-    Returns:
-    --------
-    sgli_bands: list of band identifiers
+    @staticmethod
+    def read_metadata(ds: xr.Dataset, tree: dict, template: list) -> dict:
+        """Extract global attributes from SGLI HDF5 file."""
+        filter_fn = (lambda x,y: x) if template is None else filter_metadata
+        metadata = tree['Global_attributes'].attrs
+        ds.attrs['metadata'] = filter_fn(metadata, template)
+        return metadata
 
-    wav_data: list of central wavelengths for each band
-    """
-    dir_auxdata = Path(__file__).parent/'auxdata'/'sgli'
-
-    file_rsr = dir_auxdata/'sgli_rsr_f_for_algorithm_201008.txt.gz'
-    assert file_rsr.exists(), file_rsr
-
-    rsr = pd.read_csv(
-        file_rsr,
-        engine='python',
-        delim_whitespace=True,
-        index_col=False,
-    )
-
-    rsr = rsr.rename(columns=dict(zip(
-        [x for x in rsr.columns if x.startswith('WL')],
-        [x.replace('RSR_', 'WL_') for x in rsr.columns if x.startswith('RSR')],
-    )))
-
-    wav_data = []
-
-    # calculate central wavelengths
-    for i, _ in enumerate(sgli_bands):
-        srf = rsr[f'RSR_VN{i+1:02}']
-        wav = rsr[f'WL_VN{i+1:02}']
-        wav_eq = da.trapz(wav*srf)/da.trapz(srf)
-        wav_data.append(wav_eq)
-
-    return sgli_bands, wav_data
-
-def _read_metadata(ds, tree, template):
-    filter_fn = (lambda x,y: x) if template is None else filter_metadata
-    metadata = tree['Global_attributes'].attrs
-    ds.attrs['metadata'] = filter_fn(metadata, template)
-    return metadata
-
-def _read_ancillary(ds, tree):
-    log.info('Read ancillary data')
-    ancillary = tree['Ancillary_data'].to_dict()
-    for name, data in ancillary.items():
-        for var, val in data.variables.items():
-            n = '/'.join([name, var]) 
-            ds = ds.assign({n:val})
-    return ds
-
-def _v1_compat(ds, imdata):
-    
-    import numpy as np
-    from core.tools import raiseflag
-    
-    # Rename tie points dimensions
-    ds = ds.rename({str(n.rows)+'_tie': 'rows_tie',
-                    str(n.columns)+'_tie': 'columns_tie'})
-    
-    # Define central wavelength as coordinates for band dimension
-    ds = ds.assign_coords(bands=[380, 412, 443, 490, 530, 565, 673, 674, 763, 868, 869])
-    
-    # Drop NVIS bands dimension
-    ds = ds.assign(Rtoa=(('bands','y','x'), ds[str(n.rtoa)].data))
-    
-    # Flags
-    ds['flags'] = xr.zeros_like(ds.vza, dtype='uint8')
-
-    raiseflag(
-        ds['flags'],
-        'LAND',
-        1,
-        imdata['Land_water_flag'] > 20,
-    )
-
-    # Central wavelengths
-    sgli_central_wavelengths = np.array([
-        380.00, 412.00, 443.00, 490.00,
-        530.00, 565.00, 673.50, 673.50,
-        763.00, 868.50, 868.50], dtype='float32')
-    
-    ds['wav'] = xr.DataArray(
-        da.from_array(sgli_central_wavelengths),
-        dims=('bands'),
-    )
-    
-    # Level up metadata in attribute dictionary 
-    ds.attrs.update(ds.attrs['metadata'])
-    
-    return ds
+    @staticmethod
+    def read_ancillary(ds: xr.Dataset, tree: dict) -> xr.Dataset:
+        """Read ancillary data from SGLI HDF5 file."""
+        ancillary = tree['Ancillary_data'].to_dict()
+        for name, data in ancillary.items():
+            for var, val in data.variables.items():
+                n = '/'.join([name, var]) 
+                ds = ds.assign({n:val})
+        return ds
