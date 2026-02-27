@@ -130,6 +130,10 @@ def Level1_OLCI(
 
     # quality flags
     if verbose: log.debug('read quality masks')
+    qf = xr.open_dataset(dirname/'qualityFlags.nc', engine='h5netcdf')
+    for var in qf.variables: 
+        ds[var] = qf[var].chunk(chunks)
+
     # dimensions
     ds = ds.rename({'rows':str(names.rows), 'columns':str(names.columns)})
     ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
@@ -238,34 +242,30 @@ def Level2_OLCI(
     _Internal.read_ancillary_data(ds, dirname, chunks)
 
     # instrument data
-    instrument_data_file = dirname/'instrument_data.nc'
-    instrument_data = xr.open_dataset(instrument_data_file,
-                                      engine='h5netcdf',
-                                      mask_and_scale=False,
-                                      # this variable has duplicate dimensions, drop it
-                                      drop_variables='relative_spectral_covariance'
-                                      ).chunk(chunks=chunks)
-    for x in instrument_data.variables:
-        ds[x] = instrument_data[x]
+    instrument_data = xr.open_dataset(
+        dirname/'instrument_data.nc',
+        engine='h5netcdf',
+        mask_and_scale=False,
+        # this variable has duplicate dimensions, drop it
+        drop_variables='relative_spectral_covariance'
+    ).chunk(chunks=chunks)
+    instrument_data = instrument_data.sel(bands=[int(b[2:])-1 for b in bandnames])
+    ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # chl_nn
-    fname = os.path.join(dirname, 'chl_nn.nc')
-    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'chl_nn.nc', engine='h5netcdf').chunk(chunks=chunks)
     ds['chl_nn'] = qf.CHL_NN
 
     # chl_oc4me
-    fname = os.path.join(dirname, 'chl_oc4me.nc')
-    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'chl_oc4me.nc', engine='h5netcdf').chunk(chunks=chunks)
     ds['chl_oc4me'] = qf.CHL_OC4ME
 
     # quality flags
-    fname = os.path.join(dirname, 'wqsf.nc')
-    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'wqsf.nc', engine='h5netcdf').chunk(chunks=chunks)
     ds['wqsf'] = qf.WQSF
 
     # aerosol properties
-    fname = os.path.join(dirname, 'w_aer.nc')
-    qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'w_aer.nc', engine='h5netcdf').chunk(chunks=chunks)
     ds['A865'] = qf.A865
     ds['T865'] = qf.T865
     
