@@ -2,12 +2,11 @@ from pathlib import Path
 from typing import Dict
 
 import xarray as xr
-from core.download import download_url
-from core.env import getdir
-from core.tools import raiseflag
+from core.tools import only
+from core.geo.naming import names
 from dateutil.parser import parse
 
-from eoread.common import timeit
+from eoread.tools import collect_sample, format_chunks, filter_metadata
 
 
 def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
@@ -68,9 +67,18 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     ds.attrs.update(product_name=product_pace_oci.name)
     time_start = parse(tree.attrs["time_coverage_start"])
     time_end = parse(tree.attrs["time_coverage_end"])
-    ds.attrs.update(datetime=(time_start + (time_end - time_start) / 2).isoformat())
+    ds.attrs[str(names.datetime)] = (time_start + (time_end - time_start) / 2).isoformat()
+    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
+    ds.attrs['metadata'] = filter_fn(tree.attrs, metadata_template)
+    ds.attrs['_flag_reader'] = 'eoread.pace.FlagsReader_PACE'
 
-    ds = ds.assign_coords(bands=ds.wav.astype(int))#.chunk(bands=-1)
+    # # SRF getter
+    # ds.attrs['_srf_getter'] = 'None'
+    # ds.attrs['_srf_getter_arg'] = ''
+    
+    # Add band names as coordinates
+    ds = ds.assign_coords({str(names.bands): ds[str(names.cwav)].astype(int).astype(str)})
+    ds = ds.chunk({str(names.bands): -1})
 
     # x/y dimensions
     ds = ds.rename(scans="y", pixels="x")

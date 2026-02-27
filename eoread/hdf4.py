@@ -13,7 +13,6 @@ import numpy as np
 
 from pyhdf.SD import SD, SDC
 
-from .common import DataArray_from_array
 from core import tools
 
 
@@ -103,17 +102,12 @@ def load_hdf4(filename, trim_dims=False, chunks=1000, lazy=False):
     """
     hdf = SD(str(filename))
     ds = xr.Dataset()
-    for name, (dims, shp, dtype, index) in hdf.datasets().items():
+    for name, val in hdf.datasets().items():
         sds = hdf.select(name)
-        if lazy:
-            data = HDF4_ArrayLike(sds)
-        else:
-            data = HDF4_ArrayLike(sds)[:]
-        ds[name] = DataArray_from_array(
-            data,
-            dims,
-            chunks=chunks,
-        )
+        dims = val[0]
+        data = HDF4_ArrayLike(sds)
+        if not lazy: data = data[:]
+        ds[name] = xr.DataArray(array(data), dims=dims)
         ds[name].attrs.update(clean_attrs(sds.attributes()))
 
     ds.attrs.update(clean_attrs(hdf.attributes()))

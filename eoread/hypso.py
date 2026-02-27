@@ -2,10 +2,9 @@ from dask import array as da
 from pathlib import Path
 import xarray as xr
 
-from eoread.utils import filter_metadata
-# from eotools.solar_irradiance import solar_irradiance
-from core.geo import n
-from core.tools import  drop_unused_dims
+from core.geo.naming import names
+from eoread.tools import filter_metadata, format_chunks
+from core.tools import drop_unused_dims
 from core import env, log
 
 
@@ -52,9 +51,11 @@ def Level1_HYPSO(
     ds = xr.Dataset()
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
 
     ds_root = xr.open_datatree(filepath, engine='h5netcdf')
-    if isinstance(chunks, int): chunks = [chunks]*2
     ds_products = ds_root["products"].to_dataset()
     ds_nav = ds_root["navigation"].to_dataset()
 

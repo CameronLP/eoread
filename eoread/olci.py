@@ -14,10 +14,12 @@ from core import env, log
 from core.geo import n
 from core.tools import getflags
 from core.table import read_xml
-
-from .eo import init_Rtoa
-from .common import Interpolator, DataArray_from_array
-from eoread.utils import spatial_resample, filter_metadata
+from eoread.tools import (
+    spatial_resample, 
+    filter_metadata,
+    collect_sample,
+    format_chunks
+)
 
 
 # To filter warning message raised by instrument_data reading

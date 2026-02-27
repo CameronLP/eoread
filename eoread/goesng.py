@@ -11,7 +11,6 @@ from dateutil import parser
 from pathlib import Path
 
 from eoread.hdf4 import load_hdf4
-from eoread import eo
 from dask.array import map_blocks
 
 config = {

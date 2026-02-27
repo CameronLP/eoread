@@ -11,15 +11,19 @@ import pandas as pd
 import xarray as xr
 import pyproj
 
-from core.geo import n
+from core.files import mdir
 from core.table import read_xml
 from core.network.download import download_url
 from core.files import mdir
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
-from eoread.utils import open_raster, spatial_resample, filter_metadata
-from eoread.common import DataArray_from_array
+from eoread.tools import (
+    open_raster, 
+    spatial_resample, 
+    filter_metadata, 
+    format_chunks
+)
 
 
 user_guide = 'https://www.cesbio.cnrs.fr/multitemp/ven%c2%b5s-product-format/'

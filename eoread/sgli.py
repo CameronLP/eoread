@@ -8,8 +8,12 @@ import dask.array as da
 import pandas as pd
 import xarray as xr
 
-from eoread.eo import init_geometry as init_geo
-from eoread.utils import spatial_resample, filter_metadata
+from eoread.tools import (
+    spatial_resample, 
+    filter_metadata,
+    format_chunks,
+    collect_sample
+)
 
 from core.geo import n
 from core.tools import merge, drop_unused_dims

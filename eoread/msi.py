@@ -12,14 +12,17 @@ import numpy as np
 import pyproj
 import xarray as xr
 
-from core.tools import merge, drop_unused_dims
+from core.interpolate import interp, Linear
+from core.tools import merge, drop_unused_dims, only
+from core.geo.naming import names
 from core.table import read_xml
 from core import env, log
-from core.geo import n
-from core.interpolate import interp, Linear
-
-from eoread.utils import filter_metadata, spatial_resample
-from eoread.common import DataArray_from_array
+from eoread.tools import (
+    filter_metadata, 
+    spatial_resample, 
+    format_chunks, 
+    collect_sample
+)
 
 
 user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2_User_Handbook.pdf/8869acdf-fd84-43ec-ae8c-3e80a436a16c?t=1438278087000'
