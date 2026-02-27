@@ -66,7 +66,9 @@ def Level1_MODIS(
     
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
-    if isinstance(chunks, int): chunks = [chunks]*2   
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
     
     # Revize variables
     if verbose: log.debug('Reading h4file')

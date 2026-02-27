@@ -53,6 +53,9 @@ def Level1_MERIS(
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
     bname = filepath.name
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
 
     # epr api is not thread safe: we have to use a lock for safe file access
     lock = Lock()

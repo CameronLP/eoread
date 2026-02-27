@@ -13,13 +13,8 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     """
     Read PACE OCI Level 1B products
     """
-    tree = xr.open_datatree(
-        product_pace_oci,
-        chunks={
-            "scans": 300,
-            "pixels": 200,
-        },
-    )
+    # Format chunks
+    chunks = format_chunks(chunks)
 
     geo = tree["geolocation_data"].to_dataset().reset_coords(["latitude", "longitude"])
     bdata = tree["sensor_band_parameters"].to_dataset()

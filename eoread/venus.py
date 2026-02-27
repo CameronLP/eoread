@@ -65,7 +65,9 @@ def Level1_VENUS(
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Folder does not exists'
-    if isinstance(chunks, int): chunks = [chunks]*2    
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
     
     # read metadata
     if verbose: log.debug('Reading metadata')
@@ -143,7 +145,9 @@ def Level2_VENUS(
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Folder does not exists'
-    if isinstance(chunks, int): chunks = [chunks]*2
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
     
     # read metadata
     log.debug('Reading metadata')

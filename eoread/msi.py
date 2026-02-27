@@ -55,7 +55,9 @@ def Level1_MSI(
     """
     ds = xr.Dataset()
     dirname = Path(dirname).resolve()
-    if isinstance(chunks, int): chunks = [chunks]*2
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
 
     if list(dirname.glob('GRANULE')):
         granules = list((dirname/'GRANULE').glob('*'))

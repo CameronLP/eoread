@@ -92,10 +92,10 @@ def Level1_OLCI(
     """
     ds = xr.Dataset()
     dirname = Path(dirname)
-    if (dirname/dirname.name).exists(): dirname = (dirname/dirname.name)
-    if isinstance(chunks, int): chunks = [chunks]*2
-    chunks = dict(rows=chunks[0], columns=chunks[1])
-
+    # Format chunks
+    chunks = format_chunks(chunks)
+    chunks = {'rows': chunks[str(names.rows)], 'columns': chunks[str(names.columns)]}
+    
     # read manifest file for file names and footprint
     if verbose: log.debug('Read metadata')
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
@@ -203,6 +203,10 @@ def Level2_OLCI(
     dirname = Path(dirname)
     if (dirname/dirname.name).exists():
         dirname = (dirname/dirname.name)
+        
+    # Format chunks
+    chunks = format_chunks(chunks)
+    chunks = {'rows': chunks[str(names.rows)], 'columns': chunks[str(names.columns)]}
 
     # read manifest file for file names and footprint
     manifest = read_xml(dirname/'xfdumanifest.xml')

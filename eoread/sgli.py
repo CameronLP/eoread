@@ -62,6 +62,9 @@ def Level1_SGLI(filepath: str|Path,
     ds = xr.Dataset()
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
 
     # open image_data
     tree = xr.open_datatree(filepath, engine='h5netcdf', phony_dims='sort')
