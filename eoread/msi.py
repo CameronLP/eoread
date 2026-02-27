@@ -103,19 +103,19 @@ def Level1_MSI(
             ds.attrs['totalwidth'] = e.get('NCOLS')
             break
 
-    # attributes
+    # add several attributes
     if verbose: log.debug('Add important attributes')
     sensing_time = xmlgranule['General_Info']['SENSING_TIME']['values']
-    ds.attrs[str(n.datetime)] = sensing_time
-    ds.attrs[str(n.platform)] = {
+    ds.attrs[str(names.datetime)] = sensing_time
+    ds.attrs[str(names.platform)] = {
         "S2A": "Sentinel-2A",
         "S2B": "Sentinel-2B",
         "S2C": "Sentinel-2C",
     }[platform]
-    ds.attrs[str(n.resolution)] = resolution
-    ds.attrs[str(n.sensor)] = 'MSI'
-    ds.attrs[str(n.product_name)] = dirname.name
-    ds.attrs[str(n.input_directory)] = str(dirname.parent)
+    ds.attrs[str(names.resolution)] = resolution
+    ds.attrs[str(names.sensor)] = 'MSI'
+    ds.attrs[str(names.product_name)] = dirname.name
+    ds.attrs[str(names.input_directory)] = str(dirname.parent)
     ds.attrs['user_guide'] = user_guide
 
     # msi_read_toa and quality masks
@@ -138,6 +138,9 @@ def Level1_MSI(
     else:
         if verbose: log.debug('skip reading of quality masks')
     
+    # Assign new coordinates for band and wavelength variable
+    ds = ds.assign({str(names.cwav): ((str(names.bands)), metadata['cwvl'])})
+    ds = ds.assign_coords({str(names.bands): metadata['name']})
     ds = _Internal.update_spatial_coords(ds)
     
     # Filter metadata

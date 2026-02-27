@@ -11,9 +11,9 @@ from warnings import filterwarnings
 from re import findall
 
 from core import env, log
-from core.geo import n
-from core.tools import getflags
 from core.table import read_xml
+from core.geo.naming import names
+
 from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
     spatial_resample, 
@@ -119,9 +119,9 @@ def Level1_OLCI(
         if bn == 'attributes': continue
         bandnames.append(bn)
         cwvl.append(data['centralWavelength'])
-    ds = ds.assign_coords({str(n.bands): bandnames})
-    ds = ds.assign({str(n.cwav): ((str(n.bands)),cwvl)})
-    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), ['bands_vnir']*len(cwvl))})
+    ds = ds.assign_coords({str(names.bands): bandnames})
+    ds = ds.assign({str(names.cwav): ((str(names.bands)),cwvl)})
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), ['bands_vnir']*len(cwvl))})
     
     # Check if product level is 1
     text = manifest['informationPackageMap']['contentUnit']['attributes']
@@ -162,9 +162,9 @@ def Level1_OLCI(
 
     # quality flags
     if verbose: log.debug('read quality masks')
-    qf_file = dirname/'qualityFlags.nc'
-    qf = xr.open_dataset(qf_file, engine='h5netcdf').chunk(chunks)
-    for var in qf.variables: ds[var] = qf[var]
+    # dimensions
+    ds = ds.rename({'rows':str(names.rows), 'columns':str(names.columns)})
+    ds = ds.chunk(dict(detectors=-1))   # FIXME: do this upstream
     
     # attributes
     if verbose: log.debug('add important attributes')
@@ -229,8 +229,9 @@ def Level2_OLCI(
         if bn == 'attributes': continue
         bandnames.append(bn)
         cwvl.append(data['centralWavelength'])
-    ds = ds.assign({str(n.cwav): (('bands'),cwvl)})
-    ds = ds.assign({str(n.bnames): (('bands'),bandnames)})
+    ds = ds.assign_coords({str(names.bands): bandnames})
+    ds = ds.assign({str(names.cwav): ((str(names.bands)),cwvl)})
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), ['bands_vnir']*len(cwvl))})
     
     # Retrieve product level
     text = manifest['informationPackageMap']['contentUnit']['attributes']
@@ -290,27 +291,9 @@ def Level2_OLCI(
     qf = xr.open_dataset(fname, engine='h5netcdf').chunk(chunks=chunks)
     ds['A865'] = qf.A865
     ds['T865'] = qf.T865
-
-    # flags
-    # if level == 'level1':
-        # ds[naming.flags] = xr.zeros_like(
-        #     ds.vza,
-        #     dtype=naming.flags_dtype)
-        # qf = getflags(ds.quality_flags)
-
-        # # raise LAND mask when land is raised but not fresh_inland_water
-        # raiseflag(
-        #     ds[naming.flags],
-        #     "LAND",
-        #     flags["LAND"],
-        #     ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
-        # )
-        # raiseflag(
-        #     ds[naming.flags],
-        #     "L1_INVALID",
-        #     flags["L1_INVALID"],
-        #     ds.quality_flags & qf["invalid"],
-        # )
+    
+    # dimensions
+    ds = ds.rename({'rows':str(names.rows), 'columns':str(names.columns)})
     
    # attributes
     if verbose: log.debug('add important attributes')

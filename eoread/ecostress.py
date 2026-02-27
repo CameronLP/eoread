@@ -1,9 +1,10 @@
 from eoread.tools import filter_metadata, format_chunks, collect_sample
 from eoread.flags import GenericFlags, FlagsReaderBase
 
+from core.geo.naming import names
 from core.tools import merge
 from core import env, log
-from core.geo import n
+
 from pathlib import Path
 from shapely import wkt
 from typing import Union
@@ -38,19 +39,22 @@ def Level1_ECOSTRESS(
         >>> ds = Level1_ECOSTRESS('ECOv002_L1CG_RAD_*.h5', chunks=1000)
     """
     
+    # Check that file exists
     filepath = Path(filepath)
     assert filepath.exists(), 'File does not exists'
     
     # Format chunks
     chunks = format_chunks(chunks)
     
-    # Revize variables
+    # Read provided file
     if verbose: log.debug('Reading h5file')
     data = xr.open_datatree(filepath, phony_dims='sort', engine='h5netcdf')
     raw = data['HDFEOS/GRIDS/ECO_L1CG_RAD_70m/Data Fields']
-    raw = raw.to_dataset().chunk(chunks=dict(zip(list(raw.dims), chunks)))
+    raw = raw.to_dataset().rename(
+        phony_dim_2=str(names.rows), phony_dim_3=str(names.columns)
+    ).chunk(chunks=chunks)
     
-    # Read Metadata
+    # Extract and parse metadata
     granule_mtd = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/ProductMetadata']
     attributes = data['HDFEOS/ADDITIONAL/FILE_ATTRIBUTES/StandardMetadata']
     
@@ -73,20 +77,20 @@ def Level1_ECOSTRESS(
     l1.attrs['user_guide'] = user_guide
     
     # Add general information
-    l1.attrs[str(n.datetime)] = l1.metadata['ProductionDateTime']
-    l1.attrs[str(n.platform)] = l1.metadata['PlatformShortName']
-    l1.attrs[str(n.sensor)] = l1.metadata['InstrumentShortName']
-    l1.attrs[str(n.product_name)] = filepath.name
-    l1.attrs[str(n.input_directory)] = str(filepath.parent)
-    l1.attrs[str(n.resolution)] = 70
+    l1.attrs[str(names.datetime)] = l1.metadata['ProductionDateTime']
+    l1.attrs[str(names.platform)] = l1.metadata['PlatformShortName']
+    l1.attrs[str(names.sensor)] = l1.metadata['InstrumentShortName']
+    l1.attrs[str(names.product_name)] = filepath.name
+    l1.attrs[str(names.input_directory)] = str(filepath.parent)
+    l1.attrs[str(names.resolution)] = 70
     
     # Change dimensions name and update coordinates
     new_dims = (str(n.rows),str(n.columns))    
     revize_dims = dict(zip(list(l1.dims)[:-1], new_dims))
     l1 = l1.rename_dims(revize_dims)
     l1 = l1.assign_coords({
-        str(n.bands): l1[str(n.bands)].values.astype(str),
-        str(n.bgroup): (str(n.bands), ['bands_ir']*5)
+        str(names.bands): l1[str(names.bands)].values.astype(str),
+        str(names.bgroup): (str(names.bands), ['bands_ir']*5)
     })
     
     # Add latlon variables
@@ -140,7 +144,7 @@ def Level2_ECOSTRESS(
     l2.attrs['user guide'] = user_guide
     
     # Change dimensions name and update coordinates
-    new_dims = [str(n.rows),str(n.columns)]    
+    new_dims = [str(names.rows), str(names.columns)]    
     revize_dims = dict(zip(list(l2.dims), new_dims))
     l2 = l2.rename_dims(revize_dims)
     

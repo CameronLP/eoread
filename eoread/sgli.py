@@ -16,7 +16,7 @@ from eoread.tools import (
     collect_sample
 )
 
-from core.geo import n
+from core.geo.naming import names
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
@@ -70,9 +70,13 @@ def Level1_SGLI(filepath: str|Path,
     # read metadata
     if verbose: log.debug('Reading metadata files')
     metadata = _Internal.read_metadata(ds, tree, metadata_template)
+    ds = ds.assign_coords({str(names.bands): metadata['Stored_channels'].split(',')})
+    ds = ds.assign({str(names.cwav): ((str(names.bands)), sgli_central_wavelengths)})
+    
+    # Rename radiance dimensions
     imdata = imdata.rename_dims(dict(zip(
         imdata.Lt_VN01.dims,
-        (str(n.rows), str(n.columns))
+        (str(names.rows), str(names.columns))
     )))
     shape = imdata.Lt_VN01.shape
 
@@ -84,6 +88,13 @@ def Level1_SGLI(filepath: str|Path,
     ds = _Internal.read_mask(ds, imdata, chunks)
 
     # Attributes
+    if verbose: log.debug('Add important attributes')
+    ds.attrs[str(names.datetime)] = metadata['Scene_center_time']
+    ds.attrs[str(names.product_name)] = metadata['Product_file_name']
+    ds.attrs[str(names.platform)] = 'GCOM-C'
+    ds.attrs[str(names.sensor)] = 'SGLI'
+    ds.attrs[str(names.resolution)] = 250
+    ds.attrs[str(names.input_directory)] = str(filepath.parent)
     ds.attrs['_flag_reader'] = 'eoread.sgli.FlagsReader_SGLI'
     if add_ancillary_data: 
         if verbose: log.info('Read ancillary data')

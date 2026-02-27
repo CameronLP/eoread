@@ -20,47 +20,46 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
     geo = tree["geolocation_data"].to_dataset().reset_coords(["latitude", "longitude"])
     bdata = tree["sensor_band_parameters"].to_dataset()
     obs = tree["observation_data"].to_dataset()
-
-    ds = xr.Dataset()
-    ds["latitude"] = geo["latitude"]
-    ds["longitude"] = geo["longitude"]
-
-    ds["vaa"] = geo["sensor_azimuth"].astype("float32")
-    ds["vza"] = geo["sensor_zenith"].astype("float32")
-    ds["saa"] = geo["solar_azimuth"].astype("float32")
-    ds["sza"] = geo["solar_zenith"].astype("float32")
+    
+    # Add latlon rasters, geometric angles and masks
+    ds = xr.Dataset().assign(geo.astype('float32'))
+    ds = ds.rename_vars({
+        "latitude": str(names.lat),
+        "longitude": str(names.lon),
+        "sensor_azimuth": str(names.vaa),
+        "sensor_zenith": str(names.vza),
+        "solar_azimuth": str(names.saa),
+        "solar_zenith": str(names.sza),
+        "watermask": "water"
+    })
 
     # TOA reflectance
-    ds["Rtoa"] = xr.concat(
+    ds[str(names.rtoa)] = xr.concat(
         [
             _Internal.rename_bands(obs["rhot_blue"]),
             _Internal.rename_bands(obs["rhot_red"]),
             _Internal.rename_bands(obs["rhot_SWIR"]),
         ],
-        dim="bands",
+        dim=str(names.bands),
     )
-
-    ds["wav"] = xr.concat(
+    ds[str(names.rtoa)].attrs['unit'] = None
+    
+    # Determine central wavelengths
+    ds[str(names.cwav)] = xr.concat(
         [
             _Internal.rename_bands(bdata["blue_wavelength"]),
             _Internal.rename_bands(bdata["red_wavelength"]),
             _Internal.rename_bands(bdata["SWIR_wavelength"]),
         ],
-        dim="bands",
-    )
-
-    # Flags
-    ds["flags"] = xr.zeros_like(ds.sza, dtype="uint16")
-    raiseflag(
-        ds["flags"],
-        "LAND",
-        1,
-        geo["watermask"] == 0,
+        dim=str(names.bands),
     )
 
     # Attributes
-    ds.attrs.update(sensor="OCI")
-    ds.attrs.update(product_name=product_pace_oci.name)
+    ds.attrs[str(names.sensor)] = tree.attrs['instrument']
+    ds.attrs[str(names.platform)] = tree.attrs['platform']
+    ds.attrs[str(names.product_name)] = product_pace_oci.name
+    ds.attrs[str(names.input_directory)] = str(product_pace_oci.parent)
+    ds.attrs[str(names.resolution)] = 1200
     time_start = parse(tree.attrs["time_coverage_start"])
     time_end = parse(tree.attrs["time_coverage_end"])
     ds.attrs[str(names.datetime)] = (time_start + (time_end - time_start) / 2).isoformat()
@@ -81,12 +80,12 @@ def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
 
     # Remove duplicate bands by keeping only unique wavelength values, sorted by increasing wavelength
     seen = set()
-    ds = ds.isel(bands=[
+    ds = ds.isel({str(names.bands): [
         i for i, w in sorted([
             (i, w) for i, w in enumerate(ds.bands.values)
             if w not in seen and not seen.add(w)
         ], key=lambda x: x[1])
-    ])
+    ]})
 
     return ds
 

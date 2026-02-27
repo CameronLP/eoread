@@ -13,8 +13,7 @@ import pyproj
 
 from core.files import mdir
 from core.table import read_xml
-from core.network.download import download_url
-from core.files import mdir
+from core.geo.naming import names
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
@@ -63,6 +62,7 @@ def Level1_VENUS(
         >>> print(ds.Rtoa.sel(bands='B8'))  # Red edge band
     """
     
+    # Check that folder exists
     ds = xr.Dataset()
     dirname = Path(dirname)
     assert dirname.exists(), 'Folder does not exists'
@@ -91,34 +91,36 @@ def Level1_VENUS(
     
     # read cloud altitude
     if verbose: log.debug('Open masks')
-    ratio = {str(n.columns): ds.totalwidth, str(n.rows): ds.totalheight} 
+    ratio = {str(names.columns): ds.totalwidth, str(names.rows): ds.totalheight} 
     cld = open_raster(dirname/'DATA', '*CLA_ALL.tif', engine='rasterio')
-    cld = cld.rename(x=str(n.columns), y=str(n.rows))
-    ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat')
+    cld = cld.rename(x=str(names.columns), y=str(names.rows))
+    ds['CLA_ALL'] = spatial_resample(cld, ratio, chunks, 'repeat').T
     
     if read_masks:
         
         # read cloud mask
-        cld = open_raster(dirname/'MASKS','*CLD_XS.zip','.zip').chunk(chunks)
-        ds['CLD_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
+        ds['CLD_XS'] = cld.rename(x=str(names.columns), y=str(names.rows))
         
         # read cloud mask
         usi = open_raster(dirname/'MASKS','*USI_XS.zip','.zip').chunk(chunks)
-        ds['USI_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
+        ds['USI_XS'] = usi.rename(x=str(names.columns), y=str(names.rows))
     
         # Read quality masks
-        for bn in ds[str(n.bnames)]:
+        for bn in ds[str(names.bands)]:
             
             pix = open_raster(dirname/'MASKS',f'*PIX_{bn.values}.zip','.zip').chunk(chunks)
-            ds[f'PIX_{bn.values}'] = pix.rename(x=str(n.columns), y=str(n.rows))
+            ds[f'PIX_{bn.values}'] = pix.rename(x=str(names.columns), y=str(names.rows))
             
-            sat = open_raster(dirname/'MASKS',f'*SAT_{bn.values}.zip','.zip').chunk(chunks) 
-            ds[f'SAT_{bn.values}'] = sat.rename(x=str(n.columns), y=str(n.rows))
+            ds[f'SAT_{bn.values}'] = sat.rename(x=str(names.columns), y=str(names.rows))
     
+        # Concatenate quality masks 
+        ds = merge(ds, str(names.bands), pattern=r'(.+)_(B.+)', dtype=str)    
+
     elif verbose:
         log.debug('Masks are not red due to uncompression time consuming. '
-                  'Active option read_masks to read them')
-        
+                  'Active option read_masks to read them')    
+    
+    # Reconstruct band groups
     ds = drop_unused_dims(ds)
     # Add flag reader and SRF getter in attributes
     ds.attrs['_flag_reader'] = 'eoread.venus.FlagsReader_VENUS'
@@ -168,27 +170,27 @@ def Level2_VENUS(
     # read cloud mask
     log.debug('Open masks')
     cld = open_raster(dirname/'MASKS','*CLM_XS.tif', engine='rasterio').chunk(chunks)
-    ds['CLM_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
+    ds['CLM_XS'] = cld.rename(x=str(names.columns), y=str(names.rows))
     
     # read other masks
     usi = open_raster(dirname/'MASKS','*USI_XS.tif', engine='rasterio').chunk(chunks)
-    ds['USI_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
+    ds['USI_XS'] = usi.rename(x=str(names.columns), y=str(names.rows))
     
     cld = open_raster(dirname/'MASKS','*SAT_XS.tif', engine='rasterio').chunk(chunks)
-    ds['SAT_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
+    ds['SAT_XS'] = cld.rename(x=str(names.columns), y=str(names.rows))
     
-    usi = open_raster(dirname/'MASKS','*PIX_XS.tif', engine='rasterio').chunk([1]+list(chunks))
-    ds['PIX_XS'] = usi.rename(x=str(n.columns), y=str(n.rows), band=str(n.bands))
+    usi = open_raster(dirname/'MASKS','*PIX_XS.tif', engine='rasterio').chunk(chunks)
+    ds['PIX_XS'] = usi.rename(x=str(names.columns), y=str(names.rows), band=str(names.bands))
     
     cld = open_raster(dirname/'MASKS','*IAB_XS.tif', engine='rasterio').chunk(chunks)
-    ds['IAB_XS'] = cld.rename(x=str(n.columns), y=str(n.rows))
+    ds['IAB_XS'] = cld.rename(x=str(names.columns), y=str(names.rows))
     
     usi = open_raster(dirname/'MASKS','*EDG_XS.tif', engine='rasterio').chunk(chunks)
-    ds['EDG_XS'] = usi.rename(x=str(n.columns), y=str(n.rows))
+    ds['EDG_XS'] = usi.rename(x=str(names.columns), y=str(names.rows))
     
     ds = drop_unused_dims(ds)
-    groups = ['bands_vnir']*len(ds[str(n.bands)])
-    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), groups)})
+    groups = ['bands_vnir']*len(ds[str(names.bands)])
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), groups)})
     
     return ds.unify_chunks()
 
@@ -291,7 +293,7 @@ def get_SRF(
         )
 
     ds = ds.assign_coords(wav=df['wav_um'].values*1000)
-    ds[n.wav].attrs["units"] = "nm"
+    ds[str(names.wav)].attrs["units"] = "nm"
 
     return ds
 

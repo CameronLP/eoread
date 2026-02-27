@@ -17,7 +17,6 @@ import xarray as xr
 import dask.array as da
 
 
-
 user_guide = 'https://mcst.gsfc.nasa.gov/sites/default/files/file_attachments/M1054E_PUG_2022_1005_V6.2.2_Terra_V6.2.3_Aqua.pdf'
 
 bnames = [1,2,3,4,5,6,7,8,9,10,11,12,13,13.5,14,14.5,15,16,17,18,19,20,21,22,
@@ -74,9 +73,9 @@ def Level1_MODIS(
     if verbose: log.debug('Reading h4file')
     l1 = xr.open_dataset(filepath, engine='netcdf4')
     l1 = l1.rename_vars({
-        'Latitude': str(n.lat), 'Longitude': str(n.lon),
-        'SensorZenith': str(n.vza), 'SensorAzimuth': str(n.vaa),
-        'SolarZenith': str(n.sza), 'SolarAzimuth': str(n.saa)
+        'Latitude': str(names.lat), 'Longitude': str(names.lon),
+        'SensorZenith': str(names.vza)+'_tie', 'SensorAzimuth': str(names.vaa)+'_tie',
+        'SolarZenith': str(names.sza)+'_tie', 'SolarAzimuth': str(names.saa)+'_tie'
     })
  
     # Read metadata
@@ -89,6 +88,9 @@ def Level1_MODIS(
     
     # Add band information
     if verbose: log.debug('Add central wavelength')
+    l1 = l1.assign_coords({str(names.bands): da.array(bnames).astype(str)})
+    l1 = l1.assign({str(names.cwav): ((str(names.bands)), cwvl)})
+
     # Change dimensions name and update coordinates
     l1 = _Internal.rename_dims(l1)
     
@@ -100,26 +102,23 @@ def Level1_MODIS(
     
     # Upscale latlon variables
     if verbose: log.debug('upscale latlon variables')
-    shape = {k:v for k,v in zip(l1[str(n.lat)].dims, l1[str(n.bt)].shape[1:])}
-    l1[str(n.lat)] = spatial_resample(l1[str(n.lat)], shape, chunks)
-    l1[str(n.lon)] = spatial_resample(l1[str(n.lon)], shape, chunks)
+    mapping = {k+'_red': k for k in [str(names.rows), str(names.columns)]}
+    size = {k:v for k,v in l1.sizes.items() if k in mapping.values()}
+    l1[str(names.lat)] = spatial_resample(l1[str(names.lat)].rename(mapping), size, chunks)
+    l1[str(names.lon)] = spatial_resample(l1[str(names.lon)].rename(mapping), size, chunks)
 
-    # Change dimensions name and update coordinates
-    l1 = _rename_dims(l1)
-
-    # Summarize Attributes
+    # Update attributes
     if verbose: log.debug('Add important attributes')
     attributes = l1.attrs
-    
-    l1.attrs = {}
-    l1.attrs[str(n.input_directory)] = str(filepath.parent)
-    l1.attrs[str(n.resolution)]   = resolution
-    l1.attrs[str(n.datetime)]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
+    l1.attrs = dict()
+    l1.attrs[str(names.input_directory)] = str(filepath.parent)
+    l1.attrs[str(names.resolution)]   = resolution
+    l1.attrs[str(names.datetime)]     = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['PRODUCTIONDATETIME']['VALUE'][1:-1]
     l1.attrs['night']             = str(metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['DAYNIGHTFLAG']['VALUE'] != '"Day"')
-    l1.attrs[str(n.product_name)] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
-    l1.attrs[str(n.platform)]     = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDPLATFORMSHORTNAME']['VALUE'][1:-1]
-    l1.attrs[str(n.sensor)]       = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDSENSORSHORTNAME']['VALUE'][1:-1]
-    l1.attrs[str(n.shortname)]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(names.product_name)] = metadata['INVENTORYMETADATA']['ECSDATAGRANULE']['LOCALGRANULEID']['VALUE'][1:-1]
+    l1.attrs[str(names.platform)]     = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDPLATFORMSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(names.sensor)]       = metadata['INVENTORYMETADATA']['ASSOCIATEDPLATFORMINSTRUMENTSENSOR']['ASSOCIATEDPLATFORMINSTRUMENTSENSORCONTAINER']['ASSOCIATEDSENSORSHORTNAME']['VALUE'][1:-1]
+    l1.attrs[str(names.shortname)]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
     l1.attrs['version']           = int(metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID']['VALUE'])
     l1.attrs['user_guide']        = user_guide
     l1.attrs['_flag_reader'] = 'eoread.modis.FlagsReader_MODIS'
@@ -127,8 +126,9 @@ def Level1_MODIS(
     metadata['attributes'] = attributes
     l1.attrs['metadata'] = filter_fn(metadata, metadata_template)
     
-    l1 = drop_unused_dims(l1)
-    band_dims = [b for b in l1.dims if b.startswith(str(n.bands)+'_')]
+    # Reconstruct band groups
+    l1 = drop_unused_dims(l1).chunk(chunks)
+    band_dims = [b for b in l1.dims if b.startswith(str(names.bands)+'_')]
     bands = [list(l1[b].values) for b in band_dims]
     groups = [[b]*l1.sizes[b] for b in band_dims]
     indexes = [list(l1[str(n.bands)].values).index(b) for b in sum(bands, [])]

@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from core.geo import n
-from core import env, log
+from core import log
+from core.geo.naming import names
 from core.tools import merge, drop_unused_dims
 
 from eoread.flags import GenericFlags, FlagsReaderBase
@@ -70,9 +70,9 @@ def Level1_MERIS(
     nb_bands = metadata['NUM_BANDS']
     
     # Assign band names and wavelengths
-    ds = ds.assign({str(n.cwav): ((str(n.bands)), metadata['BAND_WAVELEN']/1e3)})
-    ds = ds.assign_coords({str(n.bands): list(range(1, nb_bands+1))})
-    ds[str(n.bands)] = ds[str(n.bands)].astype(str)
+    ds = ds.assign({str(names.cwav): ((str(names.bands)), metadata['BAND_WAVELEN']/1e3)})
+    ds = ds.assign_coords({str(names.bands): list(range(1, nb_bands+1))})
+    ds[str(names.bands)] = ds[str(names.bands)].astype(str)
 
     # read all rasters
     if verbose: log.debug('load raster')
@@ -88,8 +88,8 @@ def Level1_MERIS(
     # Rename several variables and compile radiance rasters
     if verbose: log.debug('concatenate ltoa rasters')
     ds = _Internal.rename_variables(ds)
-    ds = merge(ds, dim=str(n.bands), dtype=str)
-    ds = ds.chunk({str(n.bands):1})
+    ds = merge(ds, dim=str(names.bands), dtype=str)
+    ds = ds.chunk({str(names.bands):1})
     
     if verbose: log.debug('read auxilary data')
     if dir_smile is None: dir_smile = Path(__file__).parent/'auxdata'/'meris'
@@ -105,28 +105,28 @@ def Level1_MERIS(
     F0 = pd.read_csv(file_sun_spectral_flux, dtype='float32', delimiter='\t').to_xarray()
     detector_wavelength = pd.read_csv(file_detector_wavelength, delimiter='\t').to_xarray()
 
-    assert len(F0) == len(ds[str(n.bands)]) + 1
-    assert len(detector_wavelength) == len(ds[str(n.bands)]) + 1
+    assert len(F0) == len(ds[str(names.bands)]) + 1
+    assert len(detector_wavelength) == len(ds[str(names.bands)]) + 1
     
     if read_auxdata:
         
         # Compute solar Flux
         valid_mask = (ds.detector_index >= 0).load()
         F0 = F0.sel(index=ds.detector_index.where(valid_mask, 0))
-        F0 = merge(F0, dim=str(n.bands), pattern=r'(.+)_band(\d+)')
-        ds[str(n.F0)] = F0['E0'].where(valid_mask, np.nan)
+        F0 = merge(F0, dim=str(names.bands), pattern=r'(.+)_band(\d+)')
+        ds[str(names.F0)] = F0['E0'].where(valid_mask, np.nan)
         
         # Compute wavelengths
         wav = detector_wavelength.sel(index=ds.detector_index.where(valid_mask, 0))
-        wav = merge(wav, dim=str(n.bands), pattern=r'(.+)_band(\d+)')
-        ds[str(n.wav)] = wav['lam'].where(valid_mask, np.nan)
+        wav = merge(wav, dim=str(names.bands), pattern=r'(.+)_band(\d+)')
+        ds[str(names.wav)] = wav['lam'].where(valid_mask, np.nan)
 
     # Read attributes
-    ds.attrs[str(n.platform)] = 'ENVISAT'
-    ds.attrs[str(n.sensor)] = 'MERIS'
-    ds.attrs[str(n.resolution)] = 300
-    ds.attrs[str(n.product_name)] = metadata['PRODUCT'].decode()
-    ds.attrs[str(n.input_directory)] = str(filepath.parent)
+    ds.attrs[str(names.platform)] = 'ENVISAT'
+    ds.attrs[str(names.sensor)] = 'MERIS'
+    ds.attrs[str(names.resolution)] = 300
+    ds.attrs[str(names.product_name)] = metadata['PRODUCT'].decode()
+    ds.attrs[str(names.input_directory)] = str(filepath.parent)
     ds.attrs['user_guide'] = user_guide
     ds.attrs['_flag_reader'] = 'eoread.meris.FlagsReader_MERIS'
 
@@ -134,11 +134,11 @@ def Level1_MERIS(
     dstart = _Internal.read_date(metadata['SENSING_START'])
     dstop = _Internal.read_date(metadata['SENSING_STOP'])
     d = dstart + (dstop - dstart)//2
-    ds.attrs[str(n.datetime)] = d.isoformat()
+    ds.attrs[str(names.datetime)] = d.isoformat()
     
     # Add band groups 
     ds = drop_unused_dims(ds)
-    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), ['bands_vnir']*nb_bands)})
+    ds = ds.assign_coords({str(names.bgroup): (str(names.bands), ['bands_vnir']*nb_bands)})
     
     return ds.unify_chunks()
 

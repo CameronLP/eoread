@@ -59,40 +59,32 @@ def Level1_HYPSO(
 
     # get _indirect geographical coordinates and angles if available
     if verbose: log.debug('Read and compute geometric angles')
-    ds[str(n.lat)] = ds_nav["latitude"].chunk(chunks)
-    ds[str(n.lon)] = ds_nav["longitude"].chunk(chunks)
-    ds[str(n.vza)] = ds_nav["sensor_zenith"].chunk(chunks)
-    ds[str(n.sza)] = ds_nav["solar_zenith"].chunk(chunks)
-    ds[str(n.vaa)] = ds_nav["sensor_azimuth"].chunk(chunks)
-    ds[str(n.saa)] = ds_nav["solar_azimuth"].chunk(chunks)
+    ds[str(names.lat)] = ds_nav["latitude"].chunk(chunks)
+    ds[str(names.lon)] = ds_nav["longitude"].chunk(chunks)
+    ds[str(names.vza)] = ds_nav["sensor_zenith"].chunk(chunks)
+    ds[str(names.sza)] = ds_nav["solar_zenith"].chunk(chunks)
+    ds[str(names.vaa)] = ds_nav["sensor_azimuth"].chunk(chunks)
+    ds[str(names.saa)] = ds_nav["solar_azimuth"].chunk(chunks)
 
     if verbose: log.debug('Read top of atmosphere data')
-    ds[str(n.ltoa)] = ds_products['Lt'].chunk(list(chunks)+[1])
-    ds = ds.rename(lines=str(n.rows), samples=str(n.columns), bands=str(n.bands))
-    ds[str(n.ltoa)].attrs['unit'] = 'W/sr/m^2'
+    ds[str(names.ltoa)] = ds_products['Lt'].chunk(list(chunks)+[1])
+    ds = ds.rename(lines=str(names.rows), samples=str(names.columns), bands=str(names.bands))
+    ds[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
     
     if verbose: log.debug('Extract central wavelength')
-    ds = ds.assign_coords({str(n.bands): da.arange(len(ds[str(n.bands)]))+1})
-    ds = ds.assign({str(n.cwav): ((str(n.bands)), ds_products['Lt'].wavelengths),
-         str(n.bnames): ((str(n.bands)), ds[str(n.bands)].data.astype(str))})
+    ds = ds.assign_coords({
+        str(names.bands): ds[str(names.bands)].data.astype(str),
+    })
+    ds = ds.assign({str(names.cwav): ((str(names.bands)), ds_products['Lt'].wavelengths)})
 
-    # # read solar irradiance
-    # F0 = solar_irradiance("LISIRD", variant="1nm")
-    # ds["F0"] = interp(F0, wavelength=Linear(ds.wav))
-    # # convert it to a unit compatible with Ltoa
-    # assert ds.F0.units == "W m-2 nm-1"
-    # ds["F0"] = ds.F0 * 1000
-    # ds.F0.attrs.update(units="W m-2 um-1")
-    # ds = ds.rename(lines="y", samples="x")
-
-    # acquisition datetime
+    # Add attributes
     if verbose: log.debug('Add important attributes')
-    ds.attrs[str(n.sensor)] = ds_root.attrs['instrument']
-    ds.attrs[str(n.platform)] = 'HYPSO'
-    ds.attrs[str(n.resolution)] = 40
-    ds.attrs[str(n.product_name)] = filepath.name
-    ds.attrs[str(n.input_directory)] = str(filepath.parent)
-    ds.attrs[str(n.datetime)] = ds_root.attrs['date_aquired']
+    ds.attrs[str(names.sensor)] = ds_root.attrs['instrument']
+    ds.attrs[str(names.platform)] = 'HYPSO'
+    ds.attrs[str(names.resolution)] = 40
+    ds.attrs[str(names.product_name)] = filepath.name
+    ds.attrs[str(names.input_directory)] = str(filepath.parent)
+    ds.attrs[str(names.datetime)] = ds_root.attrs['date_aquired']
     
     # Add metadata
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
