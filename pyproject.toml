@@ -3,24 +3,17 @@ name = "eoread"
 authors = [{name = "HYGEOS team"}]
 description = "Modular implementation of satellite data input/output relying on xarray."
 license = "Apache 2.0"
-version = "0.4.1"
+version = "0.5.0"
 requires-python = "< 3.14"
 readme = "README.md"
 dependencies = [
-    "lxml",
-    "pyproj",
-    "pysolar",
-    "pyepr",
-    "rioxarray",
-    "cdsapi",
-    "shapely", 
-    "h5netcdf", "h5py"
+    "lxml", "pyproj", "pysolar", "pyepr",
+    "rioxarray", "h5netcdf", "h5py", "netcdf4"
 ]
 
 [project.optional-dependencies]
 git = [
     "core @ git+https://github.com/hygeos/core.git",
-    "sand @ git+https://github.com/hygeos/sand.git"
 ]
 
 [build-system]
@@ -33,12 +26,10 @@ platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
 eoread = { path = ".", editable = true, extras = ["git"]}
-eotools = { git = "git+https://github.com/hygeos/eotools.git" }
 
 [tool.pixi.tasks]
 tests = "pytest tests/"
 reader = "python3 scripts/eval_readers.py"
-clean_sample = "echo SAMPLE_DATA/*"
 
 [tool.pixi.dependencies]
 pytest = "*"
@@ -47,8 +38,6 @@ pytest-xdist = "*"
 matplotlib-base = "*"
 ipykernel = "*"
 libgdal-jp2openjpeg = "*"  # Required to read compress jp2 file in MSI reader
-cdsapi = "*"
-eumdac = "*"
 pyhdf = "*"
 numba = "*"
 
