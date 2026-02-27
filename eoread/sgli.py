@@ -8,6 +8,7 @@ import dask.array as da
 import pandas as pd
 import xarray as xr
 
+from eoread.flags import GenericFlags, FlagsReaderBase
 from eoread.tools import (
     spatial_resample, 
     filter_metadata,
@@ -83,9 +84,43 @@ def Level1_SGLI(filepath: str|Path,
     ds = _Internal.read_mask(ds, imdata, chunks)
 
     # Attributes
+    ds.attrs['_flag_reader'] = 'eoread.sgli.FlagsReader_SGLI'
     if add_ancillary_data: 
         if verbose: log.info('Read ancillary data')
         ds = _Internal.read_ancillary(ds, tree)
+
+
+class FlagsReader_SGLI(FlagsReaderBase):
+    """
+    Flags reader for SGLI (Second-generation Global Imager) data from GCOM-C.
+    
+    Provides access to quality flags including land/water mask and
+    quality indicators.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['quality_flag','water']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'quality_flag'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the SGLI dataset.
+        
+        Args:
+            ds: SGLI dataset containing quality_flag and water variables
+            flag_name: Standard flag identifier (L1_INVALID or LAND)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['quality_flag']
+        if flag_name == GenericFlags.LAND:
+            return ~ds['water']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+
 
 ################################################################################
 # Intern methods

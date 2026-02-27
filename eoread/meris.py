@@ -21,6 +21,7 @@ from core.geo import n
 from core import env, log
 from core.tools import merge, drop_unused_dims
 
+from eoread.flags import GenericFlags, FlagsReaderBase
 from eoread.tools import filter_metadata, collect_sample, format_chunks
 
 
@@ -127,6 +128,7 @@ def Level1_MERIS(
     ds.attrs[str(n.product_name)] = metadata['PRODUCT'].decode()
     ds.attrs[str(n.input_directory)] = str(filepath.parent)
     ds.attrs['user_guide'] = user_guide
+    ds.attrs['_flag_reader'] = 'eoread.meris.FlagsReader_MERIS'
 
     # Read date
     dstart = _Internal.read_date(metadata['SENSING_START'])
@@ -143,6 +145,37 @@ def Level1_MERIS(
 
 def get_sample(level: int=1) -> Path:
     return collect_sample(f'LEVEL{level}_MERIS', None)
+
+
+class FlagsReader_MERIS(FlagsReaderBase):
+    """
+    Flags reader for MERIS (Medium Resolution Imaging Spectrometer) data.
+    
+    Provides access to MERIS L1 flags for identifying invalid pixels and
+    other quality indicators.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['l1_flags']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'l1_flags'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the MERIS dataset.
+        
+        Args:
+            ds: MERIS dataset containing l1_flags variable
+            flag_name: Standard flag identifier (currently only L1_INVALID supported)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['l1_flags']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+
 
 ################################################################################
 # Intern methods

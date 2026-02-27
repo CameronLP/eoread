@@ -14,6 +14,7 @@ from core import env, log
 from core.geo import n
 from core.tools import getflags
 from core.table import read_xml
+from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
     spatial_resample, 
     filter_metadata,
@@ -168,6 +169,7 @@ def Level1_OLCI(
     # attributes
     if verbose: log.debug('add important attributes')
     _Internal.add_attributes(ds, manifest, dirname)
+    ds.attrs['_flag_reader'] = 'eoread.olci.FlagsReader_OLCI'
     
     if verbose: log.debug('compute reflectances')
     ds = _Internal.olci_init_spectral(ds)
@@ -325,6 +327,37 @@ def Level2_OLCI(
 def get_sample(level: int = 1) -> Path:
     return collect_sample(f'LEVEL{level}_OLCI', 'eumdac', 'SENTINEL-3-OLCI-FR', level)
 
+
+class FlagsReader_OLCI(FlagsReaderBase):
+    """
+    Flags reader for OLCI (Sentinel-3) data.
+    
+    Provides access to OLCI quality flags for identifying invalid pixels
+    and quality indicators.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['quality_flags']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'quality_flags'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the OLCI dataset.
+        
+        Args:
+            ds: OLCI dataset containing quality_flags variable
+            flag_name: Standard flag identifier (L1_INVALID or QUALITY)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['quality_flags']
+        elif flag_name == GenericFlags.QUALITY:
+            return ds['quality_flags']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
 
 
 ################################################################################

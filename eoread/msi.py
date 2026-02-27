@@ -17,6 +17,8 @@ from core.tools import merge, drop_unused_dims, only
 from core.geo.naming import names
 from core.table import read_xml
 from core import env, log
+
+from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
     filter_metadata, 
     spatial_resample, 
@@ -142,7 +144,7 @@ def Level1_MSI(
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     ds.attrs['metadata_granule'] = filter_fn(xmlgranule, metadata_template)
     ds.attrs['metadata'] = filter_fn(xmlroot, metadata_template)
-
+    ds.attrs['_flag_reader'] = 'eoread.msi.FlagsReader_MSI'
     ds = drop_unused_dims(ds)
     if resolution:
         ds = ds.set_coords(str(n.bgroup))
@@ -406,6 +408,51 @@ def get_sample(level: int = 1) -> Path:
         ImportError: If the 'sand' module is not installed
     """
     return collect_sample(f'LEVEL{level}_MSI', 'cdse', 'SENTINEL-2-MSI', level)
+
+
+class FlagsReader_MSI(FlagsReaderBase):
+    """
+    Flags reader for MSI (Sentinel-2) data.
+    
+    Since MSI L1C products don't currently read quality masks in eoread,
+    this flags reader determines flags based on data validity.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return [str(names.vza)]  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return str(names.vza)
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the MSI dataset.
+        
+        Args:
+            ds: MSI dataset
+            flag_name: Standard flag identifier (currently only L1_INVALID supported)
+            
+        Returns:
+            Boolean DataArray indicating invalid pixels (True where VZA is NaN)
+            
+        Raises:
+            ValueError: If the requested flag type is not supported
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            # L1_INVALID is True where vza is NaN (invalid data)
+            return xr.DataArray(
+                np.isnan(ds[str(names.vza)]),
+                dims=ds[str(names.vza)].dims,
+                coords=ds[str(names.vza)].coords
+            )
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+    
+    def getflag_raw(self, ds: xr.Dataset, flag_name: str) -> xr.DataArray:
+        """Get a raw flag (not implemented for MSI since no quality masks are read)."""
+        raise NotImplementedError("MSI does not currently read raw quality flags")
 
 
 ################################################################################

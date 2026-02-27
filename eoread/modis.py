@@ -1,3 +1,4 @@
+from eoread.flags import GenericFlags, FlagsReaderBase
 from eoread.tools import (
     filter_metadata, 
     spatial_resample, 
@@ -121,7 +122,7 @@ def Level1_MODIS(
     l1.attrs[str(n.shortname)]    = metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['SHORTNAME']['VALUE'][1:-1]
     l1.attrs['version']           = int(metadata['INVENTORYMETADATA']['COLLECTIONDESCRIPTIONCLASS']['VERSIONID']['VALUE'])
     l1.attrs['user_guide']        = user_guide
-
+    l1.attrs['_flag_reader'] = 'eoread.modis.FlagsReader_MODIS'
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     metadata['attributes'] = attributes
     l1.attrs['metadata'] = filter_fn(metadata, metadata_template)
@@ -141,6 +142,35 @@ def Level1_MODIS(
 def get_sample(level: int = 1) -> Path:
     return collect_sample(f'LEVEL{level}_MODISA_MYD', 'nasa', 'AQUA-MODIS-LR', level)
     
+
+class FlagsReader_MODIS(FlagsReaderBase):
+    """
+    Flags reader for MODIS data.
+    
+    Provides access to MODIS quality flags for identifying invalid pixels.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['gflags']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'gflags'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the MODIS dataset.
+        
+        Args:
+            ds: MODIS dataset containing gflags variable
+            flag_name: Standard flag identifier (currently only L1_INVALID supported)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['gflags']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+
 
 ################################################################################
 # Intern methods

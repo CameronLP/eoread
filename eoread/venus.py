@@ -18,6 +18,7 @@ from core.files import mdir
 from core.tools import merge, drop_unused_dims
 from core import env, log
 
+from eoread.flags import GenericFlags, FlagsReaderBase
 from eoread.tools import (
     open_raster, 
     spatial_resample, 
@@ -119,11 +120,8 @@ def Level1_VENUS(
                   'Active option read_masks to read them')
         
     ds = drop_unused_dims(ds)
-    groups = ['bands_vnir']*len(ds[str(n.bands)])
-    ds = merge(ds, str(n.bands), pattern=r'(.+)_B(.+)', dtype=str)    
-    ds = ds.assign_coords({str(n.bgroup): (str(n.bands), groups)})
-    
-    if v1_compat: return _v1_compat(ds, chunks)  
+    # Add flag reader and SRF getter in attributes
+    ds.attrs['_flag_reader'] = 'eoread.venus.FlagsReader_VENUS'
     return ds.unify_chunks()
 
 
@@ -296,6 +294,46 @@ def get_SRF(
     ds[n.wav].attrs["units"] = "nm"
 
     return ds
+
+
+class FlagsReader_VENUS(FlagsReaderBase):
+    """
+    Flags reader for VENµS (Vegetation and Environment monitoring on a New Micro-Satellite) data.
+    
+    Provides access to cloud masks and data validity flags.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['CLA_ALL', 'CLD_XS']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'CLA_ALL'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the VENµS dataset.
+        
+        Args:
+            ds: VENµS dataset containing CLA_ALL and CLD_XS variables
+            flag_name: Standard flag identifier (L1_INVALID or CLOUD)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            # L1_INVALID is True where vza is NaN (invalid data)
+            return xr.DataArray(
+                ds['CLA_ALL'].isnull(),
+                dims=ds['CLA_ALL'].dims,
+                coords=ds['CLA_ALL'].coords
+            )
+        elif flag_name == GenericFlags.CLOUD:
+            return xr.DataArray(
+                ds['CLD_XS'],
+                dims=ds['CLD_XS'].dims,
+                coords=ds['CLD_XS'].coords
+            )
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
 
 
 ################################################################################

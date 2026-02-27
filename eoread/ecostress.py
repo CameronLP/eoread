@@ -1,4 +1,6 @@
 from eoread.tools import filter_metadata, format_chunks, collect_sample
+from eoread.flags import GenericFlags, FlagsReaderBase
+
 from core.tools import merge
 from core import env, log
 from core.geo import n
@@ -64,6 +66,7 @@ def Level1_ECOSTRESS(
     # Add attributes
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     if verbose: log.debug('add important attributes')
+    l1.attrs['_flag_reader'] = 'eoread.ecostress.FlagsReader_ECOSTRESS'
     l1.attrs['metadata'] = {k: v.item() for k,v in attributes.items()}
     l1.attrs['metadata'] = filter_fn(l1.attrs['metadata'], metadata_template)
     l1.attrs['hdfeos_info'] = filter_fn(p.data, metadata_template)
@@ -163,6 +166,57 @@ def get_sample(level: int = 1) -> Path:
         ImportError: If the 'sand' module is not installed
     """
     return collect_sample(f'LEVEL{level}_ECOSTRESS', 'nasa', 'ISS-ECOSTRESS', level)
+
+
+class FlagsReader_ECOSTRESS(FlagsReaderBase):
+    """
+    Flags reader for ECOSTRESS data products.
+    
+    Provides standardized access to ECOSTRESS quality flags including land/water mask,
+    data quality, cloud mask, and invalid data detection.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['water', str(names.ltoa)]  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'water'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the ECOSTRESS dataset.
+        
+        Args:
+            ds: ECOSTRESS dataset containing flag variables
+            flag_name: Standard flag identifier (L1_INVALID, LAND, QUALITY, or CLOUD)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            # L1_INVALID is True where vza is NaN (invalid data)
+            band = ds[str(names.ltoa)].sel({str(names.bands): '4'}).isnull()
+            return xr.DataArray(
+                np.isnan(band),
+                dims=band.dims,
+                coords=band.coords
+            )
+        elif flag_name == GenericFlags.LAND:
+            return xr.DataArray(
+                ~ds['water'],
+                dims=ds['water'].dims,
+                coords=ds['water'].coords
+            )
+        elif flag_name == GenericFlags.QUALITY:
+            mask = ds['data_quality'].max(str(names.bands))
+            return xr.DataArray(mask, dims=mask.dims, coords=mask.coords)
+        elif flag_name == GenericFlags.CLOUD:
+            return xr.DataArray(
+                ds['cloud'],
+                dims=ds['cloud'].dims,
+                coords=ds['cloud'].coords
+            )
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
 
 
 ################################################################################

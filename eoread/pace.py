@@ -7,6 +7,7 @@ from core.geo.naming import names
 from dateutil.parser import parse
 
 from eoread.tools import collect_sample, format_chunks, filter_metadata
+from eoread.flags import GenericFlags, FlagsReaderBase
 
 
 def Level1B_PACE_OCI(product_pace_oci: Path) -> xr.Dataset:
@@ -100,6 +101,38 @@ def get_sample(level: int = 1) -> Path:
         px: sample pixel coordinates within the roi
     """
     return collect_sample(f'LEVEL{level}_PACE', 'nasa', 'PACE-OCI', level)
+
+
+class FlagsReader_PACE(FlagsReaderBase):
+    """
+    Flags reader for PACE OCI (Ocean Color Instrument) data.
+    
+    Provides access to quality flags including land/water mask and
+    quality indicators.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['quality_flag','water']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'quality_flag'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the PACE dataset.
+        
+        Args:
+            ds: PACE dataset containing quality_flag and water variables
+            flag_name: Standard flag identifier (L1_INVALID or LAND)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['quality_flag']
+        if flag_name == GenericFlags.LAND:
+            return ~ds['water']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
 
 
 ################################################################################
