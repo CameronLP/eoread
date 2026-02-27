@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import re
+import numpy as np
+import xarray as xr
+import dask.array as da
+
+from os import system
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Union
+
+from eoread.flags import GenericFlags, FlagsReaderBase
+from eoread.tools import (
+    filter_metadata,
+    collect_sample,
+    format_chunks,
+    open_raster
+)
+
+from core import log
+from core.interpolate import interp, Linear
+from core.tools import merge, drop_unused_dims, only
+from core.geo.naming import names
+from core.table import read_xml
+
+
+# Central wavelengths aren't described in metadata. Thus, they are hard-coded
+cwvl = [442.96,482.04,561.41,654.59,864.67,1608.86,2200.73,1373.43,10895,12050,]
+
+user_guide = 'https://greenpolicy360.net/images/Landsat8DataUsersHandbook.pdf'
+
+def Level1_OLI(
+        dirname: Union[str, Path],
+        l9_angles: Union[str, Path, None] = None,
+        chunks: Union[int, tuple] = 500,
+        metadata_template: Union[list, None] = None,
+        verbose: bool = True
+    ) -> xr.Dataset:
+    """
+    Read a Landsat-8 or Landsat-9 OLI Level1 product as an xarray.Dataset.
+    
+    OLI (Operational Land Imager) provides 9 spectral bands from coastal aerosol
+    to SWIR with 30m resolution, plus a 15m panchromatic band.
+
+    Args:
+        dirname: Path to the Landsat OLI directory
+                (Example: 'LC09_L1TP_014034_20220618_20230411_02_T1/')
+        l9_angles: Path to l9_angles executable for generating angle files when missing.
+                  The program generates sensor and solar angles with:
+                  `l9_angles LC0*_ANG.txt BOTH 1 -b 1`
+                  
+                  Available at: https://www.usgs.gov/land-resources/nli/landsat/
+                  solar-illumination-and-sensor-viewing-angle-coefficient-files
+                  
+                  Can be compiled with:
+                  ```
+                  wget https://landsat.usgs.gov/sites/default/files/documents/L9_ANGLES_2_7_0.tgz
+                  tar xzf L9_ANGLES_2_7_0.tgz && cd l9_angles && make
+                  ```
+        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
+        metadata_template: List of metadata keys to include. If None, includes all metadata.
+                          Use empty list [] for minimal metadata.
+        v1_compat: If True, formats output to match version 1 structure
+        
+    Example:
+        >>> ds = Level1_OLI('LC09_L1TP_014034_20220618_20230411_02_T1/')
+    """
+    
+    ds = xr.Dataset()
+    dirname = Path(dirname)
+    assert dirname.exists(), 'Directory does not exists'
+    
+    # Format chunks
+    chunks = format_chunks(chunks)
+
+    # Read metadata
+    if verbose: log.debug('read metadata')
+    metadata = _Internal.read_metadata(ds, dirname, metadata_template)
+    if isinstance(chunks, int): chunks = [chunks]*2
+
+    # get datetime
+    d = metadata['IMAGE_ATTRIBUTES']['DATE_ACQUIRED']
+    t = metadata['IMAGE_ATTRIBUTES']['SCENE_CENTER_TIME']
+    ds.attrs[str(names.datetime)] = d+'T'+t
+    
+    # Reading different rasters
+    if verbose: log.debug('read geometric angles')
+    _Internal.read_geometry(ds, dirname, l9_angles, chunks)
+    if verbose: log.debug('read TOA rasters')
+    ds = _Internal.read_radiometry(ds, dirname, chunks)
+    if verbose: log.debug('read masks')
+    _Internal.read_masks(ds, dirname, chunks)
+    _Internal.read_coordinates(ds, chunks)
+
+    # other attributes
+    if verbose: log.debug('add important attributes')
+    ds.attrs[str(names.platform)] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
+    ds.attrs[str(names.sensor)] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
+    ds.attrs[str(names.product_name)] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
+    ds.attrs[str(names.input_directory)] = str(dirname.parent)
+    ds.attrs[str(names.resolution)] = 30
+    ds.attrs['user_guide'] = user_guide
+    ds.attrs['_flag_reader'] = 'eoread.oli.FlagsReader_OLI'
+
+    # SRF getter
+    mission = ds.attrs[str(names.platform)][-1]
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter_arg'] = f'landsat_{mission}_oli'
+    
+    # Manage dimensions
+    ds = ds.assign({str(names.cwav):((str(names.bands)), cwvl)})    
+    ds = ds.rename({'y': str(names.rows), 'x': str(names.columns)})
+    ds = ds.transpose(..., str(names.rows), str(names.columns))   
+    ds = drop_unused_dims(ds).unify_chunks()
+    ds = ds.set_coords(names.bgroup)
+    
+    return ds
+
+
+def get_sample(level: int, mission: int = 8) -> Path:
+    """
+    Retrieve a sample Landsat OLI product directory for testing.
+    
+    Returns paths to pre-configured sample products from environment variables.
+
+    Args:
+        level: Processing level (1 for Level1, 2 for Level2)
+        mission: Landsat mission number (8 for Landsat-8, 9 for Landsat-9)
+
+    Returns:
+        Path to the Landsat OLI product directory
+        
+    Raises:
+        ValueError: If level is not 1 or 2
+        
+    Example:
+        >>> oli_dir = get_sample(level=1, mission=9)
+        >>> ds = Level1_OLI(oli_dir)
+    """
+    collec = f'LANDSAT-{mission}-OLI'
+    return collect_sample(f'LEVEL{level}_L{mission}', 'usgs', collec, level)
+
+
+class FlagsReader_OLI(FlagsReaderBase):
+    """
+    Flags reader for OLI (Operational Land Imager) data from Landsat-8/9.
+    
+    Provides access to quality flags from the QA_PIXEL band for identifying
+    clouds, cloud shadows, snow, and other quality indicators.
+    """
+    
+    def requires(self) -> list[str]:
+        """Variables required for flag determination."""
+        return ['QA_PIXEL']  # Use viewing zenith angle as reference
+    
+    def dims_like(self) -> str:
+        """Returns a variable name with the same shape as the output."""
+        return 'QA_PIXEL'
+    
+    def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
+        """
+        Retrieve a specific quality flag from the OLI dataset.
+        
+        Args:
+            ds: OLI dataset containing QA_PIXEL variable
+            flag_name: Standard flag identifier (currently only L1_INVALID supported)
+        """
+        if flag_name == GenericFlags.L1_INVALID:
+            return ds['QA_PIXEL']
+        else:
+            raise ValueError(f"Unsupported flag: {flag_name}")
+
+
+################################################################################
+# Intern methods
+################################################################################
+
+class _Internal:
+
+    @staticmethod
+    def read_metadata(ds: xr.Dataset, dirname: Path, template: Union[list, None]) -> dict:
+        """Read and parse MTL XML metadata file."""
+        filter_fn = (lambda x,y: x) if template is None else filter_metadata
+        data_mtl = read_xml(only(list(dirname.glob('LC*_MTL.xml'))))
+        ds.attrs['metadata'] = filter_fn(data_mtl, template)
+        return data_mtl
+
+    @staticmethod
+    def read_coordinates(ds: xr.Dataset, chunks: list) -> None:
+        """Compute latitude and longitude arrays from corner coordinates."""
+        # Compute tie points
+        points = ds.metadata['PROJECTION_ATTRIBUTES']
+        lat = xr.DataArray([
+            [points['CORNER_UL_LAT_PRODUCT'],points['CORNER_UR_LAT_PRODUCT']],
+            [points['CORNER_LL_LAT_PRODUCT'],points['CORNER_LR_LAT_PRODUCT']],
+        ])
+        lon = xr.DataArray([
+            [points['CORNER_UL_LON_PRODUCT'],points['CORNER_UR_LON_PRODUCT']],
+            [points['CORNER_LL_LON_PRODUCT'],points['CORNER_LR_LON_PRODUCT']],
+        ])
+        
+        # Compute latlon arrays
+        x = da.linspace(0, 1, len(ds[str(names.columns)]))
+        x = xr.DataArray(x, dims=(str(names.columns))).chunk(chunks[str(names.columns)])
+        y = da.linspace(0, 1, len(ds[str(names.rows)]))
+        y = xr.DataArray(y, dims=(str(names.rows))).chunk(chunks[str(names.rows)])
+        ds[str(names.lat)] = interp(lat, dim_0=Linear(y), dim_1=Linear(x))
+        ds[str(names.lon)] = interp(lon, dim_0=Linear(y), dim_1=Linear(x))
+
+        ds.attrs['totalheight'] = ds.y.size
+        ds.attrs['totalwidth'] = ds.x.size
+
+    @staticmethod
+    def gen_l9_angles(dirname: Path, l9_angles: Union[str, Path, None] = None) -> None:
+        """Generate angle files using the l9_angles executable."""
+        log.debug(f'Geometry file is missing in {dirname}, generating it with {l9_angles}...')
+        angles_txt_file = list(dirname.glob('LC*_ANG.txt'))
+        assert len(angles_txt_file) == 1, 'angle file is missing'
+        assert l9_angles is not None and Path(l9_angles).exists(), \
+        'Please provide a valid executable file to compute angles'
+        path_exe = Path(l9_angles).absolute()
+        path_angles = Path(angles_txt_file[0]).absolute()
+        with TemporaryDirectory() as tmpdir:
+            system(f"cd {tmpdir} && {path_exe} {path_angles} BOTH 1 -b 1")
+            system(f"cp -v {tmpdir/'*'} {dirname}")
+
+    @staticmethod
+    def read_geometry(ds: xr.Dataset, dirname: Path, l9_angles: Union[str, Path, None], chunks: list) -> None:
+        """Read or generate sensor and solar angle rasters."""
+        # read sensor and solar angles
+        for name, search in [(str(names.saa), 'LC*_SAA.TIF'),
+                            (str(names.sza), 'LC*_SZA.TIF'),
+                            (str(names.vaa), 'LC*_VAA.TIF'),
+                            (str(names.vza), 'LC*_VZA.TIF')]:
+            data = open_raster(dirname, search, engine='rasterio').chunk(chunks)
+            ds[name] = (data/100).astype('float32')
+        
+        if (str(names.saa) not in ds) and (l9_angles is not None):
+            _Internal.gen_l9_angles(dirname, l9_angles)
+
+    @staticmethod
+    def read_radiometry(ds: xr.Dataset, dirname: Path, chunks: list) -> xr.Dataset:
+        """Read and calibrate radiance, reflectance, and brightness temperature."""
+        rescale = ds.metadata['LEVEL1_RADIOMETRIC_RESCALING']
+        thermal = ds.metadata['LEVEL1_THERMAL_CONSTANTS']
+        
+        # Read Panchromatic band
+        dims = (str(names.columns)+'_pan', str(names.rows)+'_pan')
+        files = list(dirname.glob(f'LC*_B8.TIF'))
+        assert len(files) == 1, 'None or several files have been found for panchromatic band'
+        a, m = rescale[f'RADIANCE_ADD_BAND_8'], rescale[f'RADIANCE_MULT_BAND_8']
+        data = xr.open_dataarray(files[0], engine='rasterio').chunk(chunks)
+        ds['Panchromatic'] = (dims,(m*data.squeeze()+a).data.astype('float32'))
+        
+        for f in dirname.glob(f'LC*_B*.TIF'):
+            
+            # Retrieve band name
+            search = re.search(r'_B[0-9]*', f.name)
+            b = f.name[search.start():search.end()]
+            
+            # Drop Panchromatic band
+            if 'B8' in b: continue
+            
+            # read radiances
+            a = rescale[f'RADIANCE_ADD_BAND_{b[2:]}']
+            m = rescale[f'RADIANCE_MULT_BAND_{b[2:]}']
+            data = xr.open_dataarray(f, engine='rasterio').chunk(chunks)
+            ds[str(names.ltoa)+b] = (m*data.squeeze()+a).astype('float32')
+        
+            # read reflectances
+            if f'REFLECTANCE_ADD_BAND_{b[2:]}' not in rescale:
+                ds[str(names.rtoa)+b] = xr.full_like(ds[str(names.ltoa)+b], np.nan, dtype='float32')
+            else:        
+                a = rescale[f'REFLECTANCE_ADD_BAND_{b[2:]}']
+                m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
+                ds[str(names.rtoa)+b] = (m*data.squeeze()+a).astype('float32')
+                ds[names.bgroup+b] = 'bands_vnir'      
+            
+            # read brightness temperatures
+            if f'K1_CONSTANT_BAND_{b[2:]}' not in thermal:
+                ds[str(names.bt)+b] = xr.full_like(ds[str(names.ltoa)+b], np.nan, dtype='float32')
+            else:        
+                k1 = thermal[f'K1_CONSTANT_BAND_{b[2:]}']
+                k2 = thermal[f'K2_CONSTANT_BAND_{b[2:]}']
+                rad = ds[str(names.ltoa)+b]
+                ds[str(names.bt)+b] = (k2/np.log(k1/rad + 1)).astype('float32')
+                ds[names.bgroup+b] = 'bands_ir'    
+            
+        ds = merge(ds, dim=str(names.bands), pattern=r'(.+)_B(.+)', dtype=str)
+        ds[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
+        ds[str(names.rtoa)].attrs['unit'] = None
+        ds[str(names.bt)].attrs['unit'] = 'Kelvin'
+
+        return ds
+
+    @staticmethod
+    def read_masks(ds: xr.Dataset, dirname: Path, chunks: list) -> None:
+        """Read quality assurance (QA) mask files."""
+        for t in dirname.glob('*_QA_*'):
+            search = re.search(r'QA_[A-Z]*', t.name)
+            name = t.name[search.start():search.end()]
+            ds[name] = xr.open_dataarray(t, engine='rasterio').chunk(chunks).squeeze()
