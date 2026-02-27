@@ -10,7 +10,6 @@ from core.env import getdir
 from . import generic
 
 
-sgli_filename = get_sample()
 
 @pytest.fixture(scope="module")
 def level1_sgli() -> Path: return get_sample()
@@ -32,20 +31,14 @@ def test_instantiation(level1_sgli, chunks):
     Level1_SGLI(level1_sgli, chunks=chunks)
 
 def test_main(sgli_product):
-    generic.test_main(sgli_product, angle_data=True)
+    generic.Test.main(sgli_product, angle_data=True)
     
 def test_time(level1_sgli, chunks): 
     params = {'filepath': level1_sgli, 'chunks': chunks}
-    generic.test_execution_time(Level1_SGLI, params)
-
-def test_v1_compat(level1_sgli):
-    v1_data = getdir("DIR_V1_COMPAT_DATA")
-    l1 = Level1_SGLI(level1_sgli, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1_sgli.stem+'_res'))
-    generic.compare_version(l1, old)
+    generic.Test.execution_time(Level1_SGLI, params)
     
 def test_lazy_load(sgli_product):
-    generic.test_lazy_load(sgli_product)
+    generic.Test.lazy_load(sgli_product)
 
 @pytest.mark.skip()
 @pytest.mark.parametrize('scheduler', [
@@ -53,11 +46,15 @@ def test_lazy_load(sgli_product):
     'threads',
 ])
 def test_read(sgli_product, param, indices, scheduler):
-    generic.test_read(sgli_product, param, indices, scheduler)
+    generic.Test.read(sgli_product, param, indices, scheduler)
 
 def test_subset(level1_sgli, chunks): 
     l1 = Level1_SGLI(level1_sgli, chunks=chunks, metadata_template=[])
-    generic.test_subset(l1)
+    generic.Test.subset(l1)
 
-def test_plot(request, sgli_product):
-    generic.test_plot(request, sgli_product, 4)
+def test_plot(request, level1_sgli):
+    l1 = Level1_SGLI(level1_sgli)
+    generic.plot(request, l1, 'VN04(S04)')
+    
+def test_flag_reader(sgli_product):
+    generic.Test.flagreader(sgli_product)

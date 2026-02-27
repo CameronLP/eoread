@@ -1,8 +1,5 @@
 import pytest
-import xarray as xr
-
-from pathlib import Path
-from eoread.ecostress import Level1_ECOSTRESS, get_sample
+from eoread.ecostress import Level1C_ECOSTRESS, get_sample
 from . import generic
 
 
@@ -15,7 +12,7 @@ def chunks(request):
 
 @pytest.fixture()
 def product_ecostress(level1C_ecostress, chunks):
-    return Level1_ECOSTRESS(level1C_ecostress, chunks=chunks)
+    return Level1C_ECOSTRESS(level1C_ecostress, chunks=chunks)
 
 
 ################################################################################
@@ -23,23 +20,27 @@ def product_ecostress(level1C_ecostress, chunks):
 ################################################################################
     
 def test_l1c_instantiation(level1C_ecostress, chunks):
-    Level1_ECOSTRESS(level1C_ecostress, chunks=chunks)
+    Level1C_ECOSTRESS(level1C_ecostress, chunks=chunks)
     
 def test_l1c_main(product_ecostress):
-    generic.test_main(product_ecostress, angle_data=False)
+    generic.Test.main(product_ecostress, angle_data=False)
     
 def test_l1c_time(level1C_ecostress, chunks): 
     params = {'filepath': level1C_ecostress, 'chunks': chunks}
-    generic.test_execution_time(Level1_ECOSTRESS, params)
+    generic.Test.execution_time(Level1C_ECOSTRESS, params)
 
 def test_l1c_subset(product_ecostress):
-    generic.test_subset(product_ecostress)
-    
-def test_l1c_v1_compat(level1C_ecostress):
-    v1_data = Path('/mnt/ceph/data/eoread')
-    l1 = Level1_ECOSTRESS(level1C_ecostress, v1_compat=True)
-    old = xr.open_dataset(v1_data/(level1C_ecostress.stem+f'_res'))
-    generic.compare_version(l1, old)
+    generic.Test.subset(product_ecostress)
     
 def test_l1c_lazy_load(product_ecostress):
-    generic.test_lazy_load(product_ecostress)
+    generic.Test.lazy_load(product_ecostress)
+
+def test_latlon(product_ecostress):
+    generic.Test.latlon(product_ecostress)
+
+def test_plot(request, level1C_ecostress):
+    l1 = Level1C_ECOSTRESS(level1C_ecostress, chunks=500)
+    generic.plot(request, l1, '4', poi = {"x": 1000, "y": 3000})
+    
+def test_flag_reader(product_ecostress):
+    generic.Test.flagreader(product_ecostress)

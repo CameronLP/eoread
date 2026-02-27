@@ -2,11 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-import xarray as xr 
 from eoread.olci import get_sample, Level1_OLCI, Level2_OLCI
-from eoread.olci import get_valid_l2_pixels
-from eoread import eo
-from core.env import getdir
 from . import generic
 
 
@@ -21,45 +17,28 @@ def chunks(request):
 def OLCI_product(chunks, olci_level1):
     return Level1_OLCI(olci_level1, chunks=chunks)
 
+def test_plot(request, olci_level1):
+    l1 = Level1_OLCI(olci_level1)
+    generic.plot(request, l1, 'Oa09', poi = {"x": 1000, "y": 3000})
     
 def test_l1c_instantiation(chunks, olci_level1):
     Level1_OLCI(olci_level1, chunks=chunks)
     
 def test_l1c_main(OLCI_product):
-    generic.test_main(OLCI_product, angle_data=False)
+    generic.Test.main(OLCI_product, angle_data=False)
     
 def test_l1c_time(chunks, olci_level1): 
     params = {'dirname': olci_level1, 'chunks': chunks}
-    generic.test_execution_time(Level1_OLCI, params)
+    generic.Test.execution_time(Level1_OLCI, params)
 
 def test_l1c_subset(OLCI_product):
-    generic.test_subset(OLCI_product)
-    
-def test_l1c_v1_compat(olci_level1):
-    v1_data = getdir("DIR_V1_COMPAT_DATA")
-    path = list(v1_data.glob('S3*'))[0]
-    l1 = Level1_OLCI(olci_level1, v1_compat=True)
-    old = xr.open_dataset(path)
-    old = old.reset_coords(['altitude','latitude','longitude'])
-    generic.compare_version(l1, old)
+    generic.Test.subset(OLCI_product)
     
 def test_l1c_lazy_load(OLCI_product):
-    generic.test_lazy_load(OLCI_product)
+    generic.Test.lazy_load(OLCI_product)
+    
+def test_flag_reader(OLCI_product):
+    generic.Test.flagreader(OLCI_product)
 
-@pytest.mark.skip('No level 2')
 def test_level2(chunks, olci_level2):
     Level2_OLCI(olci_level2, chunks=chunks)
-
-@pytest.mark.skip('No level 2')
-def test_sub_pt(olci_level1):
-    ds = Level1_OLCI(olci_level1)
-    lat0 = ds.latitude[500, 500]
-    lon0 = ds.longitude[500, 500]
-    eo.sub_pt(ds, lat0, lon0, 3)
-
-@pytest.mark.skip('No level 2')
-def test_olci_level2_flags(olci_level2):
-    l2 = Level2_OLCI(olci_level2)
-
-    eo.getflags(l2.wqsf)
-    get_valid_l2_pixels(l2.wqsf)

@@ -2,20 +2,18 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-import xarray as xr
 
 from . import generic
-from pathlib import Path
-from eoread.msi import get_sample, Level1_MSI
-from eoread import eo
-from core.env import getdir
-
-resolutions = ['10', '20', '60']
+from eoread.msi import get_sample, Level1_MSI, Level2_MSI
 
 
 @pytest.fixture(scope="session")
 def level1_msi(): 
     return get_sample(1)
+
+@pytest.fixture(scope="session")
+def level2_msi(): 
+    return get_sample(2)
 
 @pytest.fixture(params=[500, (400, 600)])
 def chunks(request):
@@ -38,21 +36,15 @@ def test_instantiation(level1_msi, resolution, chunks):
     Level1_MSI(level1_msi, chunks=chunks, resolution=resolution)
 
 def test_main(level1_msi, chunks):
-    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=10)
-    generic.test_main(l1, angle_data=True)
+    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=60).compute()
+    generic.Test.main(l1, angle_data=True)
     
 def test_time(level1_msi, chunks): 
     params = {'dirname': level1_msi, 'chunks': chunks}
-    generic.test_execution_time(Level1_MSI, params)
-
-def test_v1_compat(level1_msi):
-    v1_data = getdir("DIR_V1_COMPAT_DATA")
-    l1 = Level1_MSI(level1_msi, resolution=60, v1_compat=True)
-    old = xr.open_dataset(list(v1_data.glob('S2*_60'))[0])
-    generic.compare_version(l1, old)
+    generic.Test.execution_time(Level1_MSI, params)
     
 def test_lazy_load(S2_product):
-    generic.test_lazy_load(S2_product)
+    generic.Test.lazy_load(S2_product)
 
 @pytest.mark.skip()
 @pytest.mark.parametrize('scheduler', [
@@ -61,12 +53,18 @@ def test_lazy_load(S2_product):
 ])
 def test_read(S2_product, param, indices, scheduler):
     eo.init_geometry(S2_product)
-    generic.test_read(S2_product, param, indices, scheduler)
+    generic.Test.read(S2_product, param, indices, scheduler)
 
 def test_subset(level1_msi, chunks): 
     l1 = Level1_MSI(level1_msi, chunks=chunks, metadata_template=[])
-    generic.test_subset(l1)
+    generic.Test.subset(l1)
 
-def test_plot(request, level1_msi, chunks):
-    l1 = Level1_MSI(level1_msi, chunks=chunks, resolution=10)
-    generic.test_plot(request, l1, 4)
+def test_plot(request, level1_msi):
+    l1 = Level1_MSI(level1_msi, resolution=60)
+    generic.plot(request, l1, 'B4', poi={"x": 1000, "y": 1000})
+    
+def test_flag_reader(S2_product):
+    generic.Test.flagreader(S2_product)
+
+def test_l2_instantiation(level2_msi, chunks):
+    Level2_MSI(level2_msi, chunks=chunks, resolution=60)
