@@ -13,6 +13,7 @@ class GenericFlags(Enum):
     LAND = "LAND"
     L1_INVALID = "L1_INVALID"
     CLOUD = "CLOUD"
+    L1_DEGRADED = "L1_DEGRADED"
 
 
 class FlagsReaderBase(ABC):

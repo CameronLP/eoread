@@ -197,7 +197,7 @@ class FlagsReader_ECOSTRESS(FlagsReaderBase):
         
         Args:
             ds: ECOSTRESS dataset containing flag variables
-            flag_name: Standard flag identifier (L1_INVALID, LAND, QUALITY, or CLOUD)
+            flag_name: Standard flag identifier (L1_INVALID, LAND, L1_DEGRADED, or CLOUD)
         """
         if flag_name == GenericFlags.L1_INVALID:
             # L1_INVALID is True where vza is NaN (invalid data)
@@ -213,7 +213,7 @@ class FlagsReader_ECOSTRESS(FlagsReaderBase):
                 dims=ds['water'].dims,
                 coords=ds['water'].coords
             )
-        elif flag_name == GenericFlags.QUALITY:
+        elif flag_name == GenericFlags.L1_DEGRADED:
             mask = ds['data_quality'].max(str(names.bands))
             return xr.DataArray(mask, dims=mask.dims, coords=mask.coords)
         elif flag_name == GenericFlags.CLOUD:

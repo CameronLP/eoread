@@ -310,11 +310,11 @@ class FlagsReader_OLCI(FlagsReaderBase):
         
         Args:
             ds: OLCI dataset containing quality_flags variable
-            flag_name: Standard flag identifier (L1_INVALID or QUALITY)
+            flag_name: Standard flag identifier (L1_INVALID or L1_DEGRADED)
         """
         if flag_name == GenericFlags.L1_INVALID:
             return ds['quality_flags']
-        elif flag_name == GenericFlags.QUALITY:
+        elif flag_name == GenericFlags.L1_DEGRADED:
             return ds['quality_flags']
         else:
             raise ValueError(f"Unsupported flag: {flag_name}")
