@@ -289,7 +289,7 @@ class _Internal:
         
         # Some versions of the modis files do not contain all the bands.
         valid = ~l1[str(names.ltoa)].isnull()
-        array = K2 / (cwvl * np.log(K1 / (l1[str(names.ltoa)].where(valid) * cwvl ** 5 + 1)))
+        array = K2 / (cwvl * np.log(K1 / (l1[str(names.ltoa)].where(valid) * cwvl ** 5) + 1))
         l1[str(names.bt)] = gain * array.where(valid) + offset
         l1[str(names.bt)].attrs = {'unit': 'Kelvin'}
         
