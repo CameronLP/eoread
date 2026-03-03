@@ -202,11 +202,7 @@ class FlagsReader_ECOSTRESS(FlagsReaderBase):
         if flag_name == GenericFlags.L1_INVALID:
             # L1_INVALID is True where vza is NaN (invalid data)
             band = ds[str(names.ltoa)].sel({str(names.bands): '4'}).isnull()
-            return xr.DataArray(
-                np.isnan(band),
-                dims=band.dims,
-                coords=band.coords
-            )
+            return xr.DataArray(band, dims=band.dims, coords=band.coords)
         elif flag_name == GenericFlags.LAND:
             return xr.DataArray(
                 ~ds['water'],
