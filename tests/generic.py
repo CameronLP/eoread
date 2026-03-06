@@ -221,7 +221,9 @@ class Test:
         assert 'flags' in result
 
 
-def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
+def plot(
+    request, l1: xr.Dataset, band_nir, poi: dict | None = None, yincrease: bool = True
+):
     """
     Plot typical level 1 parameters to give an overview of the product
     """
@@ -234,7 +236,7 @@ def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
         data = da.compute()
         print(data.name, data.attrs)
         
-        _, ax, _ = xrimshow(downsample(data))
+        _, ax, _ = xrimshow(downsample(data), yincrease=yincrease)
 
         # Show point of interest
         if poi is not None:
@@ -245,7 +247,7 @@ def plot(request, l1: xr.Dataset, band_nir, poi: dict | None = None):
                 markersize=7,
                 markeredgewidth=1,
             )
-            print(data.name, ':', data.sel(poi).values.item())
+            print(data.name, ':', data.isel(poi).values.item())
 
         savefig(request)
     

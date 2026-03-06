@@ -24,6 +24,7 @@ from eoread.tools import (
     format_chunks, 
     collect_sample
 )
+from eoread.flags import FlagsReaderBase, GenericFlags, FlagsInit
 
 
 user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2_User_Handbook.pdf/8869acdf-fd84-43ec-ae8c-3e80a436a16c?t=1438278087000'

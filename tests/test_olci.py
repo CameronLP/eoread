@@ -23,6 +23,10 @@ def test_plot(request, olci_level1):
     
 def test_l1c_instantiation(chunks, olci_level1):
     Level1_OLCI(olci_level1, chunks=chunks)
+
+def test_plot(request, olci_level1):
+    l1 = Level1_OLCI(olci_level1, v1_compat=True)
+    generic.plot(request, l1, 865, poi = {"x": 1000, "y": 3000})
     
 def test_l1c_main(OLCI_product):
     generic.Test.main(OLCI_product, angle_data=False)
