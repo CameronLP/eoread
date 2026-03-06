@@ -41,6 +41,7 @@ def Level1_MODIS(
         chunks: int = 100,
         resolution: Literal[250,500,1000,None] = 250,
         metadata_template: Union[list, None] = None,
+        v1_compat: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
     """

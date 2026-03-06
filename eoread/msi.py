@@ -34,7 +34,7 @@ def Level1_MSI(
         chunks: Union[int, tuple, dict] = 500,
         resolution: Literal[10,20,60,None] = 60,
         metadata_template: Union[list, None] = None, 
-        read_mask: bool = False,
+        v1_compat: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
     """
@@ -166,6 +166,7 @@ def Level1_MSI(
         ds = ds.transpose(..., *[str(names.rows), str(names.columns)])
         ds = ds.set_coords(str(names.bgroup))
     
+    if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
 
 

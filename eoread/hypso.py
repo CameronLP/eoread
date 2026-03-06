@@ -1,3 +1,4 @@
+from dask import array as da
 from pathlib import Path
 import xarray as xr
 
@@ -11,6 +12,7 @@ def Level1_HYPSO(
         filepath: str|Path,
         chunks: int|tuple = 500,
         metadata_template: list = None,
+        v1_compat: bool = False,
         verbose: bool = True,
     ) -> xr.Dataset:
     """
@@ -86,10 +88,12 @@ def Level1_HYPSO(
     ds.attrs[str(names.input_directory)] = str(filepath.parent)
     ds.attrs[str(names.datetime)] = ds_root.attrs['date_aquired']
     
-    # Add metadata
     filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
     ds.attrs['metadata'] = filter_fn(ds_root.attrs, metadata_template)
+
+    # ds[naming.flags] = xr.zeros_like(ds.vza, dtype=naming.flags_dtype)
     
+    if v1_compat: return _v1_compat(ds)
     return drop_unused_dims(ds).unify_chunks()
 
 
@@ -115,3 +119,10 @@ def get_sample(level: int=1) -> Path:
     sample = env.getdir('DIR_SAMPLE_HYPSO')
     assert sample.exists()
     return sample
+
+def _v1_compat(ds):
+    
+    # Add flags
+    ds["flags"] = xr.zeros_like(ds.vza, dtype="uint8")
+    
+    return ds

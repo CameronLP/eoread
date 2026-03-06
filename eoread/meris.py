@@ -34,6 +34,7 @@ def Level1_MERIS(
         read_auxdata: bool = False, 
         chunks: int|tuple = 500,
         metadata_template: list = None,
+        v1_compat: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
     '''
@@ -145,6 +146,7 @@ def Level1_MERIS(
     ds = drop_unused_dims(ds)
     ds = ds.assign_coords({str(names.bgroup): (str(names.bands), ['bands_vnir']*nb_bands)})
     
+    if v1_compat: return _v1_compat(ds, prod, lock, chunks)
     return ds.unify_chunks()
 
 

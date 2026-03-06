@@ -31,7 +31,7 @@ def Level1_VENUS(
         dirname: Union[str, Path], 
         chunks: Union[int, tuple] = 500,
         metadata_template: Union[list, None] = None,
-        read_masks: bool = False, 
+        v1_compat: bool = False, 
         verbose: bool = True
     ) -> xr.Dataset:
     """

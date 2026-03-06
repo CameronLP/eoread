@@ -32,6 +32,7 @@ def Level1_OLCI(
         chunks: Union[int, tuple] = 500,
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
         metadata_template: Union[list, None] = None, 
+        v1_compat: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
     """
@@ -154,6 +155,7 @@ def Level1_OLCI(
     ds = _Internal.olci_init_spectral(ds)
     ds = _Internal.extract_rtoa(ds)
 
+    if v1_compat: return _v1_compat(ds)
     return ds.unify_chunks()
 
 
