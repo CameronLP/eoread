@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from .conftest import savefig
 from matplotlib import pyplot as plt
-from eoread.tools import xrimshow, downsample
+from core.tests.graphics import xrimshow, downsample
 from eoread.flags import FlagsInit, GenericFlags
 from datetime import datetime
 from pathlib import Path
