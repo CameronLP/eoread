@@ -15,7 +15,7 @@ from core.interpolate import interp, Linear
 from core.tools import merge, drop_unused_dims, only
 from core.geo.naming import names
 from core.table import read_xml
-from core import env, log
+from core import log
 
 from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
@@ -24,7 +24,6 @@ from eoread.tools import (
     format_chunks, 
     collect_sample
 )
-from eoread.flags import FlagsReaderBase, GenericFlags, FlagsInit
 
 
 user_guide = 'https://sentinels.copernicus.eu/documents/247904/685211/Sentinel-2_User_Handbook.pdf/8869acdf-fd84-43ec-ae8c-3e80a436a16c?t=1438278087000'
@@ -34,6 +33,7 @@ def Level1_MSI(
         chunks: Union[int, tuple, dict] = 500,
         resolution: Literal[10,20,60,None] = 60,
         metadata_template: Union[list, None] = None, 
+        read_mask: bool = False,
         v1_compat: bool = False,
         verbose: bool = True
     ) -> xr.Dataset:
@@ -661,3 +661,30 @@ class _Internal:
                 ds = ds.assign_coords({dim: np.arange(len(ds[dim]))})
             
         return ds
+
+
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
+    # Remove metadata
+    ds.attrs['metadata_granule'] = filter_metadata(ds.attrs['metadata_granule'], [])
+    ds.attrs['metadata'] = filter_metadata(ds.attrs['metadata'], [])
+    
+    # Apply previous rounded central wavelengths
+    msi_band = [443, 490, 560, 665, 705, 740, 783, 842, 865, 945, 1375, 1610, 2190]
+    ds = ds.assign_coords(bands=msi_band)
+    
+    # rename wavelength variable
+    ds = ds.rename({str(names.cwav):'wav'})
+    
+    # add flags
+    from core.tools import raiseflag
+    ds[str(names.flags)] = xr.zeros_like(
+        ds.vza,
+        dtype=names.flags.dtype)
+    raiseflag(
+        ds[str(names.flags)],
+        'L1_INVALID', 4,
+        np.isnan(ds.vza)
+    )
+    
+    return drop_unused_dims(ds)

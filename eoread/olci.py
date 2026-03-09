@@ -10,9 +10,10 @@ from datetime import datetime
 from warnings import filterwarnings
 from re import findall
 
-from core import env, log
+from core import log
 from core.table import read_xml
 from core.geo.naming import names
+from core.tools import getflags
 
 from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
@@ -520,3 +521,43 @@ class _Internal:
         ds.attrs[str(names.sensor)] = platform['instrument']['familyName']['attributes']['abbreviation']
         ds.attrs[str(names.product_name)] = dirname.name
         ds.attrs[str(names.input_directory)] = str(dirname.parent)
+
+
+def _v1_compat(ds: xr.Dataset) -> xr.Dataset:
+    """Transform dataset to version 1 format for backward compatibility."""
+    # Reset band coordinates
+    ds = ds.assign_coords(bands=[400, 412, 443, 490, 510, 560, 620, 665, 674, 681, 709, 754, 760, 764, 767, 779, 865, 885, 900, 940, 1020]) 
+    
+    # rename bands variable
+    ds = ds.assign(
+        {
+            str(names.rtoa): (
+                (str(names.bands), str(names.rows), str(names.columns)),
+                ds[str(names.rtoa)].data,
+            )
+        }
+    )
+    
+    # Add flags
+    ds[str(names.flags)] = xr.zeros_like(
+        ds.vza,
+        dtype=names.flags.dtype)
+    qf = getflags(ds.quality_flags)
+
+    # raise LAND mask when land is raised but not fresh_inland_water
+    from .eo import raiseflag
+    raiseflag(
+        ds[str(names.flags)],
+        "LAND", 1,
+        ds.quality_flags & (qf["land"] + qf["fresh_inland_water"]) == qf["land"],
+    )
+    raiseflag(
+        ds[str(names.flags)],
+        "L1_INVALID", 4,
+        ds.quality_flags & qf["invalid"],
+    )
+    
+    # Complete attributes
+    for k,v in list(ds.longitude.attrs.items())[5:]: ds.attrs[k] = v
+    
+    return ds
