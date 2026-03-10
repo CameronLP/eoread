@@ -2,6 +2,7 @@ from core.geo.naming import names
 from numpy.random import randint
 from eoread.tools import *
 import xarray as xr
+import numpy as np
 import pytest
 
 @pytest.fixture
@@ -74,7 +75,7 @@ def test_open_raster(tmp_path):
     import xarray as xr
     arr = xr.DataArray([[1,2],[3,4]], dims=("rows","columns"))
     f = tmp_path / "test.nc"
-    arr.to_netcdf(f)
+    arr.to_netcdf(f, engine='h5netcdf')
     # Should find and open the raster
     out = open_raster(tmp_path, "*.nc")
     assert out.shape == (2,2)
