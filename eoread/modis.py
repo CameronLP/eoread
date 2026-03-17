@@ -72,7 +72,16 @@ def Level1_MODIS(
     
     # Revize variables
     if verbose: log.debug('Reading h4file')
-    l1 = xr.open_dataset(filepath, engine='netcdf4')
+    try:
+        l1 = xr.open_dataset(filepath, engine='netcdf4')
+    except OSError as e:
+        if '' in str(e):
+            raise ImportError('This error occurs because the netcdf4 library in'
+            ' your current environment was compiled without HDF4 support. '
+            'Install netcdf4 package with conda-forge.')
+        else: 
+            raise e
+        
     l1 = l1.rename_vars({
         'Latitude': str(names.lat), 'Longitude': str(names.lon),
         'SensorZenith': str(names.vza)+'_tie', 'SensorAzimuth': str(names.vaa)+'_tie',
