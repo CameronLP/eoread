@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from pathlib import Path
 import pytest
 
 from eoread.oli import Level1_OLI, get_sample
-import xarray as xr
 from . import generic
 
 
@@ -39,3 +37,7 @@ def test_l1c_lazy_load(product_l9_oli):
     
 def test_flag_reader(product_l9_oli):
     generic.Test.flagreader(product_l9_oli)
+
+def test_plot(request, product_l1):
+    l1 = Level1_OLI(product_l1)
+    generic.plot(request, l1, '4', poi={"x": 3000, "y": 3000})

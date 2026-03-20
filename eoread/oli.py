@@ -293,7 +293,7 @@ class _Internal:
         ds[str(names.rtoa)].attrs['unit'] = None
         ds[str(names.bt)].attrs['unit'] = 'Kelvin'
 
-        return ds
+        return ds.sortby(ds.bands.astype(int))
 
     @staticmethod
     def read_masks(ds: xr.Dataset, dirname: Path, chunks: list) -> None:

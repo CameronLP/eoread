@@ -241,8 +241,8 @@ def plot(
         # Show point of interest
         if poi is not None:
             ax.plot(
-                poi[data.dims[1]],
-                poi[data.dims[0]],
+                data.coords[data.dims[1]][poi[data.dims[1]]].values,
+                data.coords[data.dims[0]][poi[data.dims[0]]].values,
                 "r+",
                 markersize=7,
                 markeredgewidth=1,
@@ -253,7 +253,7 @@ def plot(
     
     # Plot spectrum over the point of interest
     if poi is not None:
-        l1[toa].sel(poi).plot(figsize=(5, 3))
+        l1[toa].isel(poi).plot(figsize=(5, 3))
         plt.grid(True)
         plt.title(toa)
         plt.tight_layout()

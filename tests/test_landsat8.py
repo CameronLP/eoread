@@ -40,3 +40,7 @@ def test_l1c_lazy_load(product_l8_oli):
     
 def test_flag_reader(product_l8_oli):
     generic.Test.flagreader(product_l8_oli)
+
+def test_plot(request, product_l1):
+    l1 = Level1_OLI(product_l1)
+    generic.plot(request, l1, '4', poi={"x": 3000, "y": 3000})
