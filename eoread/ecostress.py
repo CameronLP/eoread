@@ -76,6 +76,7 @@ def Level1C_ECOSTRESS(
     l1.attrs['metadata'] = filter_fn(l1.attrs['metadata'], metadata_template)
     l1.attrs['hdfeos_info'] = filter_fn(p.data, metadata_template)
     l1.attrs['user_guide'] = user_guide
+    l1.attrs['daytime'] = bool(attributes['DayNightFlag'] == 'Day')
     
     # Add general information
     l1.attrs[str(names.datetime)] = l1.metadata['ProductionDateTime']
