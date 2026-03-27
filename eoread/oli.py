@@ -254,39 +254,41 @@ class _Internal:
         data = xr.open_dataarray(files[0], engine='rasterio').chunk(chunks)
         ds['Panchromatic'] = (dims,(m*data.squeeze()+a).data.astype('float32'))
         
-        for f in dirname.glob(f'LC*_B*.TIF'):
-            
-            # Retrieve band name
-            search = re.search(r'_B[0-9]*', f.name)
-            b = f.name[search.start():search.end()]
-            
+        # Loop over bands
+        for b in range(1, 12):
             # Drop Panchromatic band
-            if 'B8' in b: continue
+            if b == 8:
+                continue
+            
+            # Get file for that band
+            f = only(dirname.glob(f'LC*_B{b}.TIF'))
+
+            band_str = f'_B{b}'
             
             # read radiances
-            a = rescale[f'RADIANCE_ADD_BAND_{b[2:]}']
-            m = rescale[f'RADIANCE_MULT_BAND_{b[2:]}']
+            a = rescale[f'RADIANCE_ADD_BAND_{b}']
+            m = rescale[f'RADIANCE_MULT_BAND_{b}']
             data = xr.open_dataarray(f, engine='rasterio').chunk(chunks)
-            ds[str(names.ltoa)+b] = (m*data.squeeze()+a).astype('float32')
+            ds[str(names.ltoa)+band_str] = (m*data.squeeze()+a).astype('float32')
         
             # read reflectances
-            if f'REFLECTANCE_ADD_BAND_{b[2:]}' not in rescale:
-                ds[str(names.rtoa)+b] = xr.full_like(ds[str(names.ltoa)+b], np.nan, dtype='float32')
+            if f'REFLECTANCE_ADD_BAND_{b}' not in rescale:
+                ds[str(names.rtoa)+band_str] = xr.full_like(ds[str(names.ltoa)+band_str], np.nan, dtype='float32')
             else:        
-                a = rescale[f'REFLECTANCE_ADD_BAND_{b[2:]}']
-                m = rescale[f'REFLECTANCE_MULT_BAND_{b[2:]}']
-                ds[str(names.rtoa)+b] = (m*data.squeeze()+a).astype('float32')
-                ds[names.bgroup+b] = 'bands_vnir'      
+                a = rescale[f'REFLECTANCE_ADD_BAND_{b}']
+                m = rescale[f'REFLECTANCE_MULT_BAND_{b}']
+                ds[str(names.rtoa)+band_str] = (m*data.squeeze()+a).astype('float32')
+                ds[names.bgroup+band_str] = 'bands_vnir'      
             
             # read brightness temperatures
-            if f'K1_CONSTANT_BAND_{b[2:]}' not in thermal:
-                ds[str(names.bt)+b] = xr.full_like(ds[str(names.ltoa)+b], np.nan, dtype='float32')
+            if f'K1_CONSTANT_BAND_{b}' not in thermal:
+                ds[str(names.bt)+band_str] = xr.full_like(ds[str(names.ltoa)+band_str], np.nan, dtype='float32')
             else:        
-                k1 = thermal[f'K1_CONSTANT_BAND_{b[2:]}']
-                k2 = thermal[f'K2_CONSTANT_BAND_{b[2:]}']
-                rad = ds[str(names.ltoa)+b]
-                ds[str(names.bt)+b] = (k2/np.log(k1/rad + 1)).astype('float32')
-                ds[names.bgroup+b] = 'bands_ir'    
+                k1 = thermal[f'K1_CONSTANT_BAND_{b}']
+                k2 = thermal[f'K2_CONSTANT_BAND_{b}']
+                rad = ds[str(names.ltoa)+band_str]
+                ds[str(names.bt)+band_str] = (k2/np.log(k1/rad + 1)).astype('float32')
+                ds[names.bgroup+band_str] = 'bands_ir'    
             
         ds = merge(ds, dim=str(names.bands), pattern=r'(.+)_B(.+)', dtype=str)
         ds[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
