@@ -26,6 +26,18 @@ from core.geo.naming import names
 from core.table import read_xml
 
 
+band_names = [
+    "Band 1 - Coastal / Aerosol",
+    "Band 2 - Blue",
+    "Band 3 - Green",
+    "Band 4 - Red",
+    "Band 5 - Near Infrared",
+    "Band 6 - Short Wavelength Infrared",
+    "Band 7 - Short Wavelength Infrared",
+    "Band 8 - Panchromatic",
+    "Band 9 - Cirrus",
+]
+
 # Central wavelengths aren't described in metadata. Thus, they are hard-coded
 cwvl = [442.96,482.04,561.41,654.59,864.67,1608.86,2200.73,1373.43,10895,12050,]
 
@@ -106,7 +118,7 @@ def Level1_OLI(
 
     # SRF getter
     mission = ds.attrs[str(names.platform)][-1]
-    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter'] = 'eoread.oli.get_srf_landsat_oli'
     ds.attrs['_srf_getter_arg'] = f'landsat_{mission}_oli'
     
     # Manage dimensions
@@ -117,6 +129,19 @@ def Level1_OLI(
     ds = ds.set_coords(names.bgroup)
     
     return ds
+
+
+def get_srf_landsat_oli(platform_sensor: str) -> xr.Dataset:
+    """
+    Read LANDSAT OLI srf, and rename its bands.
+    Panchromatic bands should be properly renamed so that they can be identified
+    for further processing.
+
+    platform_sensor: "landsat_8_oli", "landsat_9_oli"
+    """
+    from eotools.srf import get_SRF_eumetsat, rename
+    srf = get_SRF_eumetsat(platform_sensor)
+    return rename(srf, band_names)
 
 
 def get_sample(level: int, mission: int = 8) -> Path:
