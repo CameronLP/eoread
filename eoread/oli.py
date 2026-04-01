@@ -273,15 +273,17 @@ class _Internal:
         
         # Read Panchromatic band
         dims = (str(names.columns)+'_pan', str(names.rows)+'_pan')
-        files = list(dirname.glob(f'LC*_B8.TIF'))
+        files = list(dirname.glob('LC*_B8.TIF'))
         assert len(files) == 1, 'None or several files have been found for panchromatic band'
-        a, m = rescale[f'RADIANCE_ADD_BAND_8'], rescale[f'RADIANCE_MULT_BAND_8']
+        a, m = rescale['RADIANCE_ADD_BAND_8'], rescale['RADIANCE_MULT_BAND_8']
         data = xr.open_dataarray(files[0], engine='rasterio').chunk(chunks)
         ds['Panchromatic'] = (dims,(m*data.squeeze()+a).data.astype('float32'))
         
+        mus = np.cos(np.radians(ds['sza']))
+        
         # Loop over bands
         for b in range(1, 12):
-            # Drop Panchromatic band
+            # Drop Panchromatic band, it was read above
             if b == 8:
                 continue
             
@@ -302,7 +304,7 @@ class _Internal:
             else:        
                 a = rescale[f'REFLECTANCE_ADD_BAND_{b}']
                 m = rescale[f'REFLECTANCE_MULT_BAND_{b}']
-                ds[str(names.rtoa)+band_str] = (m*data.squeeze()+a).astype('float32')
+                ds[str(names.rtoa)+band_str] = ((m*data.squeeze()+a)/mus).astype('float32')
                 ds[names.bgroup+band_str] = 'bands_vnir'      
             
             # read brightness temperatures
