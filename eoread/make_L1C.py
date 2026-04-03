@@ -4,6 +4,7 @@
 from pathlib import Path
 from sys import argv
 import shutil
+import re
 import subprocess
 from tempfile import TemporaryDirectory
 from typing import Literal, Union
@@ -104,7 +105,7 @@ def makeL1C_HAWKEYE(l1a: Path, dirname: Path | None, method: str, **kwargs) -> P
 
     return l1c
 
-def makeL1C_MODIS(l1a: Path, dirname: Path | None, method: str) -> Path:
+def makeL1C_MODIS(l1a: Path, dirname: Path | None, method: str, **kwargs) -> Path:
     """
     Generate Level-1C product from MODIS (Aqua/Terra) L1A data.
     
@@ -169,7 +170,8 @@ def make_L1B_MODIS(l1a: Path, l1b: Path, geo: Path, method: str):
     if method == "auto":
         method = get_method_auto("modis_L1B")
     if method == "shell":
-        cmd = f"modis_L1B -y -z --okm={l1b} {l1a} {geo}"
+        cmd = get_prefix()
+        cmd += f"modis_L1B -y -z --okm={l1b} {l1a} {geo}"
         print(cmd)
         result = subprocess.run(cmd, shell=True, executable='/bin/bash')
         if result.returncode != 0:
@@ -208,7 +210,8 @@ def make_MODIS_GEO(l1a: Path, geo: Path, method: str):
     if method == "auto":
         method = get_method_auto("modis_GEO")
     if method == "shell":
-        cmd = f"modis_GEO --output={geo} {l1a}"
+        cmd = get_prefix()
+        cmd += f"modis_GEO --output={geo} {l1a}"
         print(cmd)
         result = subprocess.run(cmd, shell=True, executable='/bin/bash')
         if result.returncode != 0:
@@ -226,7 +229,7 @@ def make_MODIS_GEO(l1a: Path, geo: Path, method: str):
         )
 
 
-def makeL1C_VIIRS(l1a: Path, dirname: Path | None, method: str) -> Path:
+def makeL1C_VIIRS(l1a: Path, dirname: Path | None, method: str, **kwargs) -> Path:
     """
     Generate Level-1C product from VIIRS (SNPP or JPSS-1) L1A data.
     
@@ -251,27 +254,26 @@ def makeL1C_VIIRS(l1a: Path, dirname: Path | None, method: str) -> Path:
     else:
         dname = Path(dirname)
 
-    with TemporaryDirectory() as tmpdir:
 
-        if str(l1a).endswith(".L1A_SNPP.nc"):
-            l1c = dname / (l1a.name.replace(".L1A_SNPP.nc", ".L1C"))
-            geo = Path(tmpdir) / (l1a.name.replace(".L1A_SNPP.nc", ".GEO-M_SNPP.nc"))
-        elif str(l1a).endswith(".L1A_JPSS1.nc"):
-            l1c = dname / (l1a.name.replace(".L1A_JPSS1.nc", ".L1C"))
-            geo = Path(tmpdir) / (l1a.name.replace(".L1A_JPSS1.nc", ".GEO-M_JPSS1.nc"))
-        elif l1a.name.endswith(".L1A.nc") and l1a.name.startswith("JPSS1_VIIRS"):
-            l1c = dname / (l1a.name.replace(".L1A.nc", ".L1C"))
-            geo = Path(tmpdir) / (l1a.name.replace(".L1A.nc", ".GEO-M_JPSS1.nc"))
-        else:
-            raise RuntimeError(f"genL1C_VIIRS: invalid file name {l1a}")
+    with TemporaryDirectory() as tmpdir:
         
-        # Generate GEO files (temporary)
+        bname = re.sub(r'\.L1A.*\.nc$', '', l1a.name)
+        l1c = dname / (bname + '.L1C.nc')
+        l1b = Path(tmpdir) / (bname + '.L1B.nc')
+        geo = Path(tmpdir) / (bname + '.GEO.nc')
+
+        # Generate GEO files
         if not l1c.exists():
             make_VIIRS_GEO(l1a=l1a, geo=geo, method=method)
             assert geo.exists()
+        
+        # Generate VIIRS L1B
+        if not l1c.exists():
+            make_L1B_VIIRS(l1a=l1a, l1b=l1b, method=method)
+            assert l1b.exists()
 
         run_l2gen_L1C(
-            ifile=l1a,
+            ifile=l1b,
             l1c=l1c,
             geofile=geo,
             nbands=10,
@@ -310,11 +312,37 @@ def make_VIIRS_GEO(l1a: Path, geo: Path, method: str):
             geo=geo,
         )
     else:
-        cmd = f"geolocate_viirs ifile={l1a} geofile_mod={geo}"
+        cmd = get_prefix()
+        cmd += f"geolocate_viirs ifile={l1a} geofile_mod={geo}"
         print(cmd)
         result = subprocess.run(cmd, shell=True, executable='/bin/bash')
         if result.returncode != 0:
             raise RuntimeError("Error in genL1C_VIIRS")
+
+
+@filegen(arg="l1b", if_exists="skip")
+def make_L1B_VIIRS(l1a: Path, l1b: Path, method: str):
+    """
+    Generate VIIRS l1b
+    """
+    if method == "auto":
+        method = get_method_auto("calibrate_viirs")
+    if method == "docker":
+        app = get_ocssw_docker_app()
+        cmd = "calibrate_viirs ifile={l1a} l1bfile_mod={l1b}"
+        print(cmd)
+        app.run(
+            cmd=cmd,
+            l1a=l1a,
+            l1b=l1b,
+        )
+    else:
+        cmd = get_prefix()
+        cmd += f"calibrate_viirs ifile={l1a} l1bfile_mod={l1b}"
+        print(cmd)
+        result = subprocess.run(cmd, shell=True, executable='/bin/bash')
+        if result.returncode != 0:
+            raise RuntimeError("Error in make_L1B_VIIRS")
 
 
 @filegen(arg="geo", if_exists="skip")
@@ -442,6 +470,7 @@ def get_prefix() -> str:
 def l2gen_cmdline(
     nbands: int,
     geofile: bool,
+    prefix: bool,
     **kwargs
 ) -> str:
     """
@@ -463,7 +492,9 @@ def l2gen_cmdline(
     """
     gains = " ".join(["1.0"] * nbands)
 
-    cmd = get_prefix()
+    cmd = ''
+    if prefix:
+        cmd += get_prefix()
     cmd += 'l2gen ifile="{ifile}" ofile="{ofile}" oformat="netcdf4" '
     if geofile:
         cmd += 'geofile="{geofile}" '
@@ -533,14 +564,14 @@ def run_l2gen_L1C(
     if method == "docker":
         app = get_ocssw_docker_app()
         if geofile is None:
-            cmd = l2gen_cmdline(nbands, geofile=False, **kwargs)
+            cmd = l2gen_cmdline(nbands, geofile=False, prefix=False, **kwargs)
             app.run(
                 cmd=cmd,
                 ifile=ifile,
                 ofile=l1c,
             )
         else:
-            cmd = l2gen_cmdline(nbands, geofile=True, **kwargs)
+            cmd = l2gen_cmdline(nbands, geofile=True, prefix=False, **kwargs)
             app.run(
                 cmd=cmd,
                 ifile=ifile,
@@ -551,9 +582,9 @@ def run_l2gen_L1C(
 
     elif method == "shell":
         if geofile is None:
-            cmd = l2gen_cmdline(nbands, geofile=False, **kwargs).format(ifile=ifile, ofile=l1c)
+            cmd = l2gen_cmdline(nbands, geofile=False, prefix=True, **kwargs).format(ifile=ifile, ofile=l1c)
         else:
-            cmd = l2gen_cmdline(nbands, geofile=True, **kwargs).format(
+            cmd = l2gen_cmdline(nbands, geofile=True, prefix=True, **kwargs).format(
                 ifile=ifile, ofile=l1c, geofile=geofile
             )
         print("CMD:", cmd)

@@ -20,6 +20,7 @@ import subprocess
 from core.files.uncompress import uncompress_decorator
 from core.network.download import download_url
 from core.geo.naming import names
+from eoread import eo
 
 
 def check_nasa_download(filename):
@@ -197,7 +198,7 @@ def Level1_NASA(filename, chunks=500):
     geo_data = geo_data.rename_dims({'number_of_lines':str(names.rows), 'pixels_per_line':str(names.columns)})
     for _n,r,p in [(str(names.rtoa)+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
         try:
-            ds[_n] = geo_data[r]/geo_data[p]
+            ds[_n] = (geo_data[r]/geo_data[p]).where(geo_data[r] > -100.)
         except:
             pass
 
@@ -223,9 +224,7 @@ def Level1_NASA(filename, chunks=500):
             ds[names.flags],
             flag,
             flag_value,
-            DataArray_from_array(
-                (geo_data.l2_flags & flag_mask != 0), ds.sza.dims, chunks=chunks
-            ),
+            (geo_data.l2_flags & flag_mask != 0),
         )
 
     ds = eo.merge(ds, dim=str(names.bands))
