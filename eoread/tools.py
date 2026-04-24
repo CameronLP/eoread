@@ -6,7 +6,7 @@ from core.tools import only
 from core import env
 
 from typing import Union, Literal
-from xarray import DataArray, open_dataarray
+from xarray import DataArray, Dataset, open_dataarray
 from dask.array import meshgrid, linspace
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -230,3 +230,33 @@ def collect_sample(
     else:
         return Path(variable)
     
+
+def crop(
+        ds: Dataset, 
+        latmin: float|None = None, 
+        latmax: float|None = None,
+        lonmin: float|None = None, 
+        lonmax: float|None = None,
+        drop: bool = True
+    ) -> Dataset:
+    """
+    Crop output of eoread reader based on latitude and longitude arrays.
+
+    Args:
+        ds (xr.Dataset): Output from an eoread reader
+        latmin (float | None, optional): Minimun of latitude. Defaults to None.
+        latmax (float | None, optional): Maximum of latitude. Defaults to None.
+        lonmin (float | None, optional): Minimun of longitude. Defaults to None.
+        lonmax (float | None, optional): Maximum of longitude. Defaults to None.
+        drop (bool, optional): Option to drop invalid pixels. If False, invalid pixels are set to NaN. Defaults to True.
+    """
+    # Filter latitude and longitude
+    latmask = (ds[str(names.lat)] >= latmin) & (ds[str(names.lat)] <= latmax)
+    lonmask = (ds[str(names.lon)] >= lonmin) & (ds[str(names.lon)] <= lonmax)
+    
+    # Load masks to determine output shape 
+    if drop: 
+        latmask = latmask.compute()
+        lonmask = lonmask.compute()
+        
+    return ds.where(latmask & lonmask, drop=drop)
