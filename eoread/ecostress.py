@@ -264,7 +264,7 @@ class _Internal:
         west   = coords[:,0].min()
         
         # Build the lat and lon arrays
-        lat = np.linspace(south, north, size[str(names.rows)])
+        lat = np.linspace(north, south, size[str(names.rows)])
         lon = np.linspace(west, east, size[str(names.columns)])
         lon, lat = meshgrid(lon, lat)
         
