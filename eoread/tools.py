@@ -124,6 +124,8 @@ def spatial_resample(
         
     # over-sample
     else:
+        # Interpolator requires numpy-backed data; compute the (small) tie-point array
+        array = array.compute(scheduler='sync')
         coords = array.coords
         method = Linear if method == 'linear' else Nearest
         xy = meshgrid(*[
