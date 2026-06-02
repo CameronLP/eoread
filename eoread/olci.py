@@ -73,8 +73,9 @@ def Level1_OLCI(
     ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
     
     # Add latlon footprint
-    footprint = manifest['metadataSection']['metadataObject'][2]
-    footprint = footprint['metadataWrap']['xmlData']['frameSet']['footPrint']
+    objs = manifest['metadataSection']['metadataObject']
+    frameSet_obj = next(o for o in objs if o['attributes']['ID'] == 'measurementFrameSet')
+    footprint = frameSet_obj['metadataWrap']['xmlData']['frameSet']['footPrint']
     idata = iter(footprint['posList'].split())
     footprint = [(float(v), float(idata.__next__())) for v in idata]
     lat,lon = zip(*footprint)
@@ -83,8 +84,8 @@ def Level1_OLCI(
     
     # Get band informations
     bandnames, cwvl = [], []
-    info = manifest['metadataSection']['metadataObject'][4]
-    info = info['metadataWrap']['xmlData']['olciProductInformation']
+    olciInfo_obj = next(o for o in objs if o['attributes']['ID'] == 'olciProductInformation')
+    info = olciInfo_obj['metadataWrap']['xmlData']['olciProductInformation']
     for bn, data in info['bandDescriptions'].items():
         if bn == 'attributes': continue
         bandnames.append(bn)
@@ -197,8 +198,9 @@ def Level2_OLCI(
     ds.attrs['metadata'] = filter_fn(manifest, metadata_template)
     
     # Add latlon footprint
-    footprint = manifest['metadataSection']['metadataObject'][2]
-    footprint = footprint['metadataWrap']['xmlData']['frameSet']['footPrint']
+    objs = manifest['metadataSection']['metadataObject']
+    frameSet_obj = next(o for o in objs if o['attributes']['ID'] == 'measurementFrameSet')
+    footprint = frameSet_obj['metadataWrap']['xmlData']['frameSet']['footPrint']
     idata = iter(footprint['posList'].split())
     footprint = [(float(v), float(idata.__next__())) for v in idata]
     lat,lon = zip(*footprint)
@@ -207,8 +209,8 @@ def Level2_OLCI(
     
     # Get band informations
     bandnames, cwvl = [], []
-    info = manifest['metadataSection']['metadataObject'][4]
-    info = info['metadataWrap']['xmlData']['olciProductInformation']
+    olciInfo_obj = next(o for o in objs if o['attributes']['ID'] == 'olciProductInformation')
+    info = olciInfo_obj['metadataWrap']['xmlData']['olciProductInformation']
     for bn, data in info['bandDescriptions'].items():
         if bn == 'attributes': continue
         bandnames.append(bn)
@@ -457,7 +459,7 @@ class _Internal:
                 raster = spatial_resample(tie_ds[ds_tie], shape, tie_chunks, method)
             
             # Add tie points            
-            ds[ds_full] = raster.rename(mapping)
+            ds[ds_full] = raster.rename(mapping).transpose('rows', 'columns')
             ds[ds_full].attrs = tie_ds[ds_tie].attrs
             ds[ds_full+'_tie'] = tie_ds[ds_tie]
         
@@ -493,7 +495,7 @@ class _Internal:
         wind1 = spatial_resample(tie.horizontal_wind.isel(wind_vectors=1), shape, tie_chunks, 'linear')
         
         wind = np.sqrt(wind0**2 + wind1**2)
-        ds['horizontal_wind'] = wind.rename(mapping)
+        ds['horizontal_wind'] = wind.rename(mapping).transpose('rows', 'columns')
         ds['horizontal_wind'].attrs = tie['horizontal_wind'].attrs
         for var_from, var_to in [
             ('humidity', 'humidity'),
@@ -502,7 +504,7 @@ class _Internal:
             ('total_ozone', 'total_column_ozone')
             ]:
             raster = spatial_resample(tie[var_from], shape, tie_chunks, 'linear')
-            ds[var_to] = raster.rename(mapping)
+            ds[var_to] = raster.rename(mapping).transpose('rows', 'columns')
             ds[var_to].attrs = tie[var_from].attrs
             ds[var_to + '_tie'] = tie[var_from]
     
@@ -510,12 +512,14 @@ class _Internal:
     def add_attributes(ds: xr.Dataset, metadata: dict, dirname: str) -> None:
         """Extract and add product metadata attributes to the dataset."""
         meta = metadata['metadataSection']['metadataObject']
-        date = meta[0]['metadataWrap']['xmlData']['acquisitionPeriod']
+        acq_obj = next(o for o in meta if o['attributes']['ID'] == 'acquisitionPeriod')
+        date = acq_obj['metadataWrap']['xmlData']['acquisitionPeriod']
         start = datetime.fromisoformat(date['startTime'])
         stop  = datetime.fromisoformat(date['stopTime'])
         ds.attrs[str(names.datetime)] = (start + (stop - start)/2.).isoformat()
         
-        platform = meta[1]['metadataWrap']['xmlData']['platform']
+        plat_obj = next(o for o in meta if o['attributes']['ID'] == 'platform')
+        platform = plat_obj['metadataWrap']['xmlData']['platform']
         ds.attrs[str(names.platform)] = platform['familyName'] + platform['number']
         ds.attrs[str(names.resolution)] = 500
         ds.attrs[str(names.sensor)] = platform['instrument']['familyName']['attributes']['abbreviation']

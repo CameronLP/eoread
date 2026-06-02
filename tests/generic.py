@@ -15,6 +15,7 @@ from eoread.flags import FlagsInit, GenericFlags
 from datetime import datetime
 from pathlib import Path
 from dask import config
+from core.interpolate import align_lists
 
 import pytest
 import numpy as np
@@ -52,6 +53,9 @@ class Test:
 
         # test chunks consistency
         ds.chunks
+
+        # Test dimensions alignment
+        align_lists([ds[x].dims for x in ds])
 
         # check spatial dimensions
         if str(names.rows) not in ds.dims:
