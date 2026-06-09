@@ -500,7 +500,11 @@ class _Internal:
             ds[str(names.rtoa)+'_10m'].attrs.update(unit=None)
             ds[str(names.rtoa)+'_20m'].attrs.update(unit=None)
             ds[str(names.rtoa)+'_60m'].attrs.update(unit=None)
-        
+
+        # Normalize x/y coordinates to integer indices (rasterio opens with UTM coords)
+        # This ensures read_geometry interpolation works with consistent pixel-index coords
+        ds = _Internal.normalize_spatial_coords(ds, resolution)
+
         return ds
     
     @staticmethod
@@ -566,7 +570,34 @@ class _Internal:
             ds[str(names.rtoa)+'_10m'].attrs.update(unit=None)
             ds[str(names.rtoa)+'_20m'].attrs.update(unit=None)
             ds[str(names.rtoa)+'_60m'].attrs.update(unit=None)
+
+        # Normalize x/y coordinates to integer indices (rasterio opens with UTM coords)
+        # This ensures read_geometry interpolation works with consistent pixel-index coords
+        ds = _Internal.normalize_spatial_coords(ds, resolution)
+
+        return ds
+
+    @staticmethod
+    def normalize_spatial_coords(ds: xr.Dataset, resolution: int) -> xr.Dataset:
+        """Normalize spatial dimension coordinates to integer pixel indices.
         
+        rasterio opens JP2 files with UTM projected coordinates on x/y dimensions.
+        This resets them to 0..N-1 so that read_geometry's interpolation (which
+        uses pixel-index targets) works correctly regardless of the source coords.
+        """
+        if resolution:
+            ds = ds.assign_coords({
+                str(names.columns): np.arange(ds.sizes[str(names.columns)]),
+                str(names.rows): np.arange(ds.sizes[str(names.rows)]),
+            })
+        else:
+            for res in [10, 20, 60]:
+                cx = f'{str(names.columns)}_{res}m'
+                cy = f'{str(names.rows)}_{res}m'
+                if cx in ds.sizes:
+                    ds = ds.assign_coords({cx: np.arange(ds.sizes[cx])})
+                if cy in ds.sizes:
+                    ds = ds.assign_coords({cy: np.arange(ds.sizes[cy])})
         return ds
     
     @staticmethod
