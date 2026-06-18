@@ -100,10 +100,10 @@ def Level1_OLI(
     # Reading different rasters
     if verbose: log.debug('read geometric angles')
     _Internal.read_geometry(ds, dirname, l9_angles, chunks)
-    if verbose: log.debug('read TOA rasters')
-    ds = _Internal.read_radiometry(ds, dirname, chunks)
     if verbose: log.debug('read masks')
     _Internal.read_masks(ds, dirname, chunks)
+    if verbose: log.debug('read TOA rasters')
+    ds = _Internal.read_radiometry(ds, dirname, chunks)
     _Internal.read_coordinates(ds, chunks)
 
     # other attributes
@@ -321,8 +321,25 @@ class _Internal:
         ds[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
         ds[str(names.rtoa)].attrs['unit'] = None
         ds[str(names.bt)].attrs['unit'] = 'Kelvin'
+        
+        # Normalize x/y coordinates to integer indices (rasterio opens with UTM coords)
+        # This ensures read_geometry interpolation works with consistent pixel-index coords
+        ds = _Internal.normalize_spatial_coords(ds)
 
         return ds.sortby(ds.bands.astype(int))
+
+    @staticmethod
+    def normalize_spatial_coords(ds: xr.Dataset) -> xr.Dataset:
+        """Normalize spatial dimension coordinates to integer pixel indices.
+        
+        rasterio opens JP2 files with UTM projected coordinates on x/y dimensions.
+        This resets them to 0..N-1 so that read_geometry's interpolation (which
+        uses pixel-index targets) works correctly regardless of the source coords.
+        """
+        return ds.assign_coords({
+            str(names.columns): np.arange(ds.sizes[str(names.columns)]),
+            str(names.rows): np.arange(ds.sizes[str(names.rows)]),
+        })
 
     @staticmethod
     def read_masks(ds: xr.Dataset, dirname: Path, chunks: list) -> None:
