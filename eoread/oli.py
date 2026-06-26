@@ -5,6 +5,8 @@ import re
 import numpy as np
 import xarray as xr
 import dask.array as da
+import rasterio
+import pyproj
 
 from os import system
 from pathlib import Path
@@ -20,7 +22,6 @@ from eoread.tools import (
 )
 
 from core import log
-from core.interpolate import interp, Linear
 from core.tools import merge, drop_unused_dims, only
 from core.geo.naming import names
 from core.table import read_xml
@@ -104,14 +105,13 @@ def Level1_OLI(
     _Internal.read_masks(ds, dirname, chunks)
     if verbose: log.debug('read TOA rasters')
     ds = _Internal.read_radiometry(ds, dirname, chunks)
-    _Internal.read_coordinates(ds, chunks)
+    _Internal.read_coordinates(ds, dirname, chunks)
 
     # other attributes
     if verbose: log.debug('add important attributes')
     ds.attrs[str(names.platform)] = metadata['IMAGE_ATTRIBUTES']['SPACECRAFT_ID']
     ds.attrs[str(names.sensor)] = metadata['IMAGE_ATTRIBUTES']['SENSOR_ID']
     ds.attrs[str(names.product_name)] = metadata['PRODUCT_CONTENTS']['LANDSAT_PRODUCT_ID']
-    ds.attrs[str(names.input_directory)] = str(dirname.parent)
     ds.attrs[str(names.resolution)] = 30
     ds.attrs['user_guide'] = user_guide
     ds.attrs['_flag_reader'] = 'eoread.oli.FlagsReader_OLI'
@@ -213,29 +213,71 @@ class _Internal:
         return data_mtl
 
     @staticmethod
-    def read_coordinates(ds: xr.Dataset, chunks: list) -> None:
-        """Compute latitude and longitude arrays from corner coordinates."""
-        # Compute tie points
-        points = ds.metadata['PROJECTION_ATTRIBUTES']
-        lat = xr.DataArray([
-            [points['CORNER_UL_LAT_PRODUCT'],points['CORNER_UR_LAT_PRODUCT']],
-            [points['CORNER_LL_LAT_PRODUCT'],points['CORNER_LR_LAT_PRODUCT']],
-        ])
-        lon = xr.DataArray([
-            [points['CORNER_UL_LON_PRODUCT'],points['CORNER_UR_LON_PRODUCT']],
-            [points['CORNER_LL_LON_PRODUCT'],points['CORNER_LR_LON_PRODUCT']],
-        ])
-        
-        # Compute latlon arrays
-        x = da.linspace(0, 1, len(ds[str(names.columns)]))
-        x = xr.DataArray(x, dims=(str(names.columns))).chunk(chunks[str(names.columns)])
-        y = da.linspace(0, 1, len(ds[str(names.rows)]))
-        y = xr.DataArray(y, dims=(str(names.rows))).chunk(chunks[str(names.rows)])
-        ds[str(names.lat)] = interp(lat, dim_0=Linear(y), dim_1=Linear(x))
-        ds[str(names.lon)] = interp(lon, dim_0=Linear(y), dim_1=Linear(x))
+    def read_coordinates(ds: xr.Dataset, dirname: Path, chunks: list) -> None:
+        """Compute latitude and longitude arrays from UTM affine transform.
 
-        ds.attrs['totalheight'] = ds.y.size
-        ds.attrs['totalwidth'] = ds.x.size
+        Landsat Level-1 products are georeferenced in UTM (EPSG:326xx or
+        EPSG:327xx).  Each band GeoTIFF carries an affine transform that maps
+        pixel indices to UTM easting/northing.  We use this transform together
+        with `pyproj` to compute accurate WGS84 lat/lon for every pixel.
+        """
+        # Find a VNIR band to read the transform from (B1-B5, B7 are 30 m)
+        band_file = only(list(dirname.glob("LC*_B4.TIF")))
+
+        with rasterio.open(band_file) as src:
+            transform = src.transform
+            crs = src.crs
+            height = src.height
+            width = src.width
+
+        # Build column / row index arrays (pixel centres)
+        col_indices = da.arange(width, dtype=np.float64) + 0.5
+        row_indices = da.arange(height, dtype=np.float64) + 0.5
+
+        # Apply affine transform: UTM_easting = c + a*col + b*row
+        #                        UTM_northing = f + d*col + e*row
+        utm_easting = transform.c + transform.a * col_indices + transform.b * (
+            row_indices[:, None]
+        )
+        utm_northing = transform.f + transform.d * col_indices + transform.e * (
+            row_indices[:, None]
+        )
+
+        # Create transformer UTM → WGS84
+        utm_crs = pyproj.CRS.from_user_input(crs)
+        wgs84_crs = pyproj.CRS.from_epsg(4326)
+        transformer = pyproj.Transformer.from_crs(utm_crs, wgs84_crs, always_xy=True)
+
+        # Transform UTM → WGS84
+        # transformer.transform returns (lon, lat) for (x, y) input
+        lons_dask, lats_dask = transformer.transform(
+            utm_easting, utm_northing, errcheck=False
+        )
+
+        # Ensure dask arrays with proper chunks
+        # chunks can be int, tuple/list, or dict like {'y': 500, 'x': 500}
+        if isinstance(chunks, dict):
+            chunk_tuple = (chunks.get(str(names.rows), chunks.get('y', 500)),
+                          chunks.get(str(names.columns), chunks.get('x', 500)))
+        elif isinstance(chunks, (list, tuple)):
+            chunk_tuple = tuple(chunks)
+        else:
+            chunk_tuple = (chunks, chunks)
+
+        lons_dask = da.from_array(lons_dask, chunks=chunk_tuple)
+        lats_dask = da.from_array(lats_dask, chunks=chunk_tuple)
+
+        ds[str(names.lat)] = xr.DataArray(
+            lats_dask, dims=[str(names.rows), str(names.columns)],
+            name=str(names.lat)
+        )
+        ds[str(names.lon)] = xr.DataArray(
+            lons_dask, dims=[str(names.rows), str(names.columns)],
+            name=str(names.lon)
+        )
+
+        ds.attrs['totalheight'] = height
+        ds.attrs['totalwidth'] = width
 
     @staticmethod
     def gen_l9_angles(dirname: Path, l9_angles: Union[str, Path, None] = None) -> None:
