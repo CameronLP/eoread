@@ -154,8 +154,12 @@ def Level1_MSI(
     ds.attrs['_flag_reader'] = 'eoread.msi.FlagsReader_MSI'
 
     # SRF getter
-    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_msi'
-    ds.attrs['_srf_getter_arg'] = platform
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter_arg'] = {
+        'S2A': 'sentinel2_1_msi', 
+        'S2B': 'sentinel2_2_msi', 
+        'S2C': 'sentinel2_3_msi', 
+    }[platform]
     
     ds = drop_unused_dims(ds)
     if resolution:
@@ -295,8 +299,12 @@ def Level2_MSI(
     ds.attrs['_flag_reader'] = 'eoread.msi.FlagsReader_MSI'
 
     # SRF getter
-    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_msi'
-    ds.attrs['_srf_getter_arg'] = platform
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_eumetsat'
+    ds.attrs['_srf_getter_arg'] = {
+        'S2A': 'sentinel2_1_msi', 
+        'S2B': 'sentinel2_2_msi', 
+        'S2C': 'sentinel2_3_msi', 
+    }[platform]
 
     ds = drop_unused_dims(ds)
     if resolution:
