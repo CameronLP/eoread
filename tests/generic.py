@@ -226,10 +226,14 @@ class Test:
 
 
 def plot(
-    request, l1: xr.Dataset, band_nir, poi: dict | None = None, yincrease: bool = True
+    request, l1: xr.Dataset, band_nir, poi: dict | None = None, yincrease: bool = False
 ):
     """
-    Plot typical level 1 parameters to give an overview of the product
+    Plot typical level 1 parameters to give an overview of the product.
+
+    Args:
+        yincrease: If False (default), origin is at top-left (image convention).
+                   If True, origin is at bottom-left (cartographic convention).
     """
     rasters = [str(names.rtoa), str(names.bt), str(names.ltoa)]
     toa = next((v for v in rasters if v in l1), None)

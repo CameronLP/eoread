@@ -151,7 +151,18 @@ def nasa_search(**kwargs):
     return subprocess.check_output(cmd, shell=True).decode().split()
 
 
-def Level1_NASA(filename, chunks=500):
+# Per-sensor configuration: which sensors need spatial reversal to normalize orientation
+# MODIS and VIIRS store data with first line = northernmost, first pixel = easternmost
+# HAWKEYE and SeaWiFS store data in standard geographic order
+_SENSOR_REVERSE = {
+    'MODIS': True,
+    'VIIRS': True,
+    'HAWKEYE': False,
+    'SEAWIFS': False,
+}
+
+
+def Level1_NASA(filename, chunks=500, normalize_orientation=True):
     """
     Read a NASA L1C product (MODIS, VIIRS, SeaWiFS) as an xarray.Dataset.
     
@@ -161,6 +172,12 @@ def Level1_NASA(filename, chunks=500):
     Args:
         filename: Path to the NASA L1C NetCDF file
         chunks: Chunk size for spatial dimensions
+        normalize_orientation: If True (default), normalize the spatial
+                orientation so that latitude increases from bottom to top
+                and longitude increases from left to right. This is done
+                by reversing rows and columns for sensors that store data
+                in scan order (see _SENSOR_REVERSE). Set to False to get
+                raw data in the file's native orientation.
         
     Returns:
         xr.Dataset containing:
@@ -189,13 +206,25 @@ def Level1_NASA(filename, chunks=500):
     sensor_band = xr.open_dataset(filename, group='/sensor_band_parameters', chunks=chunks)
     bands = sensor_band['wavelength'].values[sensor_band.number_of_reflective_bands.values].astype('int32')
 
+    # Determine whether this sensor needs reversal for normalized orientation
+    reverse = False
+    if normalize_orientation:
+        instrument = ds.attrs.get('instrument', '').upper()
+        reverse = _SENSOR_REVERSE.get(instrument, False)
+
     navi = xr.open_dataset(filename, group='navigation_data', chunks=chunks)
     navi = navi.rename_dims({'number_of_lines':str(names.rows), 'pixels_per_line':str(names.columns)})
+    if reverse:
+        navi = navi.isel({str(names.rows): slice(None, None, -1),
+                          str(names.columns): slice(None, None, -1)})
     ds[str(names.lat)] = navi.latitude
     ds[str(names.lon)] = navi.longitude
     
     geo_data = xr.open_dataset(filename, group='/geophysical_data', chunks=chunks)
     geo_data = geo_data.rename_dims({'number_of_lines':str(names.rows), 'pixels_per_line':str(names.columns)})
+    if reverse:
+        geo_data = geo_data.isel({str(names.rows): slice(None, None, -1),
+                                  str(names.columns): slice(None, None, -1)})
     for _n,r,p in [(str(names.rtoa)+f'_{b}', f'rhot_{b}', f'polcor_{b}') for b in bands]:
         try:
             ds[_n] = (geo_data[r]/geo_data[p]).where(geo_data[r] > -100.)
