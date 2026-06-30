@@ -641,9 +641,11 @@ class _Internal:
         for name, tie in angles:
             ds[str(name)+'_tie'] = xr.DataArray(tie, dims=dims)
             ds[str(name)] = interp(
-                ds[str(name)+'_tie'], tie_rows=Linear(y), tie_columns=Linear(x)
+                ds[str(name) + "_tie"].compute(scheduler="sync"),
+                tie_rows=Linear(y),
+                tie_columns=Linear(x),
             )
-        
+
         return ds
     
     @staticmethod
