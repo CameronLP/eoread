@@ -202,6 +202,12 @@ def Level1_NASA(filename, chunks=500, normalize_orientation=True):
     ds.attrs[str(names.datetime)] = d.isoformat()
     ds.attrs[str(names.sensor)] = ds.attrs['instrument']
     ds.attrs[str(names.input_directory)] = str(Path(filename).parent)
+    
+    # SRF getter based on platform/sensor combination
+    platform = ds.attrs.get('platform', '').lower()
+    instrument = ds.attrs.get('instrument', '').lower()
+    ds.attrs['_srf_getter'] = 'eotools.srf.get_SRF_NASA'
+    ds.attrs['_srf_getter_arg'] = f'{platform}_{instrument}'
 
     sensor_band = xr.open_dataset(filename, group='/sensor_band_parameters', chunks=chunks)
     bands = sensor_band['wavelength'].values[sensor_band.number_of_reflective_bands.values].astype('int32')
