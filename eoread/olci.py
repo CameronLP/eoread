@@ -13,7 +13,7 @@ from re import findall
 from core import log
 from core.table import read_xml
 from core.geo.naming import names
-from core.tools import getflags
+from core.tools import getflag, getflags
 
 from eoread.flags import FlagsReaderBase, GenericFlags
 from eoread.tools import (
@@ -315,12 +315,15 @@ class FlagsReader_OLCI(FlagsReaderBase):
         
         Args:
             ds: OLCI dataset containing quality_flags variable
-            flag_name: Standard flag identifier (L1_INVALID or L1_DEGRADED)
+            flag_name: Standard flag identifier
         """
-        if flag_name == GenericFlags.L1_INVALID:
-            return ds['quality_flags']
-        elif flag_name == GenericFlags.L1_DEGRADED:
-            return ds['quality_flags']
+        if flag_name == GenericFlags.LAND:
+            # Combine land and fresh_inland_water flags
+            land = getflag(ds['quality_flags'], 'land')
+            fresh_inland_water = getflag(ds['quality_flags'], 'fresh_inland_water')
+            return land | fresh_inland_water
+        elif flag_name == GenericFlags.L1_INVALID:
+            return getflag(ds['quality_flags'], 'invalid')
         else:
             raise ValueError(f"Unsupported flag: {flag_name}")
 
