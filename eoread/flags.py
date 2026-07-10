@@ -171,6 +171,10 @@ class FlagsInit(BlockProcessor):
     flags_varname : str, default='flags'
         Name of the variable to create in the dataset containing the initialized flags.
 
+    strict : bool, default=True
+        If True (default), raise ValueError when a flag is not supported by the FlagsReader.
+        If False, silently skip unsupported flags instead of raising an error.
+
     Example
     -------
     ```python
@@ -205,11 +209,13 @@ class FlagsInit(BlockProcessor):
         flag_reader: str,
         flag_reader_kwargs: dict | None = None,
         flags_varname: str = 'flags',
+        strict: bool = True,
     ):
         self.flags = flags
         self.flgreader: FlagsReaderBase = import_module(flag_reader)(**(flag_reader_kwargs or {}))
         self.dtype = dtype
         self.flags_varname = flags_varname
+        self.strict = strict
 
     def input_vars(self) -> list[Var]:
         required = [Var(x) for x in self.flgreader.requires()]
@@ -233,10 +239,16 @@ class FlagsInit(BlockProcessor):
         flags.attrs = {}
         for flagname, flag_value in self.flags.items():
             # flag_name is either a GenericFlag(enum) or a string
+            try:
+                flag_data = self.flgreader.getflag(block, flagname)
+            except ValueError:
+                if self.strict:
+                    raise
+                continue
             tools.raiseflag(
                 flags,
                 flagname,
                 flag_value,
-                self.flgreader.getflag(block, flagname),
+                flag_data,
             )
         block[self.flags_varname] = flags
