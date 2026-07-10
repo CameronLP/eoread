@@ -166,7 +166,8 @@ def Level1_MSI(
         ds = ds.transpose(..., *[str(names.rows), str(names.columns)])
         ds = ds.set_coords(str(names.bgroup))
     
-    if v1_compat: return _v1_compat(ds)
+    if v1_compat:
+        ds = _v1_compat(ds)
     return ds.unify_chunks()
 
 
