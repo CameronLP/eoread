@@ -34,6 +34,7 @@ def Level1_OLCI(
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
         metadata_template: Union[list, None] = None, 
         v1_compat: bool = False,
+        engine: str | None = None,
         verbose: bool = True
     ) -> xr.Dataset:
     """
@@ -108,34 +109,35 @@ def Level1_OLCI(
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
-    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks)
+    geo = xr.open_dataset(geo_coords_file, engine=engine, chunks=chunks)
     for k in geo.variables: 
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
 
     # tie geometry interpolation
     if verbose: log.debug('read geometric tie points')
-    _Internal.read_angle(ds, dirname, interp_angles, chunks)
+    _Internal.read_angle(ds, dirname, interp_angles, chunks, engine)
 
     # tie meteo interpolation
     if verbose: log.debug('read meteorological tie points')
-    _Internal.read_ancillary_data(ds, dirname, chunks)
+    _Internal.read_ancillary_data(ds, dirname, chunks, engine)
 
     # instrument data
     instrument_data = xr.open_dataset(
         dirname/'instrument_data.nc',
-        engine='h5netcdf',
+        engine=engine,
         mask_and_scale=False,
+        chunks=chunks,
         # this variable has duplicate dimensions, drop it
         drop_variables='relative_spectral_covariance'
-    ).chunk(chunks=chunks)
+    )
     ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # quality flags
     if verbose: log.debug('read quality masks')
-    qf = xr.open_dataset(dirname/'qualityFlags.nc', engine='h5netcdf')
+    qf = xr.open_dataset(dirname/'qualityFlags.nc', engine=engine, chunks=chunks)
     for var in qf.variables: 
-        ds[var] = qf[var].chunk(chunks)
+        ds[var] = qf[var]
 
     # dimensions
     ds = ds.rename({'rows':str(names.rows), 'columns':str(names.columns)})
@@ -166,6 +168,7 @@ def Level2_OLCI(
         chunks: Union[int, tuple] = 500,
         interp_angles: Literal['atan2', 'linear', 'legacy'] = 'linear',
         metadata_template: Union[list, None] = None, 
+        engine: str | None = None,
         verbose: bool = True
     ) -> xr.Dataset:
     """
@@ -233,44 +236,45 @@ def Level2_OLCI(
 
     # Geo coordinates
     geo_coords_file = dirname/'geo_coordinates.nc'
-    geo = xr.open_dataset(geo_coords_file, engine='h5netcdf').chunk(chunks=chunks)
+    geo = xr.open_dataset(geo_coords_file, engine=engine, chunks=chunks)
     for k in geo.variables: 
         ds[k] = geo[k].astype('float32')
         ds[k].attrs.update(geo.attrs)
 
     # tie geometry interpolation
     if verbose: log.debug('read geometric tie points')
-    _Internal.read_angle(ds, dirname, interp_angles, chunks)
+    _Internal.read_angle(ds, dirname, interp_angles, chunks, engine)
 
     # tie meteo interpolation
     if verbose: log.debug('read meteorological tie points')
-    _Internal.read_ancillary_data(ds, dirname, chunks)
+    _Internal.read_ancillary_data(ds, dirname, chunks, engine)
 
     # instrument data
     instrument_data = xr.open_dataset(
         dirname/'instrument_data.nc',
-        engine='h5netcdf',
+        engine=engine,
         mask_and_scale=False,
+        chunks=chunks,
         # this variable has duplicate dimensions, drop it
         drop_variables='relative_spectral_covariance'
-    ).chunk(chunks=chunks)
+    )
     instrument_data = instrument_data.sel(bands=[int(b[2:])-1 for b in bandnames])
     ds = ds.assign({x: instrument_data[x] for x in instrument_data.variables})
 
     # chl_nn
-    qf = xr.open_dataset(dirname/'chl_nn.nc', engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'chl_nn.nc', engine=engine, chunks=chunks)
     ds['chl_nn'] = qf.CHL_NN
 
     # chl_oc4me
-    qf = xr.open_dataset(dirname/'chl_oc4me.nc', engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'chl_oc4me.nc', engine=engine, chunks=chunks)
     ds['chl_oc4me'] = qf.CHL_OC4ME
 
     # quality flags
-    qf = xr.open_dataset(dirname/'wqsf.nc', engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'wqsf.nc', engine=engine, chunks=chunks)
     ds['wqsf'] = qf.WQSF
 
     # aerosol properties
-    qf = xr.open_dataset(dirname/'w_aer.nc', engine='h5netcdf').chunk(chunks=chunks)
+    qf = xr.open_dataset(dirname/'w_aer.nc', engine=engine, chunks=chunks)
     ds['A865'] = qf.A865
     ds['T865'] = qf.T865
     
@@ -335,17 +339,17 @@ class FlagsReader_OLCI(FlagsReaderBase):
 class _Internal:
     
     @staticmethod
-    def read_ltao(dirname: Path, band: str, chunks: dict, collec: dict) -> None:
+    def read_ltao(dirname: Path, band: str, chunks: dict, collec: dict, engine: str | None = None) -> None:
         """Read Level1 radiance data for a single band."""
         filename = dirname/f'{band}_radiance.nc'
-        da = xr.open_dataarray(filename, engine='h5netcdf').chunk(chunks)
+        da = xr.open_dataarray(filename, engine=engine, chunks=chunks)
         collec['ltoa'].append(da)
     
     @staticmethod
-    def read_rtoa(dirname: Path, band: str, chunks: dict, collec: dict) -> None:
+    def read_rtoa(dirname: Path, band: str, chunks: dict, collec: dict, engine: str | None = None) -> None:
         """Read Level2 reflectance data and uncertainties for a single band."""
         filename = dirname/f'{band}_reflectance.nc'
-        ds = xr.open_dataset(filename, engine='h5netcdf').chunk(chunks)
+        ds = xr.open_dataset(filename, engine=engine, chunks=chunks)
         collec['rtoa'].append(ds[f'{band}_reflectance'])
         collec['unc'].append(ds[f'{band}_reflectance_unc'])
     
@@ -416,14 +420,14 @@ class _Internal:
         return [m for (m, v) in flags.items() if (v & value != 0)]
     
     @staticmethod
-    def read_angle(ds: xr.Dataset, dirname: str, interp_angles: str, chunks: dict) -> None:
+    def read_angle(ds: xr.Dataset, dirname: str, interp_angles: str, chunks: dict, engine: str | None = None) -> None:
         """Read and interpolate viewing/solar angles from tie points to full grid."""
         
         # Open the dataset containing geometric information
         ac_factor = ds.latitude.ac_subsampling_factor
         al_factor = ds.latitude.al_subsampling_factor
         tie_geom_file = dirname/'tie_geometries.nc'
-        tie_ds = xr.open_dataset(tie_geom_file, engine='h5netcdf').chunk(chunks=-1)
+        tie_ds = xr.open_dataset(tie_geom_file, engine=engine, chunks=-1)
         tie_ds = tie_ds.assign_coords(
             tie_columns=np.arange(tie_ds.sizes['tie_columns'])*ac_factor,
             tie_rows=np.arange(tie_ds.sizes['tie_rows'])*al_factor,
@@ -471,14 +475,14 @@ class _Internal:
         assert ((ds.sizes['rows']-1) == al_factor*(tie_ds.sizes['tie_rows']-1))
     
     @staticmethod
-    def read_ancillary_data(ds: xr.Dataset, dirname: str,  chunks: dict) -> None:
+    def read_ancillary_data(ds: xr.Dataset, dirname: str, chunks: dict, engine: str | None = None) -> None:
         """Read and interpolate meteorological tie-point data to full grid."""
         
         # Open the dataset containing meteorologic information
         ac_factor = ds.latitude.ac_subsampling_factor
         al_factor = ds.latitude.al_subsampling_factor
         tie_meteo_file = dirname/'tie_meteo.nc'
-        tie = xr.open_dataset(tie_meteo_file, engine='h5netcdf').chunk(chunks=-1)
+        tie = xr.open_dataset(tie_meteo_file, engine=engine, chunks=-1)
         tie = tie.assign_coords(
             tie_columns = np.arange(tie.sizes['tie_columns'])*ac_factor,
             tie_rows = np.arange(tie.sizes['tie_rows'])*al_factor,
