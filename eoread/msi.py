@@ -645,7 +645,7 @@ class _Internal:
                 ds[str(name) + "_tie"].compute(scheduler="sync"),
                 tie_rows=Linear(y),
                 tie_columns=Linear(x),
-            )
+            ).drop_vars([d['y'], d['x']])
 
         return ds
     
