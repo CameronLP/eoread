@@ -325,7 +325,7 @@ class FlagsReader_OLCI(FlagsReaderBase):
             # Combine land and fresh_inland_water flags
             land = getflag(ds['quality_flags'], 'land')
             fresh_inland_water = getflag(ds['quality_flags'], 'fresh_inland_water')
-            return land | fresh_inland_water
+            return land & ~fresh_inland_water
         elif flag_name == GenericFlags.L1_INVALID:
             return getflag(ds['quality_flags'], 'invalid')
         else:
