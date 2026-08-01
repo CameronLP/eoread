@@ -81,7 +81,7 @@ def Level1B_PACE_OCI(
     # ds.attrs['_srf_getter_arg'] = ''
     
     # Add band names as coordinates
-    ds = ds.assign_coords({str(names.bands): ds[str(names.cwav)].astype(int).astype(str)})
+    ds = ds.assign_coords({str(names.bands): ds[str(names.cwav)].astype(int)})
     ds = ds.chunk({str(names.bands): -1})
 
     # Rename and rechunk spatial dimensions
