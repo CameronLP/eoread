@@ -1,3 +1,6 @@
+import numpy as np
+import dask.array as da
+
 from pathlib import Path
 from typing import Union
 
@@ -41,6 +44,11 @@ def Level1B_PACE_OCI(
         "solar_zenith": str(names.sza),
         "watermask": "water"
     })
+    # PACE's watermask is a 0/1 flag ("0 for land, 1 for water") but arrives
+    # as float32 (like the rest of the geolocation_data group, blanket-cast
+    # above) - FlagsReader_PACE.getflag does `~ds['water']` for the LAND
+    # flag, and numpy's `~` doesn't support float dtypes.
+    ds["water"] = ds["water"].astype(bool)
 
     # TOA reflectance
     ds[str(names.rtoa)] = xr.concat(
@@ -95,6 +103,19 @@ def Level1B_PACE_OCI(
             if w not in seen and not seen.add(w)
         ], key=lambda x: x[1])
     ]})
+
+    # Built as a dask array chunked to match the rest of `ds` (rather than a
+    # plain numpy array) so it doesn't introduce a differently-aligned chunk
+    # grid along y/x once combined with the other (already-chunked)
+    # variables - see da.zeros' chunks= vs. ds.chunk(chunks)'s own choice of
+    # boundaries above.
+    altitude = da.zeros((ds.dims["y"], ds.dims["x"]), chunks=(ds.chunks["y"], ds.chunks["x"]))
+    # eotools.units.convert() (used by the Rayleigh correction) requires a
+    # pint-compatible 'units' attribute to treat this as a quantity at all -
+    # without it, convert(ds["altitude"], "m") raises "cannot convert a
+    # non-quantity". PACE OCI has no real DEM/altitude data, hence the
+    # all-zeros (sea-level) placeholder.
+    ds["altitude"] = (("y", "x"), altitude, {"units": "m"})
 
     return ds
 
