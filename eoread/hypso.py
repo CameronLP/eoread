@@ -1,6 +1,7 @@
 from dask import array as da
 from dateutil.parser import parse
 from pathlib import Path
+import h5py
 import numpy as np
 import xarray as xr
 
@@ -11,6 +12,78 @@ from eoread.tools import filter_metadata, format_chunks
 from eotools.solar_irradiance import solar_irradiance
 from core.tools import drop_unused_dims
 from core import env, log
+
+
+def _hypso_format(filepath: Path) -> str:
+    """"grouped" (NTNU's original delivery layout: separate `products`/
+    `geometry` HDF5 groups) or "flat" (hypso-package's CF/SNAP-refactored
+    layout, in production since 2026-08: products+geometry variables at the
+    file root, only `metadata/*` stays nested - see that package's
+    REFACTOR_PROGRESS.md/ARCHITECTURE_PROPOSAL.md for why). A cheap,
+    dedicated open+close - no data read - since the two layouts need
+    different xr.open_dataset(..., group=...) calls below, not something
+    detectable from one already-open Dataset."""
+    with h5py.File(filepath, "r") as f:
+        return "grouped" if "products" in f else "flat"
+
+
+def _read_hypso_l1c_products_and_geometry(filepath: Path, chunks_raw: dict, fmt: str):
+    """The one part of reading a HYPSO L1C file that actually differs between
+    layouts (see _hypso_format) - everything downstream in Level1_HYPSO
+    (F0/Rtoa computation, attribute assembly) is identical either way, so
+    only this extraction step is duplicated, not the science.
+
+    Returns (ds_root, ds_nav, ltoa, wave_names, wavelengths):
+      - ds_root: the whole file's global attrs (unchunked - attrs don't care)
+      - ds_nav: Dataset exposing latitude/longitude/sensor_zenith/etc by name
+        (a dedicated "geometry" group for "grouped"; ds_root itself for
+        "flat", since geometry variables already live at its root)
+      - ltoa: (bands, lines, samples) DataArray, band dim ordered by each
+        band variable's own `band` attribute (not name/insertion order -
+        the confirmed latent band-order bug this convention now guards
+        against, see hypso-package's tests/test_cf_format.py)
+      - wave_names, wavelengths: per-band label/value lists, same order as
+        ltoa's band dimension
+    """
+    if fmt == "grouped":
+        ds_root = xr.open_dataset(filepath)
+        ds_products = xr.open_dataset(filepath, group="products", chunks=chunks_raw)
+        ds_nav = xr.open_dataset(filepath, group="geometry", chunks=chunks_raw)
+    else:
+        ds_root = xr.open_dataset(filepath, chunks=chunks_raw)
+        # latitude/longitude get auto-promoted to coordinate variables by
+        # xarray's CF decoding (every Lt_<wave> variable carries a
+        # coordinates="latitude longitude" attribute pointing at them, now
+        # resolvable since they live in the same root group - see
+        # hypso-package's io/cf.py geolocation_ref_attrs()). Demoted back to
+        # plain data variables so ds_nav["longitude"] below assigns into the
+        # caller's fresh Dataset the same way the "grouped" branch's
+        # never-promoted ds_nav["longitude"] does - otherwise xarray can't
+        # tell whether the assignment target should be a coord or not and
+        # raises MergeError.
+        ds_root = ds_root.reset_coords(["latitude", "longitude"])
+        ds_products = ds_root
+        ds_nav = ds_root
+
+    if "Lt" in ds_products:
+        # Single stacked (lines, samples, bands) datacube variable - only
+        # possible with "flat" (hypso-package's write_level_nc(datacube=True)
+        # option; "grouped" deliveries observed in practice are always
+        # per-band, see below), but checked unconditionally since nothing
+        # about the file format guarantees which one a given delivery used.
+        ltoa = ds_products["Lt"].transpose(str(names.bands), ...)
+        wavelengths = [float(w) for w in ltoa.attrs["wavelengths"]]
+        wave_names = [str(int(round(w))) for w in wavelengths]
+    else:
+        band_vars = sorted(
+            (v for v in ds_products.data_vars if v.startswith("Lt_")),
+            key=lambda v: int(ds_products[v].attrs["band"]),
+        )
+        ltoa = xr.concat([ds_products[v] for v in band_vars], dim=str(names.bands))
+        wave_names = [str(ds_products[v].wave_name) for v in band_vars]
+        wavelengths = [float(ds_products[v].wavelength) for v in band_vars]
+
+    return ds_root, ds_nav, ltoa, wave_names, wavelengths
 
 
 def Level1_HYPSO(
@@ -30,13 +103,20 @@ def Level1_HYPSO(
     The dataset contains TOA radiances, viewing/solar angles on the full grid,
     and geolocation information.
 
-    This reader targets the L1C NetCDF/HDF5 layout currently delivered by
-    NTNU: a `products` group with one `Lt_<wavelength>` variable per band, a
-    `geometry` group with the viewing/solar angles, and a
-    `metadata/corrections` group carrying `radiometric_coefficients_version`
-    ("original", "moved" or "adjusted"). That version is folded into the
-    `sensor` attribute (e.g. "HYPSO-2_moved") so that `polymer.params.Params`
-    can select the matching band set.
+    Transparently supports both HYPSO L1C NetCDF/HDF5 layouts NTNU has
+    delivered (auto-detected per file, see _hypso_format): the original
+    "grouped" layout (a `products` group with one `Lt_<wavelength>` variable
+    per band, a `geometry` group with the viewing/solar angles) and the
+    current "flat" layout (hypso-package's CF/SNAP refactor, in production
+    since 2026-08: products+geometry variables at the file root instead of
+    nested groups). Either way, a `metadata/corrections` group (unchanged by
+    the format switch) carries `radiometric_coefficients_version` ("original",
+    "moved" or "adjusted"), folded into the `sensor` attribute (e.g.
+    "HYPSO-2_moved") so that `polymer.params.Params` can select the matching
+    band set. Also supports a file written with a single stacked
+    (lines, samples, bands) `Lt` datacube variable instead of one `Lt_<wave>`
+    per band (only possible in the flat layout - see
+    _read_hypso_l1c_products_and_geometry).
 
     Args:
         filepath: Path to the HYPSO L1C file (.nc)
@@ -71,9 +151,10 @@ def Level1_HYPSO(
     chunks = format_chunks(chunks)
     chunks_raw = {"lines": chunks[str(names.rows)], "samples": chunks[str(names.columns)]}
 
-    ds_root = xr.open_dataset(filepath)
-    ds_products = xr.open_dataset(filepath, group="products", chunks=chunks_raw)
-    ds_nav = xr.open_dataset(filepath, group="geometry", chunks=chunks_raw)
+    fmt = _hypso_format(filepath)
+    if verbose: log.debug('Detected HYPSO L1C layout: %s', fmt)
+    ds_root, ds_nav, ltoa, wave_names, wavelengths = _read_hypso_l1c_products_and_geometry(
+        filepath, chunks_raw, fmt)
     ds_corrections = xr.open_dataset(filepath, group="metadata/corrections")
 
     # get geographical coordinates and angles
@@ -86,17 +167,15 @@ def Level1_HYPSO(
     ds[str(names.saa)] = ds_nav["solar_azimuth"]
 
     if verbose: log.debug('Read top of atmosphere data')
-    ds[str(names.ltoa)] = xr.concat([ds_products[x] for x in ds_products], dim=str(names.bands))
+    ds[str(names.ltoa)] = ltoa
     ds[str(names.ltoa)].attrs['units'] = 'W/m^2/micrometer/sr'
     ds = ds.rename(lines=str(names.rows), samples=str(names.columns))
 
     if verbose: log.debug('Extract central wavelength')
     ds = ds.assign_coords({
-        str(names.bands): [int(ds_products[x].wave_name) for x in ds_products],
+        str(names.bands): [int(w) for w in wave_names],
     })
-    ds[str(names.cwav)] = xr.DataArray(
-        [ds_products[x].wavelength for x in ds_products], dims=[str(names.bands)],
-    )
+    ds[str(names.cwav)] = xr.DataArray(wavelengths, dims=[str(names.bands)])
 
     # HYPSO has no DEM/altitude data of its own; Polymer requires the
     # variable to be present (with pint-compatible units) when params.dem is
@@ -161,97 +240,6 @@ class FlagsReader_HYPSO(FlagsReaderBase):
 
     def getflag(self, ds: xr.Dataset, flag_name: GenericFlags) -> xr.DataArray:
         raise ValueError(f'HYPSO L1C products do not provide a {flag_name} flag')
-
-
-def Level1_HYPSO_future(
-        filepath: str|Path,
-        chunks: int|tuple = 500,
-        metadata_template: list = None,
-        v1_compat: bool = False,
-        verbose: bool = True,
-    ) -> xr.Dataset:
-    """
-    Read a HYPSO Level1 product as an xarray.Dataset, targeting a `navigation`/
-    stacked-`Lt` product layout (a `navigation` group instead of `geometry`,
-    and a single `Lt` variable stacked over a `bands` dimension instead of one
-    `Lt_<wavelength>` variable per band).
-
-    As of writing, NTNU's actual L1C deliveries use the older per-band
-    `products`/`geometry` layout (see `Level1_HYPSO`), not this one, so this
-    reader will fail to open them (`ds_root["navigation"]` / `ds_root["products"]["Lt"]`
-    won't exist). It is kept here, unused, for whenever a delivery in this
-    newer layout shows up.
-
-    Args:
-        filepath: Path to the HYPSO HDF5 file (.h5)
-        chunks: Size of chunks for spatial dimensions. If int, applies to both dimensions.
-                If tuple, should be (rows_chunk, columns_chunk)
-        metadata_template: List of metadata keys to include. If None, includes all metadata.
-                          Use empty list [] for minimal metadata.
-        verbose: If True, prints debug messages during reading
-
-    Returns:
-        xr.Dataset containing:
-            - Lt: Top-of-atmosphere radiance (W/sr/m^2)
-            - VZA, VAA, SZA, SAA: Viewing and solar geometry angles
-            - lat, lon: Geolocation arrays
-            - central_wavelength: Band wavelengths
-            - Metadata attributes
-
-    Raises:
-        AssertionError: If the file does not exist
-
-    Example:
-        >>> ds = Level1_HYPSO_future('hypso_product.h5', chunks=1000)
-    """
-
-    ds = xr.Dataset()
-    filepath = Path(filepath)
-    assert filepath.exists(), 'File does not exists'
-
-    # Format chunks
-    chunks = format_chunks(chunks)
-
-    ds_root = xr.open_datatree(filepath, engine='h5netcdf')
-    ds_products = ds_root["products"].to_dataset()
-    ds_nav = ds_root["navigation"].to_dataset()
-
-    # get _indirect geographical coordinates and angles if available
-    if verbose: log.debug('Read and compute geometric angles')
-    ds[str(names.lat)] = ds_nav["latitude"].chunk(chunks)
-    ds[str(names.lon)] = ds_nav["longitude"].chunk(chunks)
-    ds[str(names.vza)] = ds_nav["sensor_zenith"].chunk(chunks)
-    ds[str(names.sza)] = ds_nav["solar_zenith"].chunk(chunks)
-    ds[str(names.vaa)] = ds_nav["sensor_azimuth"].chunk(chunks)
-    ds[str(names.saa)] = ds_nav["solar_azimuth"].chunk(chunks)
-
-    if verbose: log.debug('Read top of atmosphere data')
-    ds[str(names.ltoa)] = ds_products['Lt'].chunk(list(chunks)+[1])
-    ds = ds.rename(lines=str(names.rows), samples=str(names.columns), bands=str(names.bands))
-    ds[str(names.ltoa)].attrs['unit'] = 'W/sr/m^2'
-
-    if verbose: log.debug('Extract central wavelength')
-    ds = ds.assign_coords({
-        str(names.bands): ds[str(names.bands)].data.astype(str),
-    })
-    ds = ds.assign({str(names.cwav): ((str(names.bands)), ds_products['Lt'].wavelengths)})
-
-    # Add attributes
-    if verbose: log.debug('Add important attributes')
-    ds.attrs[str(names.sensor)] = ds_root.attrs['instrument']
-    ds.attrs[str(names.platform)] = 'HYPSO'
-    ds.attrs[str(names.resolution)] = 40
-    ds.attrs[str(names.product_name)] = filepath.name
-    ds.attrs[str(names.input_directory)] = str(filepath.parent)
-    ds.attrs[str(names.datetime)] = ds_root.attrs['date_aquired']
-
-    filter_fn = (lambda x,y: x) if metadata_template is None else filter_metadata
-    ds.attrs['metadata'] = filter_fn(ds_root.attrs, metadata_template)
-
-    # ds[naming.flags] = xr.zeros_like(ds.vza, dtype=naming.flags_dtype)
-
-    if v1_compat: return _v1_compat(ds)
-    return drop_unused_dims(ds).unify_chunks()
 
 
 def get_sample(level: int=1) -> Path:

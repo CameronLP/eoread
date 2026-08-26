@@ -1,11 +1,35 @@
 from pathlib import Path
-from eoread.hypso import Level1_HYPSO, get_sample
+from eoread.hypso import Level1_HYPSO, _hypso_format, get_sample
 import xarray as xr
 from core.env import getdir
 
 from . import generic
 
-import pytest 
+import pytest
+
+
+# Confirmed real on-disk examples of both HYPSO L1C layouts (see
+# eoread.hypso module docstring): hypso-processing-pipeline is still writing
+# the original "grouped" layout as of 2026-08-25 (not yet migrated onto
+# hypso-package's refactored writer), and hypso-package's own reference
+# capture (used by its test suite) produces the current "flat" layout.
+# Skipped automatically wherever these paths aren't present (e.g. CI, a
+# fresh checkout without HYPSO_DATA_AOC mounted).
+_GROUPED_SAMPLE = Path("/home/camerop/HYPSO_DATA_AOC/aeronetgalata_2025-01-02T08-52-34Z/"
+                       "aeronetgalata_2025-01-02T08-52-34Z-moved-l1c.nc")
+
+
+@pytest.mark.skipif(not _GROUPED_SAMPLE.is_file(), reason="grouped-layout sample not present")
+def test_hypso_format_detects_grouped():
+    assert _hypso_format(_GROUPED_SAMPLE) == "grouped"
+
+
+@pytest.mark.skipif(not _GROUPED_SAMPLE.is_file(), reason="grouped-layout sample not present")
+def test_level1_hypso_reads_grouped_layout():
+    ds = Level1_HYPSO(_GROUPED_SAMPLE, chunks=500, verbose=False)
+    assert ds.Ltoa.ndim == 3
+    assert ds.latitude.shape == ds.Ltoa.isel(bands=0).shape
+    assert "_moved" in ds.attrs["sensor"] or "_original" in ds.attrs["sensor"] or "_adjusted" in ds.attrs["sensor"]
 
 
 @pytest.fixture(scope="module")
