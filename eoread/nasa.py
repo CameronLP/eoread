@@ -84,12 +84,13 @@ def nasa_download(product, dirname, tmpdir=None, verbose=True, wget_extra=""):
     else:
         url = f'https://oceandata.sci.gsfc.nasa.gov/getfile/{product}'
 
+    cookies_path = str(Path.home()/'.urs_cookies')
     return download_url(
         url,
         dirname,
         verbose=verbose,
         tmpdir=tmpdir,
-        wget_opts='-nv --load-cookies ~/.urs_cookies --save-cookies ~/.urs_cookies ' \
+        wget_opts=f'-nv --load-cookies {cookies_path} --save-cookies {cookies_path} ' \
                   '--keep-session-cookies --auth-no-challenge '+wget_extra,
         check_function=check_nasa_download,
         lock_timeout=3600,
