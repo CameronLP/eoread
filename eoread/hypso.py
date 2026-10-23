@@ -107,12 +107,27 @@ def Level1_HYPSO(
     ds["altitude"] = ((str(names.rows), str(names.columns)), altitude, {"units": "m"})
 
     if verbose: log.debug('Compute solar irradiance')
-    F0 = solar_irradiance("LISIRD", variant="1nm").compute()
-    ds[str(names.F0)] = interp(F0, wavelength=Linear(ds[str(names.cwav)]))
-    # convert it to a unit compatible with Ltoa
-    assert ds[str(names.F0)].units == "W m-2 nm-1"
-    ds[str(names.F0)] = ds[str(names.F0)] * 1000
-    ds[str(names.F0)].attrs.update(units="W m-2 um-1")
+    # Polymer expects F0 at the acquisition date (rho = pi L / (mus F0)); other
+    # readers get it from the product (e.g. OLCI solar_flux) or read Rtoa
+    # directly. HYPSO products carry the band-averaged (SRF-weighted) F0 at
+    # 1 AU in metadata/srf/esun - the F0 hypso-package used for L1D - and the
+    # Earth-Sun distance in that group's earth_sun_distance_au, so use those,
+    # divided by d^2. Changed 2026-10-23: previously the 1 nm LISIRD spectrum
+    # point-interpolated at the band centres, with no distance term.
+    acquired = parse(ds_root.attrs['timestamp_acquired'], fuzzy=True)
+    F0_band, d = _hypso_f0_and_distance(filepath, ds[str(names.cwav)].values, acquired)
+    if F0_band is None:
+        log.warning(f'{filepath.name}: no band-averaged F0 in the file or next to it; '
+                    'using the LISIRD spectrum interpolated at the band centres')
+        F0 = solar_irradiance("LISIRD", variant="1nm").compute()
+        F0_band = interp(F0, wavelength=Linear(ds[str(names.cwav)]))
+        # convert it to a unit compatible with Ltoa
+        assert F0_band.units == "W m-2 nm-1"
+        F0_band = F0_band.values * 1000
+    # mW m-2 nm-1 (hypso-package) is numerically equal to W m-2 um-1 (Ltoa's unit)
+    ds[str(names.F0)] = xr.DataArray(np.asarray(F0_band, dtype='float64') / d**2,
+                                     dims=[str(names.bands)])
+    ds[str(names.F0)].attrs.update(units="W m-2 um-1", earth_sun_distance_au=d)
 
     # Top of atmosphere reflectance. Computed here (rather than left to
     # eoread.eo.init_Rtoa) because that legacy helper discards the dataset it
@@ -140,6 +155,50 @@ def Level1_HYPSO(
 
     if v1_compat: return _v1_compat(ds)
     return drop_unused_dims(ds).unify_chunks()
+
+
+def _earth_sun_distance(acquired) -> float:
+    """Earth-Sun distance (AU) for the acquisition date; same approximation as
+    hypso-package's reflectance.earth_sun_distance."""
+    doy = acquired.timetuple().tm_yday
+    return float(1 - 0.01672 * np.cos(np.radians(0.9856 * (doy - 4))))
+
+
+def _hypso_f0_and_distance(filepath: Path, cwav, acquired):
+    """
+    Band-averaged F0 at 1 AU (mW m-2 nm-1) for each band in cwav, and the
+    Earth-Sun distance (AU).
+
+    F0: the file's metadata/srf/esun, else the <sensor>_esun.nc hypso-package
+    writes next to the file, else None. Each band takes the F0 entry nearest
+    its central wavelength (must be within 1 nm).
+    d: the file's metadata/srf earth_sun_distance_au attribute, else computed
+    from the acquisition date.
+    """
+    esun = esun_wl = None
+    d = None
+    try:
+        with xr.open_dataset(filepath, group="metadata/srf") as g:
+            if 'esun' in g and 'esun_wavelengths' in g:
+                esun, esun_wl = g['esun'].values, g['esun_wavelengths'].values
+            d = g.attrs.get('earth_sun_distance_au')
+    except OSError:
+        pass
+    if esun is None:
+        siblings = sorted(Path(filepath).parent.glob('*_esun.nc'))
+        if len(siblings) == 1:
+            with xr.open_dataset(siblings[0]) as s:
+                esun, esun_wl = s['esun'].values, s['wav_esun'].values
+    if d is None:
+        d = _earth_sun_distance(acquired)
+    if esun is None:
+        return None, float(d)
+
+    cwav = np.asarray(cwav, dtype='float64')
+    idx = np.abs(np.asarray(esun_wl)[None, :] - cwav[:, None]).argmin(axis=1)
+    gap = np.abs(np.asarray(esun_wl)[idx] - cwav)
+    assert gap.max() < 1.0, f'F0 wavelengths do not match the bands (max gap {gap.max():.2f} nm)'
+    return np.asarray(esun, dtype='float64')[idx], float(d)
 
 
 class FlagsReader_HYPSO(FlagsReaderBase):
